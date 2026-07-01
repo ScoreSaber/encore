@@ -1,6 +1,6 @@
 {
    "name": "encore",
-   "version": "0.0.3",
+   "version": "0.0.4",
    "description": "A lightweight desktop companion for managing Beat Saber installs, mods and other user generated content",
    "author": "ScoreSaber",
    "desktopName": "com.scoresaber.encore",
