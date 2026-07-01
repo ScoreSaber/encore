@@ -1,0 +1,35 @@
+{
+   "app": {
+      "name": "Encore"
+   },
+   "common": {
+      "desktop": "Desktop",
+      "goHome": "Go home",
+      "loading": "Loading",
+      "retry": "Retry"
+   },
+   "nav": {
+      "addVersion": "Add version",
+      "home": "Home",
+      "settings": "Settings"
+   },
+   "settings": {
+      "language": {
+         "title": "Language",
+         "description": "Interface locale"
+      },
+      "theme": {
+         "title": "Theme",
+         "description": "Window appearance",
+         "light": "Light",
+         "dark": "Dark",
+         "system": "System"
+      }
+   },
+   "error": {
+      "somethingWentWrong": "Something went wrong",
+      "unexpectedError": "The current view could not be rendered",
+      "pageNotFound": "Page not found",
+      "pageNotFoundDesc": "That view does not exist in Encore"
+   }
+}

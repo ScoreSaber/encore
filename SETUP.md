@@ -49,7 +49,18 @@ Start the app:
 bun run dev
 ```
 
-Encore is intended to run as an Electron desktop app for Windows, Linux and macOS remote install workflows
+Preview a production build:
+
+```sh
+bun run build
+bun run start
+```
+
+Create an unpacked app directory:
+
+```sh
+bun run package:dir
+```
 
 ## Checks
 
@@ -58,6 +69,7 @@ IDE extensions and pre-commit hooks should handle most formatting and linting fo
 ```sh
 bun run lint
 bun run format:check
+bun run typecheck
 ```
 
 For behavior, Electron, packaging, filesystem, dependency or install detection changes, a production build is also useful:

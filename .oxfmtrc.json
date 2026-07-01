@@ -1,0 +1,26 @@
+{
+   "$schema": "./node_modules/oxfmt/configuration_schema.json",
+   "useTabs": false,
+   "singleQuote": true,
+   "trailingComma": "none",
+   "printWidth": 150,
+   "tabWidth": 3,
+   "endOfLine": "lf",
+   "sortImports": {
+      "internalPattern": ["@/"],
+      "customGroups": [
+         {
+            "groupName": "react-libs",
+            "elementNamePattern": ["react", "react/**"]
+         },
+         {
+            "groupName": "app-components",
+            "elementNamePattern": ["@/components/**"]
+         }
+      ],
+      "groups": ["side_effect", "react-libs", "external", ["parent", "sibling", "index"], "app-components", "internal", "style", "unknown"]
+   },
+   "sortTailwindcss": {},
+   "sortPackageJson": false,
+   "ignorePatterns": ["node_modules/**", "out/**", "dist/**", "release/**", "electron.vite.*.mjs", "src/routeTree.gen.ts"]
+}

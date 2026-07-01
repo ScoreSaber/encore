@@ -1,0 +1,99 @@
+{
+   "name": "encore",
+   "version": "0.0.1",
+   "description": "Beat Saber player companion desktop app",
+   "author": "ScoreSaber",
+   "private": true,
+   "type": "module",
+   "main": "out/main/index.js",
+   "scripts": {
+      "dev": "electron-vite dev",
+      "predev": "install-electron",
+      "build": "electron-vite build && bun run typecheck",
+      "start": "electron-vite preview",
+      "prestart": "install-electron",
+      "typecheck": "tsc --noEmit",
+      "lint": "oxlint src/ electron.vite.config.ts",
+      "format": "git ls-files -z | xargs -0 oxfmt",
+      "format:check": "git ls-files -z | xargs -0 oxfmt --check",
+      "electron:install": "install-electron",
+      "package": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+      "package:dir": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+      "postinstall": "install-electron",
+      "prepare": "husky"
+   },
+   "dependencies": {
+      "@tanstack/react-query": "5.101.2",
+      "@tanstack/react-router": "1.170.16",
+      "better-result": "2.8.2",
+      "class-variance-authority": "0.7.1",
+      "clsx": "2.1.1",
+      "cmdk": "1.1.1",
+      "input-otp": "1.4.2",
+      "lucide-react": "1.11.0",
+      "radix-ui": "1.4.3",
+      "react": "19.2.5",
+      "react-dom": "19.2.5",
+      "sonner": "2.0.7",
+      "tailwind-merge": "3.5.0",
+      "use-intl": "4.13.0"
+   },
+   "devDependencies": {
+      "@electron-toolkit/preload": "3.0.2",
+      "@electron-toolkit/utils": "4.0.0",
+      "@tailwindcss/vite": "4.3.2",
+      "@tanstack/router-plugin": "1.168.18",
+      "@types/bun": "1.3.14",
+      "@types/node": "24.12.2",
+      "@types/react": "19.2.14",
+      "@types/react-dom": "19.2.3",
+      "@vitejs/plugin-react": "6.0.3",
+      "electron": "43.0.0",
+      "electron-builder": "26.15.3",
+      "electron-vite": "5.0.0",
+      "husky": "9.1.7",
+      "lint-staged": "17.0.4",
+      "oxfmt": "0.47.0",
+      "oxlint": "1.62.0",
+      "tailwindcss": "4.3.2",
+      "tw-animate-css": "1.4.0",
+      "typescript": "5.9.3",
+      "vite": "8.1.2"
+   },
+   "build": {
+      "appId": "com.scoresaber.encore",
+      "productName": "Encore",
+      "directories": {
+         "buildResources": "resources",
+         "output": "release"
+      },
+      "files": [
+         "out/**/*",
+         "package.json"
+      ],
+      "icon": "resources/icon.png",
+      "asar": true,
+      "npmRebuild": false,
+      "win": {
+         "target": [
+            "nsis"
+         ]
+      },
+      "linux": {
+         "target": [
+            "AppImage",
+            "deb"
+         ],
+         "category": "Utility"
+      }
+   },
+   "trustedDependencies": [
+      "electron",
+      "esbuild"
+   ],
+   "packageManager": "bun@1.3.14",
+   "engines": {
+      "node": ">=24.15.0 <25",
+      "bun": ">=1.3.13 <2"
+   }
+}

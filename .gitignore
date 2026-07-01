@@ -6,6 +6,9 @@ dist/
 out/
 release/
 build/
+.output/
+*.tsbuildinfo
+electron.vite.*.mjs
 
 # env
 .env
@@ -14,6 +17,7 @@ build/
 
 # logs
 *.log
+*.local
 
 # os/editor noise
 .DS_Store
