@@ -1,3 +1,4 @@
+import { createHashHistory } from '@tanstack/history';
 import { QueryClient } from '@tanstack/react-query';
 import { createRouter } from '@tanstack/react-router';
 
@@ -15,6 +16,7 @@ export function getRouter() {
    const queryClient = createQueryClient();
    const router = createRouter({
       routeTree,
+      history: window.location.protocol === 'file:' ? createHashHistory() : undefined,
       context: { queryClient },
       defaultPreload: false,
       defaultViewTransition: false,
