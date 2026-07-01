@@ -1,4 +1,4 @@
-import type { AppInfo, EncoreApi } from '@/shared/ipc/contracts';
+import type { AppInfo, EncoreApi, UpdateSnapshot } from '@/shared/ipc/contracts';
 
 const browserFallbackInfo: AppInfo = {
    name: 'Encore',
@@ -15,11 +15,19 @@ const browserFallbackInfo: AppInfo = {
    chrome: navigator.userAgent,
    node: 'browser'
 };
+const browserFallbackUpdate: UpdateSnapshot = {
+   status: 'disabled',
+   message: 'updates run in packaged builds'
+};
 
 const browserFallbackApi = {
    platform: 'browser',
    app: {
-      getInfo: () => Promise.resolve(browserFallbackInfo)
+      getInfo: () => Promise.resolve(browserFallbackInfo),
+      getUpdate: () => Promise.resolve(browserFallbackUpdate),
+      checkForUpdates: () => Promise.resolve(browserFallbackUpdate),
+      installUpdate: () => Promise.resolve(browserFallbackUpdate),
+      onUpdateStatus: () => () => {}
    }
 } satisfies EncoreApi;
 

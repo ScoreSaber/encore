@@ -13,6 +13,13 @@
       "home": "Home",
       "settings": "Settings"
    },
+   "updates": {
+      "checking": "Checking for updates",
+      "available": "Update available",
+      "downloading": "Downloading update ({percent}%)",
+      "downloaded": "Restart to update",
+      "error": "Update check failed"
+   },
    "settings": {
       "language": {
          "title": "Language",
