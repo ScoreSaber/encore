@@ -1,10 +1,10 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 
 import type {
-   IpcCommandDefinition,
+   AnyIpcCommandDefinition,
+   AnyIpcQueryDefinition,
    IpcInvokeArgs,
    IpcModuleDefinition,
-   IpcQueryDefinition,
    IpcRequestDefinition,
    IpcResponse
 } from '@/shared/ipc/core';
@@ -31,7 +31,7 @@ type IpcChannelOwner = {
    kind: IpcRequestDefinition['kind'] | 'event';
 };
 
-export function defineIpcMainCommand<Definition extends IpcCommandDefinition>(
+export function defineIpcMainCommand<Definition extends AnyIpcCommandDefinition>(
    definition: Definition,
    handle: IpcMainRequestHandler<Definition>
 ): IpcMainRequestHandlerDefinition<Definition> {
@@ -41,7 +41,7 @@ export function defineIpcMainCommand<Definition extends IpcCommandDefinition>(
    };
 }
 
-export function defineIpcMainQuery<Definition extends IpcQueryDefinition>(
+export function defineIpcMainQuery<Definition extends AnyIpcQueryDefinition>(
    definition: Definition,
    handle: IpcMainRequestHandler<Definition>
 ): IpcMainRequestHandlerDefinition<Definition> {

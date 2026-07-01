@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { getEncoreApi } from '@/renderer/electron/encore-api';
-import type { UpdateSnapshot } from '@/shared/ipc/contracts';
+import type { UpdateSnapshot } from '@/shared/ipc/modules/update';
 
 const initialUpdate: UpdateSnapshot = {
    status: 'idle'
@@ -14,11 +14,11 @@ export function useAppUpdate() {
       const api = getEncoreApi();
       let disposed = false;
 
-      void api.app.getUpdate().then((snapshot) => {
+      void api.update.getSnapshot().then((snapshot) => {
          if (!disposed) setUpdate(snapshot);
       });
 
-      const unsubscribe = api.app.onUpdateStatus((snapshot) => {
+      const unsubscribe = api.update.onStatus((snapshot) => {
          if (!disposed) setUpdate(snapshot);
       });
 
@@ -29,11 +29,11 @@ export function useAppUpdate() {
    }, []);
 
    const checkForUpdates = useCallback(() => {
-      void getEncoreApi().app.checkForUpdates().then(setUpdate);
+      void getEncoreApi().update.checkForUpdates().then(setUpdate);
    }, []);
 
    const installUpdate = useCallback(() => {
-      void getEncoreApi().app.installUpdate().then(setUpdate);
+      void getEncoreApi().update.installDownloaded().then(setUpdate);
    }, []);
 
    return {

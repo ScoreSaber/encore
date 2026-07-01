@@ -58,11 +58,11 @@ export type IpcRequest<Definition extends IpcRequestDefinition> = Definition ext
 
 export type IpcResponse<Definition extends IpcRequestDefinition> = Definition extends { response?: infer Response } ? Response : void;
 
-export type IpcEventPayload<Definition extends IpcEventDefinition> = Definition extends { payload?: infer Payload } ? Payload : void;
+export type IpcEventPayload<Definition extends AnyIpcEventDefinition> = Definition extends { payload?: infer Payload } ? Payload : void;
 
 export type IpcInvokeArgs<Definition extends IpcRequestDefinition> = IpcRequest<Definition> extends void ? [] : [request: IpcRequest<Definition>];
 
-export type IpcEventArgs<Definition extends IpcEventDefinition> =
+export type IpcEventArgs<Definition extends AnyIpcEventDefinition> =
    IpcEventPayload<Definition> extends void ? [] : [payload: IpcEventPayload<Definition>];
 
 export function defineIpcCommand<Channel extends string, Response = void, Request = void>(

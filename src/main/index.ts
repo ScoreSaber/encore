@@ -1,9 +1,10 @@
 import { electronApp, is, optimizer } from '@electron-toolkit/utils';
-import { app, BrowserWindow, ipcMain, session, shell } from 'electron';
+import { app, BrowserWindow, session, shell } from 'electron';
 
-import { initializeAutoUpdates, registerUpdateHandlers } from '@/main/updater';
-import { getEncoreReleaseInfo } from '@/main/version';
-import { IpcChannel, type AppInfo } from '@/shared/ipc/contracts';
+import { createAppIpcModule } from '@/main/ipc/modules/app-ipc';
+import { createUpdateIpcModule } from '@/main/ipc/modules/update-ipc';
+import { registerIpcModules } from '@/main/ipc/register-ipc-modules';
+import { initializeAutoUpdates } from '@/main/updater';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,30 +33,8 @@ const prodContentSecurityPolicy = [
    "frame-ancestors 'none'"
 ].join('; ');
 
-function createAppInfo(): AppInfo {
-   const appVersion = app.getVersion();
-   const release = getEncoreReleaseInfo({
-      appVersion,
-      isPackaged: app.isPackaged,
-      cwd: process.cwd()
-   });
-
-   return {
-      name: app.getName(),
-      version: appVersion,
-      release,
-      platform: process.platform,
-      arch: process.arch,
-      electron: process.versions.electron,
-      chrome: process.versions.chrome,
-      node: process.versions.node
-   };
-}
-
 function registerIpcHandlers() {
-   const appInfo = createAppInfo();
-   ipcMain.handle(IpcChannel.AppInfo, () => appInfo);
-   registerUpdateHandlers();
+   registerIpcModules([createAppIpcModule(), createUpdateIpcModule()]);
 }
 
 function configureSecurityHeaders() {

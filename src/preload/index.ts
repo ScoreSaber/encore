@@ -1,24 +1,35 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { IpcChannel, type AppInfo, type EncoreApi, type UpdateSnapshot } from '@/shared/ipc/contracts';
+import type { EncoreApi } from '@/shared/ipc/api';
+import type { AnyIpcEventDefinition, IpcEventPayload, IpcInvokeArgs, IpcRequestDefinition, IpcResponse } from '@/shared/ipc/core';
+import { appInfoQuery } from '@/shared/ipc/modules/app';
+import { updateCheckCommand, updateInfoQuery, updateInstallCommand, updateStatusEvent } from '@/shared/ipc/modules/update';
+
+function invokeIpc<Definition extends IpcRequestDefinition>(definition: Definition, ...args: IpcInvokeArgs<Definition>) {
+   return ipcRenderer.invoke(definition.channel, ...args) as Promise<IpcResponse<Definition>>;
+}
+
+function onIpc<Definition extends AnyIpcEventDefinition>(definition: Definition, listener: (payload: IpcEventPayload<Definition>) => void) {
+   const handler = (_event: Electron.IpcRendererEvent, payload: IpcEventPayload<Definition>) => {
+      listener(payload);
+   };
+
+   ipcRenderer.on(definition.channel, handler);
+   return () => {
+      ipcRenderer.removeListener(definition.channel, handler);
+   };
+}
 
 const encoreApi = {
    platform: process.platform,
    app: {
-      getInfo: () => ipcRenderer.invoke(IpcChannel.AppInfo) as Promise<AppInfo>,
-      getUpdate: () => ipcRenderer.invoke(IpcChannel.UpdateInfo) as Promise<UpdateSnapshot>,
-      checkForUpdates: () => ipcRenderer.invoke(IpcChannel.UpdateCheck) as Promise<UpdateSnapshot>,
-      installUpdate: () => ipcRenderer.invoke(IpcChannel.UpdateInstall) as Promise<UpdateSnapshot>,
-      onUpdateStatus: (listener: (update: UpdateSnapshot) => void) => {
-         const handler = (_event: Electron.IpcRendererEvent, update: UpdateSnapshot) => {
-            listener(update);
-         };
-
-         ipcRenderer.on(IpcChannel.UpdateStatus, handler);
-         return () => {
-            ipcRenderer.removeListener(IpcChannel.UpdateStatus, handler);
-         };
-      }
+      getInfo: () => invokeIpc(appInfoQuery)
+   },
+   update: {
+      getSnapshot: () => invokeIpc(updateInfoQuery),
+      checkForUpdates: () => invokeIpc(updateCheckCommand),
+      installDownloaded: () => invokeIpc(updateInstallCommand),
+      onStatus: (listener) => onIpc(updateStatusEvent, listener)
    }
 } satisfies EncoreApi;
 

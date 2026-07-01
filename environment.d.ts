@@ -1,4 +1,4 @@
-import type { EncoreApi } from '@/shared/ipc/contracts';
+import type { EncoreApi } from '@/shared/ipc/api';
 
 declare global {
    const __ENCORE_VERSION__: string;

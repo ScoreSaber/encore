@@ -1,4 +1,6 @@
-import type { AppInfo, EncoreApi, UpdateSnapshot } from '@/shared/ipc/contracts';
+import type { EncoreApi } from '@/shared/ipc/api';
+import type { AppInfo } from '@/shared/ipc/modules/app';
+import type { UpdateSnapshot } from '@/shared/ipc/modules/update';
 
 const browserFallbackInfo: AppInfo = {
    name: 'Encore',
@@ -23,11 +25,13 @@ const browserFallbackUpdate: UpdateSnapshot = {
 const browserFallbackApi = {
    platform: 'browser',
    app: {
-      getInfo: () => Promise.resolve(browserFallbackInfo),
-      getUpdate: () => Promise.resolve(browserFallbackUpdate),
+      getInfo: () => Promise.resolve(browserFallbackInfo)
+   },
+   update: {
+      getSnapshot: () => Promise.resolve(browserFallbackUpdate),
       checkForUpdates: () => Promise.resolve(browserFallbackUpdate),
-      installUpdate: () => Promise.resolve(browserFallbackUpdate),
-      onUpdateStatus: () => () => {}
+      installDownloaded: () => Promise.resolve(browserFallbackUpdate),
+      onStatus: () => () => {}
    }
 } satisfies EncoreApi;
 

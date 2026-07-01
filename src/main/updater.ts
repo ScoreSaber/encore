@@ -1,8 +1,8 @@
 import { Result } from 'better-result';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { autoUpdater, type Logger, type ProgressInfo, type UpdateDownloadedEvent } from 'electron-updater';
 
-import { IpcChannel, type UpdateSnapshot, type UpdateStatus } from '@/shared/ipc/contracts';
+import { updateStatusEvent, type UpdateSnapshot, type UpdateStatus } from '@/shared/ipc/modules/update';
 
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,10 +15,8 @@ type UpdateLogLevel = 'debug' | 'error' | 'info' | 'warn';
 let updateSnapshot = createInitialUpdateSnapshot();
 let updaterInitialized = false;
 
-export function registerUpdateHandlers() {
-   ipcMain.handle(IpcChannel.UpdateInfo, () => updateSnapshot);
-   ipcMain.handle(IpcChannel.UpdateCheck, () => checkForUpdates());
-   ipcMain.handle(IpcChannel.UpdateInstall, () => installDownloadedUpdate());
+export function getUpdateSnapshot() {
+   return updateSnapshot;
 }
 
 export function initializeAutoUpdates() {
@@ -80,7 +78,7 @@ export function initializeAutoUpdates() {
    }, initialUpdateCheckDelayMs);
 }
 
-async function checkForUpdates() {
+export async function checkForUpdates() {
    if (!app.isPackaged) return updateSnapshot;
    if (updateIsBusy(updateSnapshot.status)) return updateSnapshot;
 
@@ -99,7 +97,7 @@ async function checkForUpdates() {
    return updateSnapshot;
 }
 
-function installDownloadedUpdate() {
+export function installDownloadedUpdate() {
    if (updateSnapshot.status !== 'downloaded') return updateSnapshot;
 
    const result = Result.try({
@@ -154,7 +152,7 @@ function publishUpdateSnapshot(snapshot: UpdateSnapshot) {
    for (const window of BrowserWindow.getAllWindows()) {
       if (window.isDestroyed()) continue;
 
-      window.webContents.send(IpcChannel.UpdateStatus, updateSnapshot);
+      window.webContents.send(updateStatusEvent.channel, updateSnapshot);
    }
 }
 
