@@ -1,8 +1,8 @@
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 
-import { AppProviders } from '@/renderer/providers/app-providers';
-import { AppShell } from '@/renderer/shell/app-shell';
 import type { RouterContext } from '@/router';
+import { AppProviders } from '@/shell/app-providers';
+import { AppShell } from '@/shell/app-shell';
 
 export const Route = createRootRouteWithContext<RouterContext>()({
    component: RootRoute
