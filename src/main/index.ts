@@ -2,8 +2,10 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils';
 import { app, BrowserWindow, session, shell } from 'electron';
 
 import { createAppIpcModule } from '@/main/ipc/modules/app-ipc';
+import { createOperationsIpcModule } from '@/main/ipc/modules/operations-ipc';
 import { createUpdateIpcModule } from '@/main/ipc/modules/update-ipc';
 import { registerIpcModules } from '@/main/ipc/register-ipc-modules';
+import { createOperationRegistry } from '@/main/operations/operation-registry';
 import { initializeAutoUpdates } from '@/main/updater';
 
 import { dirname, join } from 'node:path';
@@ -34,7 +36,15 @@ const prodContentSecurityPolicy = [
 ].join('; ');
 
 function registerIpcHandlers() {
-   registerIpcModules([createAppIpcModule(), createUpdateIpcModule()]);
+   const operationRegistry = createOperationRegistry();
+
+   registerIpcModules([
+      createAppIpcModule(),
+      createUpdateIpcModule(),
+      createOperationsIpcModule(operationRegistry, {
+         demoEnabled: is.dev
+      })
+   ]);
 }
 
 function configureSecurityHeaders() {
