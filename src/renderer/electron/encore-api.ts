@@ -3,10 +3,10 @@ import type { AppInfo } from '@/shared/ipc/modules/app';
 import type { UpdateSnapshot } from '@/shared/ipc/modules/update';
 import type { OperationCancelResult, OperationDemoStartResult } from '@/shared/operations';
 import {
+   applyAppSettingsPatch,
+   applyLibrarySettingsPatch,
    createDefaultAppSettings,
    createDefaultLibrarySettings,
-   type AppSettingsPatch,
-   type LibrarySettingsPatch,
    type SettingsSnapshot
 } from '@/shared/settings';
 
@@ -52,7 +52,7 @@ const browserFallbackApi = {
    settings: {
       getSnapshot: () => Promise.resolve(browserFallbackSettings),
       updateApp: (patch) => {
-         const app = applyBrowserAppPatch(browserFallbackSettings.app, patch);
+         const app = applyAppSettingsPatch(browserFallbackSettings.app, patch);
          browserFallbackSettings = {
             ...browserFallbackSettings,
             app,
@@ -68,7 +68,7 @@ const browserFallbackApi = {
          });
       },
       updateLibrary: (patch) => {
-         const library = applyBrowserLibraryPatch(browserFallbackSettings.library, patch);
+         const library = applyLibrarySettingsPatch(browserFallbackSettings.library, patch);
          browserFallbackSettings = {
             ...browserFallbackSettings,
             library,
@@ -119,24 +119,5 @@ function createBrowserFallbackSettings(): SettingsSnapshot {
          installRoot: library.installRoot,
          receiverEnabled: app.receiver.enabled
       }
-   };
-}
-
-function applyBrowserAppPatch(app: SettingsSnapshot['app'], patch: AppSettingsPatch): SettingsSnapshot['app'] {
-   return {
-      theme: patch.theme ?? app.theme,
-      locale: patch.locale ?? app.locale,
-      receiver: {
-         enabled: patch.receiver?.enabled ?? app.receiver.enabled,
-         pairedDevices: patch.receiver?.pairedDevices ?? app.receiver.pairedDevices
-      }
-   };
-}
-
-function applyBrowserLibraryPatch(library: SettingsSnapshot['library'], patch: LibrarySettingsPatch) {
-   return {
-      installRoot: patch.installRoot ?? library.installRoot,
-      defaultStore: patch.defaultStore === undefined ? library.defaultStore : patch.defaultStore,
-      protonPath: patch.protonPath === undefined ? library.protonPath : patch.protonPath
    };
 }

@@ -5,7 +5,8 @@ import { IntlProvider } from 'use-intl';
 
 import { defaultLocale, getBrowserLocale, LOCALE_STORAGE_KEY, parseLocale, type Locale } from '@/i18n/config';
 import { messagesByLocale } from '@/i18n/messages';
-import { readStorageValue, writeStorageValue } from '@/shared/result/storage';
+import { useSettings } from '@/modules/settings/settings-provider';
+import { readStorageValue } from '@/shared/result/storage';
 
 type LocaleContextValue = {
    locale: Locale;
@@ -20,6 +21,7 @@ function getInitialLocale() {
 }
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
+   const settings = useSettings();
    const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
 
    const setLocale = useCallback(
@@ -28,14 +30,23 @@ export function LocaleProvider({ children }: { children: React.ReactNode }) {
          if (validated === locale) return;
 
          setLocaleState(validated);
-         writeStorageValue(LOCALE_STORAGE_KEY, validated);
+         void settings.updateApp({ locale: validated }).then((result) => {
+            if (!result.ok) setLocaleState(settings.snapshot?.app.locale ?? locale);
+         });
       },
-      [locale]
+      [settings, locale]
    );
 
    useEffect(() => {
       document.documentElement.lang = locale;
    }, [locale]);
+
+   useEffect(() => {
+      const settingsLocale = settings.snapshot?.app.locale;
+      if (!settingsLocale || settingsLocale === locale) return;
+
+      setLocaleState(settingsLocale);
+   }, [settings.snapshot?.app.locale, locale]);
 
    const value = useMemo<LocaleContextValue>(() => ({ locale, setLocale }), [locale, setLocale]);
 

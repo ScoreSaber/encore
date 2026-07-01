@@ -14,10 +14,10 @@ import { cn } from '@/shared/format/helpers';
 const beatSaberVersions = [
    { id: 'local-1-40-8', label: '1.40.8', remote: false },
    { id: 'remote-1-39-1', label: '1.39.1', remote: true }
-] as const;
+];
 
 const sidebarItemClassName =
-   'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 cursor-default items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors';
+   'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 cursor-default items-center justify-center gap-3 rounded-md px-0 text-sm font-medium transition-colors sm:justify-start sm:px-3';
 const activeSidebarItemClassName = 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -33,13 +33,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
    return (
       <>
-         <div className="bg-background text-foreground grid min-h-screen grid-cols-[15rem_minmax(0,1fr)]">
-            <aside className="bg-card/70 sticky top-0 flex h-screen flex-col border-r px-4 py-5">
-               <div className="flex items-center gap-3">
+         <div className="bg-background text-foreground grid min-h-screen grid-cols-[4.5rem_minmax(0,1fr)] sm:grid-cols-[15rem_minmax(0,1fr)]">
+            <aside className="bg-card/70 sticky top-0 flex h-screen flex-col border-r px-2 py-5 sm:px-4">
+               <div className="flex items-center justify-center gap-3 sm:justify-start">
                   <div className="bg-primary text-primary-foreground font-pixel flex size-11 shrink-0 items-center justify-center rounded-md text-xl">
                      E
                   </div>
-                  <div className="min-w-0">
+                  <div className="hidden min-w-0 sm:block">
                      <div className="truncate text-sm font-semibold">{app('name')}</div>
                      <div className="flex min-w-0 items-center gap-1.5">
                         <div className="text-muted-foreground min-w-0 truncate text-xs">{appInfo.data?.release.label ?? common('loading')}</div>
@@ -54,7 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <div className="flex flex-col gap-1">
                      <SidebarLink to="/" isActive={pathname === '/'}>
                         <Home className="size-4 shrink-0" />
-                        <span className="truncate">{t('home')}</span>
+                        <span className="hidden truncate sm:block">{t('home')}</span>
                      </SidebarLink>
                   </div>
 
@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                      {beatSaberVersions.map((version) => (
                         <SidebarButton key={version.id}>
                            {version.remote ? <Wifi className="size-4 shrink-0" /> : <Monitor className="size-4 shrink-0" />}
-                           <span className="min-w-0 flex-1 truncate">{version.label}</span>
+                           <span className="hidden min-w-0 flex-1 truncate sm:block">{version.label}</span>
                         </SidebarButton>
                      ))}
                   </div>
@@ -73,11 +73,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                      <Separator className="mb-3" />
                      <SidebarButton className="mb-1 w-full">
                         <Plus className="size-4 shrink-0" />
-                        <span className="truncate">{t('addVersion')}</span>
+                        <span className="hidden truncate sm:block">{t('addVersion')}</span>
                      </SidebarButton>
                      <SidebarLink to="/settings" isActive={settingsIsActive}>
                         <Settings className="size-4 shrink-0" />
-                        <span className="truncate">{t('settings')}</span>
+                        <span className="hidden truncate sm:block">{t('settings')}</span>
                      </SidebarLink>
                   </div>
                </nav>

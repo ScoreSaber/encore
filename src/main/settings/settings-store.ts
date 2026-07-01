@@ -1,11 +1,15 @@
 import { Result } from 'better-result';
 
-import { parseLocale } from '@/i18n/config';
+import type { SettingsWriteResult } from '@/shared/ipc/modules/settings';
 import {
+   applyAppSettingsPatch,
+   applyLibrarySettingsPatch,
    createDefaultAppSettings,
    createDefaultLibrarySettings,
-   isStoreKind,
+   createDefaultStoredSettingsFile,
+   createRecoverableStoredSettingsFileSchema,
    settingsSchemaVersion,
+   storedSettingsFileSchema,
    type AppSettings,
    type AppSettingsPatch,
    type LibrarySettings,
@@ -16,7 +20,6 @@ import {
    type SettingsSnapshot,
    type StoredSettingsFile
 } from '@/shared/settings';
-import { parseTheme } from '@/shared/ui-adjacent/theme';
 
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -101,7 +104,7 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       return loadedSettings;
    }
 
-   async function writeSettings(settings: LoadedSettings) {
+   async function writeSettings(settings: LoadedSettings): Promise<SettingsWriteResult> {
       const writeResult = await Result.tryPromise({
          try: async () => {
             const file: StoredSettingsFile = {
@@ -129,7 +132,7 @@ export function createSettingsStore(options: SettingsStoreOptions) {
                   detail: writeResult.error.detail ?? null
                }
             }
-         } as const;
+         };
       }
 
       loadedSettings = settings;
@@ -137,12 +140,12 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       return {
          ok: true,
          value: createSnapshot(settings)
-      } as const;
+      };
    }
 
    function parseSettingsFile(contents: string): LoadedSettings {
       const parseResult = Result.try({
-         try: () => JSON.parse(contents) as unknown,
+         try: (): unknown => JSON.parse(contents),
          catch: (cause) => createSettingsProblem('settings.read.corrupt', 'settings file contains invalid JSON', cause)
       });
 
@@ -150,92 +153,20 @@ export function createSettingsStore(options: SettingsStoreOptions) {
          return createDefaultSettings(parseResult.error);
       }
 
-      const parsed = parseSettingsValue(parseResult.value);
-
-      if (parsed.invalid) {
+      const parsed = storedSettingsFileSchema.safeParse(parseResult.value);
+      if (parsed.success) {
          return {
-            ...parsed.settings,
-            problem: createSettingsProblem('settings.read.invalid', 'settings file contained invalid values')
+            app: parsed.data.app,
+            library: parsed.data.library
          };
       }
 
-      return parsed.settings;
-   }
-
-   function parseSettingsValue(value: unknown) {
-      const record = asRecord(value);
-      if (!record || record.schemaVersion !== settingsSchemaVersion) {
-         return {
-            invalid: true,
-            settings: createDefaultSettings()
-         };
-      }
-
-      const parsedApp = parseStoredAppSettings(record.app);
-      const parsedLibrary = parseStoredLibrarySettings(record.library);
+      const recovered = createRecoverableStoredSettingsFileSchema(createDefaultStoredSettingsFile(defaultInstallRoot)).parse(parseResult.value);
 
       return {
-         invalid: parsedApp.invalid || parsedLibrary.invalid,
-         settings: {
-            app: parsedApp.settings,
-            library: parsedLibrary.settings
-         }
-      };
-   }
-
-   function parseStoredAppSettings(value: unknown) {
-      const fallback = createDefaultAppSettings();
-      const record = asRecord(value);
-      if (!record) {
-         return {
-            invalid: true,
-            settings: fallback
-         };
-      }
-
-      const receiver = asRecord(record.receiver);
-      const pairedDevices = receiver ? parsePairedDevices(receiver.pairedDevices) : { invalid: true, devices: fallback.receiver.pairedDevices };
-      const theme = typeof record.theme === 'string' ? parseTheme(record.theme) : fallback.theme;
-      const locale = typeof record.locale === 'string' ? parseLocale(record.locale) : fallback.locale;
-
-      return {
-         invalid:
-            typeof record.theme !== 'string' ||
-            typeof record.locale !== 'string' ||
-            !receiver ||
-            typeof receiver.enabled !== 'boolean' ||
-            pairedDevices.invalid,
-         settings: {
-            theme,
-            locale,
-            receiver: {
-               enabled: typeof receiver?.enabled === 'boolean' ? receiver.enabled : fallback.receiver.enabled,
-               pairedDevices: pairedDevices.devices
-            }
-         }
-      };
-   }
-
-   function parseStoredLibrarySettings(value: unknown) {
-      const fallback = createDefaultLibrarySettings(defaultInstallRoot);
-      const record = asRecord(value);
-      if (!record) {
-         return {
-            invalid: true,
-            settings: fallback
-         };
-      }
-
-      return {
-         invalid:
-            typeof record.installRoot !== 'string' ||
-            !pathOrNullIsValid(record.protonPath) ||
-            !(record.defaultStore === null || isStoreKind(record.defaultStore)),
-         settings: {
-            installRoot: typeof record.installRoot === 'string' && record.installRoot.length > 0 ? record.installRoot : fallback.installRoot,
-            defaultStore: isStoreKind(record.defaultStore) ? record.defaultStore : fallback.defaultStore,
-            protonPath: typeof record.protonPath === 'string' && record.protonPath.length > 0 ? record.protonPath : fallback.protonPath
-         }
+         app: recovered.app,
+         library: recovered.library,
+         problem: createSettingsProblem('settings.read.invalid', 'settings file contained invalid values', parsed.error)
       };
    }
 
@@ -283,67 +214,6 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       updateAppSettings,
       updateLibrarySettings
    };
-}
-
-function applyAppSettingsPatch(settings: AppSettings, patch: AppSettingsPatch): AppSettings {
-   return {
-      theme: patch.theme ? parseTheme(patch.theme) : settings.theme,
-      locale: patch.locale ? parseLocale(patch.locale) : settings.locale,
-      receiver: {
-         enabled: patch.receiver?.enabled ?? settings.receiver.enabled,
-         pairedDevices: patch.receiver?.pairedDevices ?? settings.receiver.pairedDevices
-      }
-   };
-}
-
-function applyLibrarySettingsPatch(settings: LibrarySettings, patch: LibrarySettingsPatch): LibrarySettings {
-   return {
-      installRoot: patch.installRoot?.trim() || settings.installRoot,
-      defaultStore: patch.defaultStore === undefined ? settings.defaultStore : patch.defaultStore,
-      protonPath: patch.protonPath === undefined ? settings.protonPath : patch.protonPath?.trim() || null
-   };
-}
-
-function parsePairedDevices(value: unknown) {
-   if (!Array.isArray(value)) {
-      return {
-         invalid: true,
-         devices: []
-      };
-   }
-
-   const devices = [];
-   let invalid = false;
-
-   for (const item of value) {
-      const record = asRecord(item);
-
-      if (!record || typeof record.id !== 'string' || typeof record.name !== 'string' || typeof record.pairedAt !== 'string') {
-         invalid = true;
-         continue;
-      }
-
-      devices.push({
-         id: record.id,
-         name: record.name,
-         pairedAt: record.pairedAt,
-         ...(typeof record.lastSeenAt === 'string' ? { lastSeenAt: record.lastSeenAt } : {})
-      });
-   }
-
-   return {
-      invalid,
-      devices
-   };
-}
-
-function asRecord(value: unknown) {
-   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-   return value as Record<string, unknown>;
-}
-
-function pathOrNullIsValid(value: unknown) {
-   return value === null || typeof value === 'string';
 }
 
 function isMissingFile(problem: SettingsProblem) {

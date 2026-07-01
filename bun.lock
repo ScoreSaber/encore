@@ -21,6 +21,7 @@
         "sonner": "2.0.7",
         "tailwind-merge": "3.5.0",
         "use-intl": "4.13.0",
+        "zod": "4.4.3",
       },
       "devDependencies": {
         "@electron-toolkit/preload": "3.0.2",

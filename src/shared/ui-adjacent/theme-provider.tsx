@@ -2,7 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 
 import { Result } from 'better-result';
 
-import { readStorageValue, writeStorageValue } from '@/shared/result/storage';
+import { useSettings } from '@/modules/settings/settings-provider';
+import { readStorageValue } from '@/shared/result/storage';
 import { parseTheme, type ResolvedTheme, type Theme, THEME_MEDIA_QUERY, THEME_STORAGE_KEY, themes } from '@/shared/ui-adjacent/theme';
 
 type ThemeContextValue = {
@@ -33,6 +34,7 @@ function applyTheme(resolved: ResolvedTheme) {
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+   const settings = useSettings();
    const [theme, setThemeState] = useState<Theme>(getInitialTheme);
    const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
    const resolvedTheme = theme === 'system' ? systemTheme : theme;
@@ -47,10 +49,23 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
          }
 
          setThemeState(validated);
-         writeStorageValue(THEME_STORAGE_KEY, validated);
+         void settings.updateApp({ theme: validated }).then((result) => {
+            if (!result.ok) setThemeState(settings.snapshot?.app.theme ?? theme);
+         });
       },
-      [theme]
+      [settings, theme]
    );
+
+   useEffect(() => {
+      const settingsTheme = settings.snapshot?.app.theme;
+      if (!settingsTheme || settingsTheme === theme) return;
+
+      if (settingsTheme === 'system') {
+         setSystemTheme(getSystemTheme());
+      }
+
+      setThemeState(settingsTheme);
+   }, [settings.snapshot?.app.theme, theme]);
 
    useEffect(() => {
       applyTheme(resolvedTheme);
@@ -65,20 +80,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       mq.addEventListener('change', handler);
       return () => mq.removeEventListener('change', handler);
    }, [theme]);
-
-   useEffect(() => {
-      const handler = (e: StorageEvent) => {
-         if (e.key === THEME_STORAGE_KEY) {
-            const nextTheme = parseTheme(e.newValue);
-            if (nextTheme === 'system') {
-               setSystemTheme(getSystemTheme());
-            }
-            setThemeState(nextTheme);
-         }
-      };
-      window.addEventListener('storage', handler);
-      return () => window.removeEventListener('storage', handler);
-   }, []);
 
    const value = useMemo<ThemeContextValue>(
       () => ({ theme, setTheme, resolvedTheme, systemTheme, themes }),
