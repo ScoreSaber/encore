@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+out/
+release/
+build/
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+
+# os/editor noise
+.DS_Store
+Thumbs.db
