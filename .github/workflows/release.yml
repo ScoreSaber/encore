@@ -184,6 +184,7 @@ jobs:
               path: encore-out.tar.gz
               if-no-files-found: error
               retention-days: 1
+              compression-level: 0
 
    package:
       name: Build ${{ matrix.name }}
@@ -197,16 +198,44 @@ jobs:
             include:
                - name: macOS DMGs
                  os: macos-latest
-                 platform: mac
+                 package_args: --mac dmg zip --x64 --arm64
                  artifact: encore-macos
+                 artifact_paths: |
+                    release/*.dmg
+                    release/*.zip
+                    release/latest-mac.yml
+                    release/*.blockmap
+                 flatpak: false
+                 linux_packages: ''
                - name: Windows x64 EXE
                  os: windows-latest
-                 platform: windows
+                 package_args: --win nsis --x64
                  artifact: encore-windows-x64
+                 artifact_paths: |
+                    release/*.exe
+                    release/latest.yml
+                    release/*.blockmap
+                 flatpak: false
+                 linux_packages: ''
                - name: Linux x86_64 packages
                  os: ubuntu-latest
-                 platform: linux
+                 package_args: --linux AppImage deb rpm --x64
                  artifact: encore-linux-x86_64
+                 artifact_paths: |
+                    release/*.AppImage
+                    release/*.deb
+                    release/*.rpm
+                    release/latest-linux.yml
+                    release/*.blockmap
+                 flatpak: false
+                 linux_packages: libarchive-tools rpm xz-utils
+               - name: Linux x86_64 Flatpak
+                 os: ubuntu-latest
+                 package_args: --linux flatpak --x64
+                 artifact: encore-linux-flatpak
+                 artifact_paths: release/*.flatpak
+                 flatpak: true
+                 linux_packages: flatpak flatpak-builder xz-utils
       steps:
          - name: Checkout
            uses: actions/checkout@v4
@@ -253,17 +282,21 @@ jobs:
            run: tar -xzf .release-build/encore-out.tar.gz
 
          - name: Cache Flatpak runtimes
-           if: runner.os == 'Linux'
+           if: matrix.flatpak
            uses: actions/cache@v4
            with:
               path: ~/.local/share/flatpak
               key: flatpak-25.08-${{ runner.os }}
 
          - name: Install Linux package tools
-           if: runner.os == 'Linux'
+           if: matrix.linux_packages != ''
            run: |
               sudo apt-get update
-              sudo apt-get install --no-install-recommends -y flatpak flatpak-builder libarchive-tools rpm xz-utils
+              sudo apt-get install --no-install-recommends -y ${{ matrix.linux_packages }}
+
+         - name: Install Flatpak runtimes
+           if: matrix.flatpak
+           run: |
               flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
               flatpak install --user --noninteractive --arch=x86_64 flathub \
                  org.freedesktop.Platform//25.08 \
@@ -274,43 +307,16 @@ jobs:
            shell: bash
            env:
               APPIMAGE_EXTRACT_AND_RUN: '1'
-           run: |
-              set -euo pipefail
-
-              case "${{ matrix.platform }}" in
-                 mac)
-                    bunx electron-builder --mac dmg zip --x64 --arm64 --publish never
-                    ;;
-                 windows)
-                    bunx electron-builder --win nsis --x64 --publish never
-                    ;;
-                 linux)
-                    bunx electron-builder --linux AppImage deb rpm flatpak --x64 --publish never
-                    ;;
-                 *)
-                    echo "::error::Unknown platform: ${{ matrix.platform }}"
-                    exit 1
-                    ;;
-              esac
+           run: bunx electron-builder ${{ matrix.package_args }} --publish never
 
          - name: Upload release asset
            uses: actions/upload-artifact@v4
            with:
               name: ${{ matrix.artifact }}
-              path: |
-                 release/*.dmg
-                 release/*.zip
-                 release/*.exe
-                 release/*.AppImage
-                 release/*.deb
-                 release/*.rpm
-                 release/*.flatpak
-                 release/latest.yml
-                 release/latest-mac.yml
-                 release/latest-linux.yml
-                 release/*.blockmap
+              path: ${{ matrix.artifact_paths }}
               if-no-files-found: error
               retention-days: 7
+              compression-level: 0
 
    release:
       name: Publish release
