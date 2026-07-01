@@ -1,8 +1,9 @@
 {
    "name": "encore",
    "version": "0.0.1",
-   "description": "Beat Saber player companion desktop app",
+   "description": "A lightweight desktop companion for managing Beat Saber installs, mods and other user generated content",
    "author": "ScoreSaber",
+   "desktopName": "com.scoresaber.encore",
    "private": true,
    "type": "module",
    "main": "out/main/index.js",
@@ -106,7 +107,10 @@
             "rpm",
             "flatpak"
          ],
-         "category": "Utility"
+         "category": "Utility",
+         "maintainer": "ScoreSaber <contact@scoresaber.com>",
+         "vendor": "ScoreSaber",
+         "syncDesktopName": true
       },
       "appImage": {
          "artifactName": "${productName}-${version}-linux-x86_64.${ext}"
