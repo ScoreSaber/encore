@@ -51,15 +51,15 @@ function SettingsRoute() {
             </CardHeader>
             <CardContent>
                <div className="grid gap-2 sm:grid-cols-3">
-                  <Button variant={theme === 'light' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setTheme('light')}>
+                  <Button variant={theme === 'light' ? 'default' : 'secondary'} onClick={() => setTheme('light')}>
                      <Sun data-icon="inline-start" />
                      {t('theme.light')}
                   </Button>
-                  <Button variant={theme === 'dark' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setTheme('dark')}>
+                  <Button variant={theme === 'dark' ? 'default' : 'secondary'} onClick={() => setTheme('dark')}>
                      <Moon data-icon="inline-start" />
                      {t('theme.dark')}
                   </Button>
-                  <Button variant={theme === 'system' ? 'default' : 'secondary'} className="cursor-pointer" onClick={() => setTheme('system')}>
+                  <Button variant={theme === 'system' ? 'default' : 'secondary'} onClick={() => setTheme('system')}>
                      <SunMoon data-icon="inline-start" />
                      {t('theme.system')}
                   </Button>

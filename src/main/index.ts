@@ -81,7 +81,7 @@ function createMainWindow() {
       autoHideMenuBar: true,
       webPreferences: {
          preload: join(currentDir, '../preload/index.js'),
-         sandbox: true,
+         sandbox: false,
          contextIsolation: true,
          nodeIntegration: false,
          webSecurity: true,

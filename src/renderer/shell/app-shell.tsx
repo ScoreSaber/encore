@@ -5,6 +5,7 @@ import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Toaster } from '@/components/ui/sonner';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 import { useAppInfo } from '@/renderer/electron/use-app-info';
 import { useAppUpdate } from '@/renderer/electron/use-app-update';
@@ -14,6 +15,10 @@ const beatSaberVersions = [
    { id: 'local-1-40-8', label: '1.40.8', remote: false },
    { id: 'remote-1-39-1', label: '1.39.1', remote: true }
 ] as const;
+
+const sidebarItemClassName =
+   'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 cursor-default items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors';
+const activeSidebarItemClassName = 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
    const t = useTranslations('nav');
@@ -36,66 +41,44 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </div>
                   <div className="min-w-0">
                      <div className="truncate text-sm font-semibold">{app('name')}</div>
-                     <div className="text-muted-foreground truncate text-xs">{appInfo.data?.release.label ?? common('loading')}</div>
+                     <div className="flex min-w-0 items-center gap-1.5">
+                        <div className="text-muted-foreground min-w-0 truncate text-xs">{appInfo.data?.release.label ?? common('loading')}</div>
+                        {update.status === 'downloaded' ? <UpdateButton label={updates('downloaded')} onClick={appUpdate.installUpdate} /> : null}
+                     </div>
                   </div>
                </div>
-               {update.status === 'downloaded' ? (
-                  <Button type="button" size="xs" variant="secondary" className="mt-3 w-full" onClick={appUpdate.installUpdate}>
-                     <RefreshCw className="size-3" />
-                     <span className="truncate">{updates('downloaded')}</span>
-                  </Button>
-               ) : null}
 
                <Separator className="my-5" />
 
                <nav className="flex flex-1 flex-col">
                   <div className="flex flex-col gap-1">
-                     <Link
-                        to="/"
-                        className={cn(
-                           'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
-                           pathname === '/' && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
-                        )}
-                     >
+                     <SidebarLink to="/" isActive={pathname === '/'}>
                         <Home className="size-4 shrink-0" />
                         <span className="truncate">{t('home')}</span>
-                     </Link>
+                     </SidebarLink>
                   </div>
 
                   <Separator className="my-4" />
 
                   <div className="flex flex-col gap-1">
                      {beatSaberVersions.map((version) => (
-                        <button
-                           key={version.id}
-                           type="button"
-                           className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 cursor-pointer items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors"
-                        >
+                        <SidebarButton key={version.id}>
                            {version.remote ? <Wifi className="size-4 shrink-0" /> : <Monitor className="size-4 shrink-0" />}
                            <span className="min-w-0 flex-1 truncate">{version.label}</span>
-                        </button>
+                        </SidebarButton>
                      ))}
                   </div>
 
                   <div className="mt-auto">
                      <Separator className="mb-3" />
-                     <button
-                        type="button"
-                        className="text-muted-foreground hover:bg-accent hover:text-accent-foreground mb-1 flex h-10 w-full cursor-pointer items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition-colors"
-                     >
+                     <SidebarButton className="mb-1 w-full">
                         <Plus className="size-4 shrink-0" />
                         <span className="truncate">{t('addVersion')}</span>
-                     </button>
-                     <Link
-                        to="/settings"
-                        className={cn(
-                           'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
-                           settingsIsActive && 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground'
-                        )}
-                     >
+                     </SidebarButton>
+                     <SidebarLink to="/settings" isActive={settingsIsActive}>
                         <Settings className="size-4 shrink-0" />
                         <span className="truncate">{t('settings')}</span>
-                     </Link>
+                     </SidebarLink>
                   </div>
                </nav>
             </aside>
@@ -106,5 +89,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
          </div>
          <Toaster richColors closeButton />
       </>
+   );
+}
+
+function SidebarLink({ isActive, className, ...props }: React.ComponentProps<typeof Link> & { isActive?: boolean }) {
+   return <Link className={cn(sidebarItemClassName, isActive && activeSidebarItemClassName, className)} {...props} />;
+}
+
+function SidebarButton({ className, type = 'button', ...props }: React.ComponentProps<'button'>) {
+   return <button type={type} className={cn(sidebarItemClassName, 'text-left', className)} {...props} />;
+}
+
+function UpdateButton({ label, onClick }: { label: string; onClick: () => void }) {
+   return (
+      <Tooltip>
+         <TooltipTrigger asChild>
+            <Button
+               type="button"
+               size="icon-xs"
+               variant="secondary"
+               className="size-5 cursor-pointer rounded-full p-0"
+               aria-label={label}
+               onClick={onClick}
+            >
+               <RefreshCw className="size-2.5" />
+            </Button>
+         </TooltipTrigger>
+         <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
    );
 }

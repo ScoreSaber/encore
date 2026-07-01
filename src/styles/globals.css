@@ -202,7 +202,22 @@
       margin: 0;
       background-color: var(--background);
       color: var(--foreground);
+      cursor: default;
       font-family: var(--font-sans);
+   }
+
+   body,
+   body * {
+      user-select: none;
+   }
+
+   input,
+   textarea,
+   [contenteditable='true'],
+   [data-selectable='true'],
+   [data-selectable='true'] * {
+      cursor: text;
+      user-select: text;
    }
 
    a,
