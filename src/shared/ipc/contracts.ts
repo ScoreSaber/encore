@@ -1,36 +1,22 @@
+import { appInfoQuery, type AppInfo, type AppPlatform } from '@/shared/ipc/modules/app';
+import {
+   updateCheckCommand,
+   updateInfoQuery,
+   updateInstallCommand,
+   updateStatusEvent,
+   type UpdateSnapshot,
+   type UpdateStatus
+} from '@/shared/ipc/modules/update';
+
+export type { AppInfo, AppPlatform, UpdateSnapshot, UpdateStatus };
+
 export const IpcChannel = {
-   AppInfo: 'app:info',
-   UpdateInfo: 'update:info',
-   UpdateCheck: 'update:check',
-   UpdateInstall: 'update:install',
-   UpdateStatus: 'update:status'
+   AppInfo: appInfoQuery.channel,
+   UpdateInfo: updateInfoQuery.channel,
+   UpdateCheck: updateCheckCommand.channel,
+   UpdateInstall: updateInstallCommand.channel,
+   UpdateStatus: updateStatusEvent.channel
 } as const;
-
-export type AppPlatform = NodeJS.Platform | 'browser';
-export type UpdateStatus = 'disabled' | 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
-
-export type UpdateSnapshot = {
-   status: UpdateStatus;
-   version?: string;
-   percent?: number;
-   message?: string;
-};
-
-export type AppInfo = {
-   name: string;
-   version: string;
-   release: {
-      channel: 'alpha';
-      version: string;
-      label: string;
-      source: 'release' | 'commit' | 'fallback';
-   };
-   platform: AppPlatform;
-   arch: string;
-   electron: string;
-   chrome: string;
-   node: string;
-};
 
 export type EncoreApi = {
    platform: AppPlatform;
