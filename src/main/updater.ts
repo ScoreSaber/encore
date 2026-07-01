@@ -1,10 +1,16 @@
 import { Result } from 'better-result';
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { autoUpdater, type ProgressInfo, type UpdateDownloadedEvent } from 'electron-updater';
+import { autoUpdater, type Logger, type ProgressInfo, type UpdateDownloadedEvent } from 'electron-updater';
 
 import { IpcChannel, type UpdateSnapshot, type UpdateStatus } from '@/shared/ipc/contracts';
 
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 const initialUpdateCheckDelayMs = 3_000;
+const updateLogFileName = 'updater.log';
+
+type UpdateLogLevel = 'debug' | 'error' | 'info' | 'warn';
 
 let updateSnapshot = createInitialUpdateSnapshot();
 let updaterInitialized = false;
@@ -27,7 +33,7 @@ export function initializeAutoUpdates() {
    autoUpdater.autoDownload = true;
    autoUpdater.autoInstallOnAppQuit = true;
    autoUpdater.disableWebInstaller = true;
-   autoUpdater.logger = console;
+   autoUpdater.logger = createUpdateLogger();
 
    autoUpdater.on('checking-for-update', () => {
       publishUpdateSnapshot({ status: 'checking' });
@@ -138,7 +144,12 @@ function createDownloadedSnapshot(event: UpdateDownloadedEvent): UpdateSnapshot 
 }
 
 function publishUpdateSnapshot(snapshot: UpdateSnapshot) {
+   const previousSnapshot = updateSnapshot;
    updateSnapshot = snapshot;
+
+   if (snapshotChanged(previousSnapshot, updateSnapshot)) {
+      logUpdateMessage('info', formatUpdateSnapshot(updateSnapshot));
+   }
 
    for (const window of BrowserWindow.getAllWindows()) {
       if (window.isDestroyed()) continue;
@@ -154,4 +165,64 @@ function updateIsBusy(status: UpdateStatus) {
 function updateErrorMessage(message: string, cause: unknown) {
    if (cause instanceof Error) return `${message}: ${cause.message}`;
    return `${message}: ${String(cause)}`;
+}
+
+function snapshotChanged(previousSnapshot: UpdateSnapshot, nextSnapshot: UpdateSnapshot) {
+   return (
+      previousSnapshot.status !== nextSnapshot.status ||
+      previousSnapshot.version !== nextSnapshot.version ||
+      previousSnapshot.percent !== nextSnapshot.percent ||
+      previousSnapshot.message !== nextSnapshot.message
+   );
+}
+
+function formatUpdateSnapshot(snapshot: UpdateSnapshot) {
+   const details = [`status=${snapshot.status}`];
+
+   if (snapshot.version) details.push(`version=${snapshot.version}`);
+   if (snapshot.percent != null) details.push(`percent=${snapshot.percent}`);
+   if (snapshot.message) details.push(`message=${snapshot.message}`);
+
+   return details.join(' ');
+}
+
+function createUpdateLogger(): Logger {
+   return {
+      info: (message) => logUpdateMessage('info', message),
+      warn: (message) => logUpdateMessage('warn', message),
+      error: (message) => logUpdateMessage('error', message),
+      debug: (message) => logUpdateMessage('debug', message)
+   };
+}
+
+function logUpdateMessage(level: UpdateLogLevel, message: string) {
+   const line = `[${new Date().toISOString()}] [${level}] ${String(message)}\n`;
+
+   const result = Result.try({
+      try: () => {
+         mkdirSync(app.getPath('logs'), { recursive: true });
+         appendFileSync(join(app.getPath('logs'), updateLogFileName), line, 'utf8');
+      },
+      catch: (cause) => updateErrorMessage('failed to write updater log', cause)
+   });
+
+   if (Result.isError(result)) {
+      console.warn(result.error);
+   }
+
+   writeConsoleLog(level, line.trimEnd());
+}
+
+function writeConsoleLog(level: UpdateLogLevel, message: string) {
+   if (level === 'error') {
+      console.error(message);
+      return;
+   }
+
+   if (level === 'warn') {
+      console.warn(message);
+      return;
+   }
+
+   console.info(message);
 }

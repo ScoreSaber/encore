@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { CircleAlert, Download, Home, LoaderCircle, Monitor, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { Home, Monitor, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
@@ -25,16 +25,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
    const pathname = useRouterState({ select: (state) => state.location.pathname });
    const settingsIsActive = pathname === '/settings';
    const update = appUpdate.update;
-   const updateLabel =
-      update.status === 'checking'
-         ? updates('checking')
-         : update.status === 'available'
-           ? updates('available')
-           : update.status === 'downloading'
-             ? updates('downloading', { percent: update.percent ?? 0 })
-             : update.status === 'error'
-               ? updates('error')
-               : null;
 
    return (
       <>
@@ -54,17 +44,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                      <RefreshCw className="size-3" />
                      <span className="truncate">{updates('downloaded')}</span>
                   </Button>
-               ) : updateLabel ? (
-                  <div className="text-muted-foreground mt-3 flex h-6 items-center gap-2 px-1 text-xs">
-                     {update.status === 'checking' ? (
-                        <LoaderCircle className="size-3 shrink-0 animate-spin" />
-                     ) : update.status === 'error' ? (
-                        <CircleAlert className="size-3 shrink-0" />
-                     ) : (
-                        <Download className="size-3 shrink-0" />
-                     )}
-                     <span className="min-w-0 truncate">{updateLabel}</span>
-                  </div>
                ) : null}
 
                <Separator className="my-5" />

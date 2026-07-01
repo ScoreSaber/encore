@@ -4,6 +4,8 @@ import viteReact from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { createLogger } from 'vite';
 
+import packageJson from './package.json' with { type: 'json' };
+
 import { fileURLToPath } from 'node:url';
 
 const logger = createLogger();
@@ -56,6 +58,9 @@ export default defineConfig({
       root: fileURLToPath(new URL('.', import.meta.url)),
       publicDir: fileURLToPath(new URL('./public', import.meta.url)),
       envPrefix: ['VITE_', 'RENDERER_VITE_'],
+      define: {
+         __ENCORE_VERSION__: JSON.stringify(packageJson.version)
+      },
       resolve: commonResolve,
       plugins: [
          tanstackRouter({

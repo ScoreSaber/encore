@@ -2,12 +2,12 @@ import type { AppInfo, EncoreApi, UpdateSnapshot } from '@/shared/ipc/contracts'
 
 const browserFallbackInfo: AppInfo = {
    name: 'Encore',
-   version: '0.0.1',
+   version: __ENCORE_VERSION__,
    release: {
       channel: 'alpha',
-      version: '0.0.1',
-      label: 'alpha@0.0.1',
-      source: 'release'
+      version: __ENCORE_VERSION__,
+      label: `alpha@${__ENCORE_VERSION__}`,
+      source: 'fallback'
    },
    platform: 'browser',
    arch: 'browser',
