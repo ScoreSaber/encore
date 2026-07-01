@@ -16,7 +16,7 @@ We really want this to feel clean with no fancy animations getting in your way. 
 
 ### Home
 
-A rich home experience which acts as a hub to all the communities around Beat Saber with quick and easy quick links to known places to get support (like the BSMG discord) and in-client troubleshooting help... Not sure how fare we'll go with the latter, we'll see
+A rich home experience which acts as a hub to all the communities around Beat Saber with quick and easy quick links to known places to get support (like the BSMG discord) and in-client troubleshooting help (common problems, quick log browser for last game sessions, copy log file to clipboard, log file uploader which quickly uploads your logs to send to support)...
 
 ### **Unofficial Mod Repositories**
 
