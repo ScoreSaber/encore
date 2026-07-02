@@ -3,9 +3,11 @@ import { app, BrowserWindow, session, shell } from 'electron';
 
 import { createAppIpcModule } from '@/main/ipc/modules/app-ipc';
 import { createOperationsIpcModule } from '@/main/ipc/modules/operations-ipc';
+import { createSettingsIpcModule } from '@/main/ipc/modules/settings-ipc';
 import { createUpdateIpcModule } from '@/main/ipc/modules/update-ipc';
 import { registerIpcModules } from '@/main/ipc/register-ipc-modules';
 import { createOperationRegistry } from '@/main/operations/operation-registry';
+import { createSettingsStore } from '@/main/settings/settings-store';
 import { initializeAutoUpdates } from '@/main/updater';
 
 import { dirname, join } from 'node:path';
@@ -37,9 +39,16 @@ const prodContentSecurityPolicy = [
 
 function registerIpcHandlers() {
    const operationRegistry = createOperationRegistry();
+   const settingsStore = createSettingsStore({
+      dataPath: app.getPath('userData'),
+      appVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch
+   });
 
    registerIpcModules([
       createAppIpcModule(),
+      createSettingsIpcModule(settingsStore),
       createUpdateIpcModule(),
       createOperationsIpcModule(operationRegistry, {
          demoEnabled: is.dev

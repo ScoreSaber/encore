@@ -1,5 +1,8 @@
-export const locales = ['en'] as const;
-export type Locale = (typeof locales)[number];
+import { z } from 'zod';
+
+export const localeSchema = z.enum(['en']);
+export const locales = localeSchema.options;
+export type Locale = z.infer<typeof localeSchema>;
 export const defaultLocale: Locale = 'en';
 export const LOCALE_STORAGE_KEY = 'locale';
 
@@ -8,8 +11,7 @@ export const localeNames: Record<Locale, string> = {
 };
 
 export function parseLocale(value: string | null | undefined): Locale {
-   if (!value) return defaultLocale;
-   return resolveLocaleCandidate(value) ?? defaultLocale;
+   return localeCandidateSchema.catch(defaultLocale).parse(value);
 }
 
 export function getBrowserLocale() {
@@ -27,11 +29,11 @@ export function getBrowserLocale() {
 }
 
 function resolveLocaleCandidate(candidate: string): Locale | null {
-   const language = candidate.split('-')[0];
-
-   for (const locale of locales) {
-      if (candidate === locale || language === locale) return locale;
-   }
-
-   return null;
+   const result = localeCandidateSchema.safeParse(candidate);
+   return result.success ? result.data : null;
 }
+
+const localeCandidateSchema = z
+   .string()
+   .transform((value) => value.split('-')[0])
+   .pipe(localeSchema);

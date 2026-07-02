@@ -21,6 +21,13 @@
       "error": "Update check failed"
    },
    "settings": {
+      "pageTitle": "Settings",
+      "pageDescription": "App preferences, library defaults and receiver state",
+      "refresh": "Refresh",
+      "appearance": {
+         "title": "Appearance",
+         "description": "Language and window appearance"
+      },
       "language": {
          "title": "Language",
          "description": "Interface locale"
@@ -31,6 +38,40 @@
          "light": "Light",
          "dark": "Dark",
          "system": "System"
+      },
+      "library": {
+         "title": "Library",
+         "description": "Defaults used for local Beat Saber installs",
+         "installRoot": "Install root",
+         "managed": "Managed",
+         "defaultStore": "Default store",
+         "defaultStoreDescription": "Preferred source for downloads",
+         "noDefaultStore": "No default"
+      },
+      "store": {
+         "steam": "Steam",
+         "oculus": "Oculus PC"
+      },
+      "receiver": {
+         "title": "Receiver",
+         "description": "Local pairing preferences for remote control WIP",
+         "enabled": "Receiver",
+         "enabledDescription": "Receiver networking is WIP and stays off for now",
+         "pairedDevices": "Paired devices",
+         "pairedDevicesDescription": "Known paired clients for remote control",
+         "noPairedDevices": "No paired devices"
+      },
+      "recovery": {
+         "title": "Settings recovered",
+         "description": "Encore ignored invalid settings and loaded defaults from {path}.",
+         "action": "Save recovered settings"
+      },
+      "loadError": {
+         "title": "Settings unavailable",
+         "description": "Encore could not load settings."
+      },
+      "writeError": {
+         "title": "Settings were not saved"
       }
    },
    "error": {

@@ -4,6 +4,7 @@ import type { EncoreApi } from '@/shared/ipc/api';
 import type { AnyIpcEventDefinition, IpcEventPayload, IpcInvokeArgs, IpcRequestDefinition, IpcResponse } from '@/shared/ipc/core';
 import { appInfoQuery } from '@/shared/ipc/modules/app';
 import { operationCancelCommand, operationDemoStartCommand, operationListQuery, operationSnapshotEvent } from '@/shared/ipc/modules/operations';
+import { settingsSnapshotQuery, settingsUpdateAppCommand, settingsUpdateLibraryCommand } from '@/shared/ipc/modules/settings';
 import { updateCheckCommand, updateInfoQuery, updateInstallCommand, updateStatusEvent } from '@/shared/ipc/modules/update';
 
 function invokeIpc<Definition extends IpcRequestDefinition>(definition: Definition, ...args: IpcInvokeArgs<Definition>) {
@@ -25,6 +26,11 @@ const encoreApi = {
    platform: process.platform,
    app: {
       getInfo: () => invokeIpc(appInfoQuery)
+   },
+   settings: {
+      getSnapshot: () => invokeIpc(settingsSnapshotQuery),
+      updateApp: (patch) => invokeIpc(settingsUpdateAppCommand, patch),
+      updateLibrary: (patch) => invokeIpc(settingsUpdateLibraryCommand, patch)
    },
    update: {
       getSnapshot: () => invokeIpc(updateInfoQuery),
