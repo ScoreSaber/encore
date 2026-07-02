@@ -5,6 +5,7 @@ import type { AnyIpcEventDefinition, IpcEventPayload, IpcInvokeArgs, IpcRequestD
 import { appInfoQuery } from '@/shared/ipc/modules/app';
 import { operationCancelCommand, operationDemoStartCommand, operationListQuery, operationSnapshotEvent } from '@/shared/ipc/modules/operations';
 import { settingsSnapshotQuery, settingsUpdateAppCommand, settingsUpdateLibraryCommand } from '@/shared/ipc/modules/settings';
+import { targetChangedEvent, targetHealthQuery, targetInstallsQuery, targetListQuery } from '@/shared/ipc/modules/targets';
 import { updateCheckCommand, updateInfoQuery, updateInstallCommand, updateStatusEvent } from '@/shared/ipc/modules/update';
 
 function invokeIpc<Definition extends IpcRequestDefinition>(definition: Definition, ...args: IpcInvokeArgs<Definition>) {
@@ -31,6 +32,12 @@ const encoreApi = {
       getSnapshot: () => invokeIpc(settingsSnapshotQuery),
       updateApp: (patch) => invokeIpc(settingsUpdateAppCommand, patch),
       updateLibrary: (patch) => invokeIpc(settingsUpdateLibraryCommand, patch)
+   },
+   targets: {
+      list: () => invokeIpc(targetListQuery),
+      listInstalls: (targetId) => invokeIpc(targetInstallsQuery, { targetId }),
+      getHealth: (targetId) => invokeIpc(targetHealthQuery, { targetId }),
+      onEvent: (listener) => onIpc(targetChangedEvent, listener)
    },
    update: {
       getSnapshot: () => invokeIpc(updateInfoQuery),

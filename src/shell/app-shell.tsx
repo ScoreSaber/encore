@@ -4,17 +4,14 @@ import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Toaster } from '@/components/ui/sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
+import { useTargets, type TargetListEntry } from '@/modules/targets/use-targets';
 import { useAppInfo } from '@/renderer/electron/use-app-info';
 import { useAppUpdate } from '@/renderer/electron/use-app-update';
 import { cn } from '@/shared/format/helpers';
-
-const beatSaberVersions = [
-   { id: 'local-1-40-8', label: '1.40.8', remote: false },
-   { id: 'remote-1-39-1', label: '1.39.1', remote: true }
-];
 
 const sidebarItemClassName =
    'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 cursor-default items-center justify-center gap-3 rounded-md px-0 text-sm font-medium transition-colors sm:justify-start sm:px-3';
@@ -60,14 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                   <Separator className="my-4" />
 
-                  <div className="flex flex-col gap-1">
-                     {beatSaberVersions.map((version) => (
-                        <SidebarButton key={version.id}>
-                           {version.remote ? <Wifi className="size-4 shrink-0" /> : <Monitor className="size-4 shrink-0" />}
-                           <span className="hidden min-w-0 flex-1 truncate sm:block">{version.label}</span>
-                        </SidebarButton>
-                     ))}
-                  </div>
+                  <SidebarTargets />
 
                   <div className="mt-auto">
                      <Separator className="mb-3" />
@@ -89,6 +79,79 @@ export function AppShell({ children }: { children: React.ReactNode }) {
          </div>
          <Toaster richColors closeButton />
       </>
+   );
+}
+
+function SidebarTargets() {
+   const t = useTranslations('targets');
+   const common = useTranslations('common');
+   const { status, entries, reload } = useTargets();
+
+   if (status === 'loading') {
+      return (
+         <div className="flex flex-col gap-1">
+            <Skeleton className="h-10 rounded-md" />
+            <Skeleton className="h-10 rounded-md" />
+         </div>
+      );
+   }
+
+   if (status === 'error') {
+      return (
+         <div className="flex flex-col items-stretch gap-2 sm:px-3">
+            <span className="hidden text-xs sm:block">{t('loadError')}</span>
+            <Button type="button" variant="outline" size="sm" onClick={reload}>
+               <RefreshCw data-icon="inline-start" />
+               <span className="hidden sm:block">{common('retry')}</span>
+            </Button>
+         </div>
+      );
+   }
+
+   if (entries.length === 0) {
+      return <div className="text-muted-foreground hidden px-3 text-xs sm:block">{t('empty')}</div>;
+   }
+
+   return (
+      <div className="flex flex-col gap-3">
+         {entries.map((entry) => (
+            <SidebarTargetSection key={entry.target.id} entry={entry} />
+         ))}
+      </div>
+   );
+}
+
+function SidebarTargetSection({ entry }: { entry: TargetListEntry }) {
+   const t = useTranslations('targets');
+   const target = entry.target;
+   const TargetIcon = target.kind === 'remote' ? Wifi : Monitor;
+
+   if (target.status !== 'ready') {
+      return (
+         <div
+            className="text-muted-foreground flex h-10 items-center justify-center gap-3 rounded-md px-0 text-sm font-medium sm:justify-start sm:px-3"
+            title={target.name}
+         >
+            <TargetIcon className="size-4 shrink-0" />
+            <span className="hidden min-w-0 flex-1 truncate sm:block">{target.name}</span>
+            <span className="hidden shrink-0 text-xs sm:block">{t(`status.${target.status}`)}</span>
+         </div>
+      );
+   }
+
+   return (
+      <div className="flex flex-col gap-1">
+         <div className="text-muted-foreground hidden items-center px-3 text-xs font-medium sm:flex" title={target.name}>
+            <span className="min-w-0 truncate">{target.name}</span>
+         </div>
+         {entry.installs.map((install) => (
+            <SidebarButton key={install.id}>
+               <TargetIcon className="size-4 shrink-0" />
+               <span className="hidden min-w-0 flex-1 truncate sm:block">{install.name ?? install.version}</span>
+            </SidebarButton>
+         ))}
+         {entry.installs.length === 0 ? <div className="text-muted-foreground hidden px-3 text-xs sm:block">{t('noVersions')}</div> : null}
+      </div>
    );
 }
 

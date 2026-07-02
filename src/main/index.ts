@@ -4,6 +4,7 @@ import { app, BrowserWindow, session, shell } from 'electron';
 import { createAppIpcModule } from '@/main/ipc/modules/app-ipc';
 import { createOperationsIpcModule } from '@/main/ipc/modules/operations-ipc';
 import { createSettingsIpcModule } from '@/main/ipc/modules/settings-ipc';
+import { createTargetsIpcModule } from '@/main/ipc/modules/targets-ipc';
 import { createUpdateIpcModule } from '@/main/ipc/modules/update-ipc';
 import { registerIpcModules } from '@/main/ipc/register-ipc-modules';
 import { createOperationRegistry } from '@/main/operations/operation-registry';
@@ -49,6 +50,7 @@ function registerIpcHandlers() {
    registerIpcModules([
       createAppIpcModule(),
       createSettingsIpcModule(settingsStore),
+      createTargetsIpcModule(),
       createUpdateIpcModule(),
       createOperationsIpcModule(operationRegistry, {
          demoEnabled: is.dev

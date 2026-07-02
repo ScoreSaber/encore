@@ -13,6 +13,17 @@
       "home": "Home",
       "settings": "Settings"
    },
+   "targets": {
+      "remotePlaceholderName": "Remote device",
+      "status": {
+         "ready": "Ready",
+         "unpaired": "Unpaired",
+         "disconnected": "Disconnected"
+      },
+      "noVersions": "No versions",
+      "empty": "No devices",
+      "loadError": "Versions unavailable"
+   },
    "updates": {
       "checking": "Checking for updates",
       "available": "Update available",

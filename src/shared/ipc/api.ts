@@ -10,6 +10,7 @@ import type {
    OperationSnapshot
 } from '@/shared/operations';
 import type { AppSettingsPatch, LibrarySettingsPatch, SettingsSnapshot } from '@/shared/settings';
+import type { InstallSummary, Target, TargetEvent, TargetHealth, TargetId } from '@/shared/targets';
 
 export type EncoreApi = {
    platform: AppPlatform;
@@ -20,6 +21,12 @@ export type EncoreApi = {
       getSnapshot: () => Promise<SettingsSnapshot>;
       updateApp: (patch: AppSettingsPatch) => Promise<SettingsWriteResult>;
       updateLibrary: (patch: LibrarySettingsPatch) => Promise<SettingsWriteResult>;
+   };
+   targets: {
+      list: () => Promise<Target[]>;
+      listInstalls: (targetId: TargetId) => Promise<InstallSummary[]>;
+      getHealth: (targetId: TargetId) => Promise<TargetHealth | null>;
+      onEvent: (listener: (event: TargetEvent) => void) => () => void;
    };
    update: {
       getSnapshot: () => Promise<UpdateSnapshot>;
