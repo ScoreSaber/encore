@@ -9,6 +9,7 @@ import {
    createDefaultLibrarySettings,
    type SettingsSnapshot
 } from '@/shared/settings';
+import type { InstallSummary, Target } from '@/shared/targets';
 
 const browserFallbackInfo: AppInfo = {
    name: 'Encore',
@@ -42,6 +43,21 @@ const browserFallbackDemoStart: OperationDemoStartResult = {
       message: 'demo operations run in Electron development builds'
    }
 };
+const browserFallbackTarget: Target = {
+   id: 'local',
+   kind: 'local',
+   name: 'Browser',
+   status: 'ready',
+   capabilities: ['list-installs']
+};
+const browserFallbackInstalls: InstallSummary[] = [
+   {
+      id: 'local-1.40.8',
+      targetId: browserFallbackTarget.id,
+      version: '1.40.8',
+      store: null
+   }
+];
 let browserFallbackSettings = createBrowserFallbackSettings();
 
 const browserFallbackApi = {
@@ -83,6 +99,20 @@ const browserFallbackApi = {
             value: browserFallbackSettings
          });
       }
+   },
+   targets: {
+      list: () => Promise.resolve([browserFallbackTarget]),
+      listInstalls: (targetId) => Promise.resolve(targetId === browserFallbackTarget.id ? browserFallbackInstalls : []),
+      getHealth: (targetId) =>
+         Promise.resolve(
+            targetId === browserFallbackTarget.id
+               ? {
+                    status: browserFallbackTarget.status,
+                    capabilities: browserFallbackTarget.capabilities
+                 }
+               : null
+         ),
+      onEvent: () => () => {}
    },
    update: {
       getSnapshot: () => Promise.resolve(browserFallbackUpdate),

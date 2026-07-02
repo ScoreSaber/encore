@@ -1,11 +1,12 @@
 import { z } from 'zod';
 
 import { defaultLocale, localeSchema } from '@/i18n/config';
+import { storeKindSchema } from '@/shared/targets';
 import { themeSchema } from '@/shared/ui-adjacent/theme';
 
+export { storeKindSchema, storeKinds, type StoreKind } from '@/shared/targets';
+
 export const settingsSchemaVersion = 1;
-export const storeKindSchema = z.enum(['steam', 'oculus']);
-export const storeKinds = storeKindSchema.options;
 
 export const pairedDeviceSchema = z.object({
    id: z.string(),
@@ -51,7 +52,6 @@ export const librarySettingsPatchSchema = z.object({
 const emptyAppSettingsPatch = {};
 const emptyLibrarySettingsPatch = {};
 
-export type StoreKind = z.infer<typeof storeKindSchema>;
 export type PairedDevice = z.infer<typeof pairedDeviceSchema>;
 export type ReceiverSettings = z.infer<typeof receiverSettingsSchema>;
 export type AppSettings = z.infer<typeof appSettingsSchema>;
