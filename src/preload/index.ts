@@ -4,6 +4,19 @@ import type { EncoreApi } from '@/shared/ipc/api';
 import type { AnyIpcEventDefinition, IpcEventPayload, IpcInvokeArgs, IpcRequestDefinition, IpcResponse } from '@/shared/ipc/core';
 import { appInfoQuery } from '@/shared/ipc/modules/app';
 import { operationCancelCommand, operationDemoStartCommand, operationListQuery, operationSnapshotEvent } from '@/shared/ipc/modules/operations';
+import {
+   receiverRemoteDisconnectCommand,
+   receiverRemotePairCommand,
+   receiverRemoteTargetChangedEvent,
+   receiverRemoteTargetHealthQuery,
+   receiverRemoteTargetInstallsQuery,
+   receiverRemoteTargetsQuery,
+   receiverRenameDeviceCommand,
+   receiverRevokeDeviceCommand,
+   receiverStartPairingCommand,
+   receiverStateChangedEvent,
+   receiverStateQuery
+} from '@/shared/ipc/modules/receiver';
 import { settingsSnapshotQuery, settingsUpdateAppCommand, settingsUpdateLibraryCommand } from '@/shared/ipc/modules/settings';
 import { targetChangedEvent, targetHealthQuery, targetInstallsQuery, targetListQuery } from '@/shared/ipc/modules/targets';
 import { updateCheckCommand, updateInfoQuery, updateInstallCommand, updateStatusEvent } from '@/shared/ipc/modules/update';
@@ -32,6 +45,19 @@ const encoreApi = {
       getSnapshot: () => invokeIpc(settingsSnapshotQuery),
       updateApp: (patch) => invokeIpc(settingsUpdateAppCommand, patch),
       updateLibrary: (patch) => invokeIpc(settingsUpdateLibraryCommand, patch)
+   },
+   receiver: {
+      getState: () => invokeIpc(receiverStateQuery),
+      startPairing: () => invokeIpc(receiverStartPairingCommand),
+      renameDevice: (request) => invokeIpc(receiverRenameDeviceCommand, request),
+      revokeDevice: (request) => invokeIpc(receiverRevokeDeviceCommand, request),
+      pairRemote: (request) => invokeIpc(receiverRemotePairCommand, request),
+      disconnectRemote: (targetId) => invokeIpc(receiverRemoteDisconnectCommand, { targetId }),
+      listRemoteTargets: () => invokeIpc(receiverRemoteTargetsQuery),
+      listRemoteInstalls: (targetId) => invokeIpc(receiverRemoteTargetInstallsQuery, { targetId }),
+      getRemoteHealth: (targetId) => invokeIpc(receiverRemoteTargetHealthQuery, { targetId }),
+      onStateChanged: (listener) => onIpc(receiverStateChangedEvent, listener),
+      onRemoteTargetEvent: (listener) => onIpc(receiverRemoteTargetChangedEvent, listener)
    },
    targets: {
       list: () => invokeIpc(targetListQuery),

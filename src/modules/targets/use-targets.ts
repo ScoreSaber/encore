@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useTranslations } from 'use-intl';
-
 import { createLocalTargetClient } from '@/modules/targets/local-target-client';
-import { createRemotePlaceholderTargetClient } from '@/modules/targets/remote-target-client';
+import { createRemoteReceiverTargetClient } from '@/modules/targets/remote-target-client';
 import type { InstallSummary, Target, TargetEvent } from '@/shared/targets';
 
 export type TargetListEntry = {
@@ -14,8 +12,7 @@ export type TargetListEntry = {
 export type TargetsLoadStatus = 'error' | 'loading' | 'ready';
 
 export function useTargets() {
-   const t = useTranslations('targets');
-   const clients = useMemo(() => [createLocalTargetClient(), createRemotePlaceholderTargetClient({ name: t('remotePlaceholderName') })], [t]);
+   const clients = useMemo(() => [createLocalTargetClient(), createRemoteReceiverTargetClient()], []);
    const [entries, setEntries] = useState<TargetListEntry[]>([]);
    const [status, setStatus] = useState<TargetsLoadStatus>('loading');
    const [reloadToken, setReloadToken] = useState(0);

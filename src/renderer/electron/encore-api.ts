@@ -2,6 +2,7 @@ import type { EncoreApi } from '@/shared/ipc/api';
 import type { AppInfo } from '@/shared/ipc/modules/app';
 import type { UpdateSnapshot } from '@/shared/ipc/modules/update';
 import type { OperationCancelResult, OperationDemoStartResult } from '@/shared/operations';
+import type { ReceiverState } from '@/shared/receiver';
 import {
    applyAppSettingsPatch,
    applyLibrarySettingsPatch,
@@ -49,6 +50,12 @@ const browserFallbackTarget: Target = {
    name: 'Browser',
    status: 'ready',
    capabilities: ['list-installs']
+};
+const browserFallbackReceiverState: ReceiverState = {
+   enabled: false,
+   status: 'disabled',
+   addresses: [],
+   pairing: null
 };
 const browserFallbackInstalls: InstallSummary[] = [
    {
@@ -99,6 +106,48 @@ const browserFallbackApi = {
             value: browserFallbackSettings
          });
       }
+   },
+   receiver: {
+      getState: () => Promise.resolve(browserFallbackReceiverState),
+      startPairing: () =>
+         Promise.resolve({
+            ok: false,
+            error: {
+               code: 'receiver.browser.unavailable',
+               message: 'receiver runs in Electron'
+            }
+         }),
+      renameDevice: () =>
+         Promise.resolve({
+            ok: true,
+            value: browserFallbackReceiverState
+         }),
+      revokeDevice: () =>
+         Promise.resolve({
+            ok: true,
+            value: browserFallbackReceiverState
+         }),
+      pairRemote: () =>
+         Promise.resolve({
+            ok: false,
+            error: {
+               code: 'receiver.browser.unavailable',
+               message: 'remote receivers run in Electron'
+            }
+         }),
+      disconnectRemote: () =>
+         Promise.resolve({
+            ok: false,
+            error: {
+               code: 'receiver.browser.unavailable',
+               message: 'remote receivers run in Electron'
+            }
+         }),
+      listRemoteTargets: () => Promise.resolve([]),
+      listRemoteInstalls: () => Promise.resolve([]),
+      getRemoteHealth: () => Promise.resolve(null),
+      onStateChanged: () => () => {},
+      onRemoteTargetEvent: () => () => {}
    },
    targets: {
       list: () => Promise.resolve([browserFallbackTarget]),

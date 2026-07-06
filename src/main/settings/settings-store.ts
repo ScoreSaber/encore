@@ -41,6 +41,8 @@ type LoadedSettings = {
    problem?: SettingsProblem;
 };
 
+type SettingsListener = (snapshot: SettingsSnapshot) => void;
+
 export type SettingsStore = ReturnType<typeof createSettingsStore>;
 
 export function createSettingsStore(options: SettingsStoreOptions) {
@@ -51,6 +53,7 @@ export function createSettingsStore(options: SettingsStoreOptions) {
    });
    let loadedSettings: LoadedSettings | null = null;
    let writeQueue = Promise.resolve();
+   const listeners = new Set<SettingsListener>();
 
    async function getSnapshot() {
       const settings = await loadSettings();
@@ -100,7 +103,7 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       });
 
       if (Result.isError(readResult)) {
-         loadedSettings = createDefaultSettings(isMissingFile(readResult.error) ? undefined : readResult.error);
+         loadedSettings = createDefaultSettings(readResult.error.detail === 'ENOENT' ? undefined : readResult.error);
          return loadedSettings;
       }
 
@@ -136,10 +139,12 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       }
 
       loadedSettings = settings;
+      const snapshot = createSnapshot(settings);
+      emit(snapshot);
 
       return {
          ok: true,
-         value: createSnapshot(settings)
+         value: snapshot
       };
    }
 
@@ -209,21 +214,31 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       };
    }
 
+   function subscribe(listener: SettingsListener) {
+      listeners.add(listener);
+
+      return () => {
+         listeners.delete(listener);
+      };
+   }
+
+   function emit(snapshot: SettingsSnapshot) {
+      for (const listener of listeners) {
+         listener(snapshot);
+      }
+   }
+
    return {
       getSnapshot,
       updateAppSettings,
-      updateLibrarySettings
+      updateLibrarySettings,
+      subscribe
    };
-}
-
-function isMissingFile(problem: SettingsProblem) {
-   return problem.detail === 'ENOENT';
 }
 
 function errorDetail(cause: unknown) {
    if (cause && typeof cause === 'object' && 'detail' in cause && typeof cause.detail === 'string') return cause.detail;
    if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') return cause.code;
-   if (cause instanceof Error && 'code' in cause && typeof cause.code === 'string') return cause.code;
    if (cause instanceof Error) return cause.message;
    return String(cause);
 }

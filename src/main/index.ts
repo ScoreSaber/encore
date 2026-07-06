@@ -3,11 +3,13 @@ import { app, BrowserWindow, session, shell } from 'electron';
 
 import { createAppIpcModule } from '@/main/ipc/modules/app-ipc';
 import { createOperationsIpcModule } from '@/main/ipc/modules/operations-ipc';
+import { createReceiverIpcModule } from '@/main/ipc/modules/receiver-ipc';
 import { createSettingsIpcModule } from '@/main/ipc/modules/settings-ipc';
 import { createTargetsIpcModule } from '@/main/ipc/modules/targets-ipc';
 import { createUpdateIpcModule } from '@/main/ipc/modules/update-ipc';
 import { registerIpcModules } from '@/main/ipc/register-ipc-modules';
 import { createOperationRegistry } from '@/main/operations/operation-registry';
+import { createReceiverServer, createRemoteReceiverClient } from '@/main/receiver';
 import { createSettingsStore } from '@/main/settings/settings-store';
 import { initializeAutoUpdates } from '@/main/updater';
 
@@ -46,10 +48,22 @@ function registerIpcHandlers() {
       platform: process.platform,
       arch: process.arch
    });
+   const receiver = createReceiverServer({
+      settingsStore
+   });
+   const remoteReceiver = createRemoteReceiverClient();
+   settingsStore.subscribe((snapshot) => {
+      void receiver.reconcile(snapshot);
+   });
+   void receiver.reconcile();
+   app.on('before-quit', () => {
+      void receiver.stop();
+   });
 
    registerIpcModules([
       createAppIpcModule(),
       createSettingsIpcModule(settingsStore),
+      createReceiverIpcModule(receiver, remoteReceiver),
       createTargetsIpcModule(),
       createUpdateIpcModule(),
       createOperationsIpcModule(operationRegistry, {

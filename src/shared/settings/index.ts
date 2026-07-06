@@ -11,6 +11,7 @@ export const settingsSchemaVersion = 1;
 export const pairedDeviceSchema = z.object({
    id: z.string(),
    name: z.string(),
+   tokenHash: z.string(),
    pairedAt: z.string(),
    lastSeenAt: z.string().optional()
 });

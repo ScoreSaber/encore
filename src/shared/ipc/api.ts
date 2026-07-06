@@ -9,6 +9,16 @@ import type {
    OperationId,
    OperationSnapshot
 } from '@/shared/operations';
+import type {
+   ReceiverActionResult,
+   ReceiverDeviceRequest,
+   ReceiverPairingResult,
+   ReceiverRemoteDisconnectResult,
+   ReceiverRemotePairRequest,
+   ReceiverRemotePairResult,
+   ReceiverRenameDeviceRequest,
+   ReceiverState
+} from '@/shared/receiver';
 import type { AppSettingsPatch, LibrarySettingsPatch, SettingsSnapshot } from '@/shared/settings';
 import type { InstallSummary, Target, TargetEvent, TargetHealth, TargetId } from '@/shared/targets';
 
@@ -21,6 +31,19 @@ export type EncoreApi = {
       getSnapshot: () => Promise<SettingsSnapshot>;
       updateApp: (patch: AppSettingsPatch) => Promise<SettingsWriteResult>;
       updateLibrary: (patch: LibrarySettingsPatch) => Promise<SettingsWriteResult>;
+   };
+   receiver: {
+      getState: () => Promise<ReceiverState>;
+      startPairing: () => Promise<ReceiverPairingResult>;
+      renameDevice: (request: ReceiverRenameDeviceRequest) => Promise<ReceiverActionResult>;
+      revokeDevice: (request: ReceiverDeviceRequest) => Promise<ReceiverActionResult>;
+      pairRemote: (request: ReceiverRemotePairRequest) => Promise<ReceiverRemotePairResult>;
+      disconnectRemote: (targetId: TargetId) => Promise<ReceiverRemoteDisconnectResult>;
+      listRemoteTargets: () => Promise<Target[]>;
+      listRemoteInstalls: (targetId: TargetId) => Promise<InstallSummary[]>;
+      getRemoteHealth: (targetId: TargetId) => Promise<TargetHealth | null>;
+      onStateChanged: (listener: (state: ReceiverState) => void) => () => void;
+      onRemoteTargetEvent: (listener: (event: TargetEvent) => void) => () => void;
    };
    targets: {
       list: () => Promise<Target[]>;

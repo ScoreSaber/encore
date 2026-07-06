@@ -49,8 +49,8 @@ function startDemoOperation(
       };
    }
 
-   const steps = clampWholeNumber(request.steps, minDemoSteps, maxDemoSteps, defaultDemoSteps);
-   const intervalMs = clampWholeNumber(request.intervalMs, minDemoIntervalMs, maxDemoIntervalMs, defaultDemoIntervalMs);
+   const steps = Math.min(maxDemoSteps, Math.max(minDemoSteps, Math.round(request.steps ?? defaultDemoSteps)));
+   const intervalMs = Math.min(maxDemoIntervalMs, Math.max(minDemoIntervalMs, Math.round(request.intervalMs ?? defaultDemoIntervalMs)));
    let currentStep = 0;
    let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -92,7 +92,7 @@ function startDemoOperation(
          return;
       }
 
-      if (request.outcome === 'fail' && shouldFailDemo(currentStep, steps)) {
+      if (request.outcome === 'fail' && currentStep >= Math.max(1, Math.ceil(steps / 2))) {
          clearInterval(interval);
          registry.fail(operation.id, {
             code: 'operations.demo.failed',
@@ -113,14 +113,4 @@ function startDemoOperation(
       ok: true,
       operation
    };
-}
-
-function shouldFailDemo(currentStep: number, steps: number) {
-   return currentStep >= Math.max(1, Math.ceil(steps / 2));
-}
-
-function clampWholeNumber(value: number | undefined, min: number, max: number, fallback: number) {
-   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
-
-   return Math.min(max, Math.max(min, Math.round(value)));
 }
