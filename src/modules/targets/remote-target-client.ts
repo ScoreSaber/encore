@@ -22,6 +22,8 @@ export function createRemotePlaceholderTargetClient(options: { name: string }): 
                  }
                : null
          ),
+      getStoreDetection: () => Promise.resolve(null),
+      rescanStores: () => Promise.resolve(null),
       onEvent: () => () => {}
    };
 }

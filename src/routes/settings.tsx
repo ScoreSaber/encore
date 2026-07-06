@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { AlertTriangle, Check, Moon, RefreshCw, Sun, SunMoon } from 'lucide-react';
+import { AlertTriangle, Check, Info, Moon, RefreshCw, ShieldCheck, Sun, SunMoon } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -15,8 +15,16 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { localeNames, locales } from '@/i18n/config';
 import { useLocale } from '@/i18n/locale-provider';
 import { useSettings } from '@/modules/settings/settings-provider';
+import { useStoreDetection } from '@/modules/targets/use-store-detection';
 import type { StoreKind } from '@/shared/settings';
 import { storeKindSchema, storeKinds } from '@/shared/settings';
+import type {
+   StoreDetectionDiagnostic,
+   StoreDetectionSnapshot,
+   StoreDetectionStatus,
+   StoreDetectionStoreSummary,
+   StoreInstallCandidate
+} from '@/shared/targets';
 import { themes, type Theme } from '@/shared/ui-adjacent/theme';
 import { useTheme } from '@/shared/ui-adjacent/theme-provider';
 
@@ -29,6 +37,7 @@ function SettingsRoute() {
    const t = useTranslations('settings');
    const common = useTranslations('common');
    const settings = useSettings();
+   const storeDetection = useStoreDetection();
    const { locale, setLocale } = useLocale();
    const { theme, setTheme } = useTheme();
    const snapshot = settings.snapshot;
@@ -171,6 +180,8 @@ function SettingsRoute() {
                </SettingsRow>
             </SettingsSection>
 
+            <StoreDetectionSection detection={storeDetection} />
+
             <SettingsSection title={t('receiver.title')} description={t('receiver.description')}>
                <SettingsRow label={t('receiver.enabled')} htmlFor="settings-receiver-enabled" description={t('receiver.enabledDescription')}>
                   <Switch
@@ -262,6 +273,208 @@ function LoadingCard({ rows }: { rows: number }) {
          </CardContent>
       </Card>
    );
+}
+
+type StoreDetectionViewModel = ReturnType<typeof useStoreDetection>;
+
+const diagnosticMessageKeys = {
+   'oculus.beat-saber-missing': 'storeDetection.diagnostics.oculusBeatSaberMissing',
+   'oculus.detected': 'storeDetection.diagnostics.oculusDetected',
+   'oculus.libraries-missing': 'storeDetection.diagnostics.oculusLibrariesMissing',
+   'oculus.registry-read-failed': 'storeDetection.diagnostics.oculusRegistryReadFailed',
+   'oculus.unsupported-platform': 'storeDetection.diagnostics.oculusUnsupportedPlatform',
+   'steam.beat-saber-missing': 'storeDetection.diagnostics.steamBeatSaberMissing',
+   'steam.detected': 'storeDetection.diagnostics.steamDetected',
+   'steam.libraryfolders-missing': 'storeDetection.diagnostics.steamLibraryfoldersMissing',
+   'steam.libraryfolders-read-failed': 'storeDetection.diagnostics.steamLibraryfoldersReadFailed',
+   'steam.root-missing': 'storeDetection.diagnostics.steamRootMissing',
+   'steam.unsupported-platform': 'storeDetection.diagnostics.steamUnsupportedPlatform'
+} satisfies Record<StoreDetectionDiagnostic['code'], string>;
+
+function StoreDetectionSection({ detection }: { detection: StoreDetectionViewModel }) {
+   const t = useTranslations('settings');
+   const common = useTranslations('common');
+   const snapshot = detection.snapshot;
+   const isScanning = detection.scanStatus === 'scanning';
+   const isLoading = detection.loadStatus === 'loading';
+
+   return (
+      <SettingsSection title={t('storeDetection.title')} description={t('storeDetection.description')}>
+         <SettingsRow
+            label={t('storeDetection.scan.title')}
+            description={
+               snapshot ? t('storeDetection.scan.lastScanned', { time: formatScanTime(snapshot.scannedAt) }) : t('storeDetection.scan.description')
+            }
+         >
+            <Button type="button" variant="outline" size="sm" disabled={isLoading || isScanning} onClick={() => void detection.rescan()}>
+               <RefreshCw data-icon="inline-start" className={isScanning ? 'animate-spin' : undefined} />
+               {t('storeDetection.rescan')}
+            </Button>
+         </SettingsRow>
+
+         {detection.loadStatus === 'error' ? (
+            <SettingsRow
+               label={t('storeDetection.unavailable.title')}
+               description={t('storeDetection.unavailable.description')}
+               controlClassName="flex w-full min-w-0 justify-start @md/field-group:w-72 @md/field-group:justify-end"
+            >
+               <Button type="button" variant="outline" size="sm" onClick={detection.reload}>
+                  <RefreshCw data-icon="inline-start" />
+                  {common('retry')}
+               </Button>
+            </SettingsRow>
+         ) : null}
+
+         {isLoading ? <StoreDetectionLoading /> : null}
+
+         {!isLoading && snapshot ? (
+            <>
+               <SettingsRow
+                  label={t('storeDetection.installs.title')}
+                  description={t('storeDetection.installs.description')}
+                  controlClassName="flex w-full min-w-0 justify-start @md/field-group:w-[28rem]"
+               >
+                  <StoreInstallList candidates={snapshot.candidates} />
+               </SettingsRow>
+
+               <SettingsRow
+                  label={t('storeDetection.libraries.title')}
+                  description={t('storeDetection.libraries.description')}
+                  controlClassName="flex w-full min-w-0 justify-start @md/field-group:w-[28rem]"
+               >
+                  <StoreLibraryList stores={snapshot.stores} />
+               </SettingsRow>
+
+               <SettingsRow
+                  label={t('storeDetection.diagnostics.title')}
+                  description={t('storeDetection.diagnostics.description')}
+                  controlClassName="flex w-full min-w-0 justify-start @md/field-group:w-[28rem]"
+               >
+                  <StoreDiagnosticsList diagnostics={snapshot.diagnostics} />
+               </SettingsRow>
+            </>
+         ) : null}
+      </SettingsSection>
+   );
+}
+
+function StoreDetectionLoading() {
+   const t = useTranslations('settings');
+
+   return (
+      <SettingsRow label={t('storeDetection.loading')} controlClassName="flex w-full min-w-0 justify-start @md/field-group:w-[28rem]">
+         <div className="flex w-full flex-col gap-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-5/6" />
+         </div>
+      </SettingsRow>
+   );
+}
+
+function StoreInstallList({ candidates }: { candidates: StoreInstallCandidate[] }) {
+   const t = useTranslations('settings');
+
+   if (candidates.length === 0) {
+      return <Badge variant="outline">{t('storeDetection.installs.empty')}</Badge>;
+   }
+
+   return (
+      <div className="flex w-full flex-col gap-2">
+         {candidates.map((candidate) => (
+            <div key={candidate.id} className="bg-background/50 min-w-0 rounded-md border px-3 py-2 text-sm">
+               <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="min-w-0 flex-1 font-medium">{t('storeDetection.installName', { store: t(`store.${candidate.store}`) })}</span>
+                  <Badge variant="secondary">
+                     <ShieldCheck />
+                     {t('storeDetection.protected')}
+                  </Badge>
+                  <Badge variant="outline">{t('storeDetection.readOnly')}</Badge>
+               </div>
+               <div className="text-muted-foreground mt-1 text-xs break-all">{candidate.path}</div>
+            </div>
+         ))}
+      </div>
+   );
+}
+
+function StoreLibraryList({ stores }: { stores: StoreDetectionStoreSummary[] }) {
+   return (
+      <div className="divide-border flex w-full flex-col divide-y rounded-md border">
+         {stores.map((store) => (
+            <StoreLibraryGroup key={store.store} store={store} />
+         ))}
+      </div>
+   );
+}
+
+function StoreLibraryGroup({ store }: { store: StoreDetectionStoreSummary }) {
+   const t = useTranslations('settings');
+
+   return (
+      <div className="flex min-w-0 flex-col gap-2 px-3 py-2 text-sm">
+         <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="min-w-0 flex-1 font-medium">{t(`store.${store.store}`)}</span>
+            <Badge variant={storeStatusVariant(store.status)}>{t(`storeDetection.status.${store.status}`)}</Badge>
+         </div>
+         {store.clientPath ? (
+            <div className="text-muted-foreground text-xs break-all">{t('storeDetection.clientPath', { path: store.clientPath })}</div>
+         ) : null}
+         {store.libraries.length > 0 ? (
+            <div className="flex flex-col gap-1">
+               {store.libraries.map((library) => (
+                  <div key={library.id} className="text-muted-foreground flex min-w-0 flex-col gap-1 text-xs">
+                     <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="min-w-0 flex-1 break-all">{library.path}</span>
+                        {library.isDefault ? <Badge variant="outline">{t('storeDetection.defaultLibrary')}</Badge> : null}
+                        {library.hasBeatSaber ? <Badge variant="secondary">{t('storeDetection.containsBeatSaber')}</Badge> : null}
+                     </div>
+                  </div>
+               ))}
+            </div>
+         ) : (
+            <div className="text-muted-foreground text-xs">{t('storeDetection.libraries.empty')}</div>
+         )}
+      </div>
+   );
+}
+
+function StoreDiagnosticsList({ diagnostics }: { diagnostics: StoreDetectionDiagnostic[] }) {
+   const t = useTranslations('settings');
+
+   if (diagnostics.length === 0) {
+      return <Badge variant="outline">{t('storeDetection.diagnostics.empty')}</Badge>;
+   }
+
+   return (
+      <div className="flex w-full flex-col gap-2">
+         {diagnostics.map((diagnostic) => {
+            const Icon = diagnostic.severity === 'info' ? Info : AlertTriangle;
+
+            return (
+               <div key={diagnostic.id} className="bg-background/50 flex min-w-0 gap-2 rounded-md border px-3 py-2 text-sm">
+                  <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                  <div className="min-w-0">
+                     <div className="font-medium">{t(`store.${diagnostic.store}`)}</div>
+                     <div className="text-muted-foreground text-xs break-words">
+                        {t(diagnosticMessageKeys[diagnostic.code], { path: diagnostic.path ?? '' })}
+                     </div>
+                  </div>
+               </div>
+            );
+         })}
+      </div>
+   );
+}
+
+function storeStatusVariant(status: StoreDetectionStatus) {
+   if (status === 'detected') return 'default';
+   if (status === 'error') return 'destructive';
+   if (status === 'unsupported') return 'outline';
+   return 'secondary';
+}
+
+function formatScanTime(scannedAt: StoreDetectionSnapshot['scannedAt']) {
+   return new Date(scannedAt).toLocaleString();
 }
 
 function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {

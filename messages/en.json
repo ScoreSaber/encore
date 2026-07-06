@@ -15,6 +15,11 @@
    },
    "targets": {
       "remotePlaceholderName": "Remote device",
+      "officialInstall": "{store} Beat Saber",
+      "store": {
+         "steam": "Steam",
+         "oculus": "Oculus PC"
+      },
       "status": {
          "ready": "Ready",
          "unpaired": "Unpaired",
@@ -62,6 +67,59 @@
       "store": {
          "steam": "Steam",
          "oculus": "Oculus PC"
+      },
+      "storeDetection": {
+         "title": "Store detection",
+         "description": "Official local Steam and Oculus PC installs Encore can inspect",
+         "rescan": "Rescan",
+         "loading": "Checking stores",
+         "installName": "{store} Beat Saber",
+         "protected": "Protected",
+         "readOnly": "Read-only",
+         "clientPath": "Client: {path}",
+         "defaultLibrary": "Default",
+         "containsBeatSaber": "Beat Saber",
+         "scan": {
+            "title": "Scan",
+            "description": "Check this device for supported local PC stores",
+            "lastScanned": "Last checked {time}"
+         },
+         "status": {
+            "detected": "Detected",
+            "error": "Error",
+            "missing": "Missing",
+            "unsupported": "Unsupported"
+         },
+         "installs": {
+            "title": "Detected installs",
+            "description": "Official installs are protected and read-only",
+            "empty": "No official installs detected"
+         },
+         "libraries": {
+            "title": "Stores and libraries",
+            "description": "Detected store clients and library folders",
+            "empty": "No libraries detected"
+         },
+         "diagnostics": {
+            "title": "Diagnostics",
+            "description": "What Encore found during detection",
+            "empty": "No diagnostics",
+            "steamUnsupportedPlatform": "Steam local PC detection is supported on Windows and Linux only.",
+            "steamRootMissing": "Steam was not found on this device.",
+            "steamLibraryfoldersMissing": "Steam was found but library data is missing at {path}.",
+            "steamLibraryfoldersReadFailed": "Steam library data could not be read at {path}.",
+            "steamBeatSaberMissing": "No Steam Beat Saber install was found.",
+            "steamDetected": "Steam Beat Saber was found at {path}.",
+            "oculusUnsupportedPlatform": "Oculus PC local detection is supported on Windows only.",
+            "oculusLibrariesMissing": "Oculus PC libraries were not found on this device.",
+            "oculusRegistryReadFailed": "Oculus PC library data could not be read.",
+            "oculusBeatSaberMissing": "No Oculus PC Beat Saber install was found.",
+            "oculusDetected": "Oculus PC Beat Saber was found at {path}."
+         },
+         "unavailable": {
+            "title": "Store detection unavailable",
+            "description": "Encore could not read the current store snapshot."
+         }
       },
       "receiver": {
          "title": "Receiver",

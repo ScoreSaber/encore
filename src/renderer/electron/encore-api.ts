@@ -9,7 +9,15 @@ import {
    createDefaultLibrarySettings,
    type SettingsSnapshot
 } from '@/shared/settings';
-import type { InstallSummary, Target } from '@/shared/targets';
+import {
+   localTargetId,
+   storeKinds,
+   type InstallSummary,
+   type StoreDetectionDiagnostic,
+   type StoreDetectionSnapshot,
+   type StoreKind,
+   type Target
+} from '@/shared/targets';
 
 const browserFallbackInfo: AppInfo = {
    name: 'Encore',
@@ -44,20 +52,26 @@ const browserFallbackDemoStart: OperationDemoStartResult = {
    }
 };
 const browserFallbackTarget: Target = {
-   id: 'local',
+   id: localTargetId,
    kind: 'local',
    name: 'Browser',
    status: 'ready',
-   capabilities: ['list-installs']
+   capabilities: ['detect-stores', 'list-installs']
 };
-const browserFallbackInstalls: InstallSummary[] = [
-   {
-      id: 'local-1.40.8',
-      targetId: browserFallbackTarget.id,
-      version: '1.40.8',
-      store: null
-   }
-];
+const browserFallbackInstalls: InstallSummary[] = [];
+const browserFallbackStoreDetection: StoreDetectionSnapshot = {
+   targetId: browserFallbackTarget.id,
+   platform: 'browser',
+   scannedAt: new Date(0).toISOString(),
+   stores: storeKinds.map((store) => ({
+      store,
+      status: 'unsupported',
+      libraries: [],
+      diagnostics: [createBrowserStoreDiagnostic(store)]
+   })),
+   candidates: [],
+   diagnostics: storeKinds.map(createBrowserStoreDiagnostic)
+};
 let browserFallbackSettings = createBrowserFallbackSettings();
 
 const browserFallbackApi = {
@@ -112,6 +126,8 @@ const browserFallbackApi = {
                  }
                : null
          ),
+      getStoreDetection: (targetId) => Promise.resolve(targetId === browserFallbackTarget.id ? browserFallbackStoreDetection : null),
+      rescanStores: (targetId) => Promise.resolve(targetId === browserFallbackTarget.id ? browserFallbackStoreDetection : null),
       onEvent: () => () => {}
    },
    update: {
@@ -130,6 +146,15 @@ const browserFallbackApi = {
 
 export function getEncoreApi() {
    return window.encore ?? browserFallbackApi;
+}
+
+function createBrowserStoreDiagnostic(store: StoreKind): StoreDetectionDiagnostic {
+   return {
+      id: `${store}:unsupported-browser`,
+      store,
+      severity: 'info',
+      code: store === 'steam' ? 'steam.unsupported-platform' : 'oculus.unsupported-platform'
+   };
 }
 
 function createBrowserFallbackSettings(): SettingsSnapshot {
