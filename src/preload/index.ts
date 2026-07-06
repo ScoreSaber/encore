@@ -18,7 +18,14 @@ import {
    receiverStateQuery
 } from '@/shared/ipc/modules/receiver';
 import { settingsSnapshotQuery, settingsUpdateAppCommand, settingsUpdateLibraryCommand } from '@/shared/ipc/modules/settings';
-import { targetChangedEvent, targetHealthQuery, targetInstallsQuery, targetListQuery } from '@/shared/ipc/modules/targets';
+import {
+   targetChangedEvent,
+   targetHealthQuery,
+   targetInstallsQuery,
+   targetListQuery,
+   targetStoreDetectionQuery,
+   targetStoreRescanCommand
+} from '@/shared/ipc/modules/targets';
 import { updateCheckCommand, updateInfoQuery, updateInstallCommand, updateStatusEvent } from '@/shared/ipc/modules/update';
 
 function invokeIpc<Definition extends IpcRequestDefinition>(definition: Definition, ...args: IpcInvokeArgs<Definition>) {
@@ -63,6 +70,8 @@ const encoreApi = {
       list: () => invokeIpc(targetListQuery),
       listInstalls: (targetId) => invokeIpc(targetInstallsQuery, { targetId }),
       getHealth: (targetId) => invokeIpc(targetHealthQuery, { targetId }),
+      getStoreDetection: (targetId) => invokeIpc(targetStoreDetectionQuery, { targetId }),
+      rescanStores: (targetId) => invokeIpc(targetStoreRescanCommand, { targetId }),
       onEvent: (listener) => onIpc(targetChangedEvent, listener)
    },
    update: {

@@ -82,5 +82,9 @@ function applyTargetEvent(entries: TargetListEntry[], event: TargetEvent): Targe
       return entries.map((entry) => (entry.target.id === event.target.id ? { ...entry, target: event.target } : entry));
    }
 
-   return entries.map((entry) => (entry.target.id === event.targetId ? { ...entry, installs: event.installs } : entry));
+   if (event.type === 'installs-updated') {
+      return entries.map((entry) => (entry.target.id === event.targetId ? { ...entry, installs: event.installs } : entry));
+   }
+
+   return entries;
 }

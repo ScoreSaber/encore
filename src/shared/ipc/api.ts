@@ -20,7 +20,7 @@ import type {
    ReceiverState
 } from '@/shared/receiver';
 import type { AppSettingsPatch, LibrarySettingsPatch, SettingsSnapshot } from '@/shared/settings';
-import type { InstallSummary, Target, TargetEvent, TargetHealth, TargetId } from '@/shared/targets';
+import type { InstallSummary, StoreDetectionSnapshot, Target, TargetEvent, TargetHealth, TargetId } from '@/shared/targets';
 
 export type EncoreApi = {
    platform: AppPlatform;
@@ -49,6 +49,8 @@ export type EncoreApi = {
       list: () => Promise<Target[]>;
       listInstalls: (targetId: TargetId) => Promise<InstallSummary[]>;
       getHealth: (targetId: TargetId) => Promise<TargetHealth | null>;
+      getStoreDetection: (targetId: TargetId) => Promise<StoreDetectionSnapshot | null>;
+      rescanStores: (targetId: TargetId) => Promise<StoreDetectionSnapshot | null>;
       onEvent: (listener: (event: TargetEvent) => void) => () => void;
    };
    update: {

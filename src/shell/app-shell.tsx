@@ -147,7 +147,11 @@ function SidebarTargetSection({ entry }: { entry: TargetListEntry }) {
          {entry.installs.map((install) => (
             <SidebarButton key={install.id}>
                <TargetIcon className="size-4 shrink-0" />
-               <span className="hidden min-w-0 flex-1 truncate sm:block">{install.name ?? install.version}</span>
+               <span className="hidden min-w-0 flex-1 truncate sm:block">
+                  {install.source === 'store' && install.store
+                     ? t('officialInstall', { store: t(`store.${install.store}`) })
+                     : (install.name ?? install.version)}
+               </span>
             </SidebarButton>
          ))}
          {entry.installs.length === 0 ? <div className="text-muted-foreground hidden px-3 text-xs sm:block">{t('noVersions')}</div> : null}
