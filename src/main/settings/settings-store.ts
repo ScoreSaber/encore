@@ -1,5 +1,7 @@
 import { Result } from 'better-result';
 
+import { createDefaultInstallRoot } from '@/main/filesystem/install-root';
+import { writeJsonFileAtomic } from '@/main/filesystem/safe-json';
 import type { SettingsWriteResult } from '@/shared/ipc/modules/settings';
 import {
    applyAppSettingsPatch,
@@ -21,11 +23,10 @@ import {
    type StoredSettingsFile
 } from '@/shared/settings';
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const settingsFileName = 'settings.json';
-const defaultLibraryDirectoryName = 'library';
 
 type SettingsStoreOptions = {
    dataPath: string;
@@ -44,7 +45,10 @@ export type SettingsStore = ReturnType<typeof createSettingsStore>;
 
 export function createSettingsStore(options: SettingsStoreOptions) {
    const settingsPath = join(options.dataPath, settingsFileName);
-   const defaultInstallRoot = join(options.dataPath, defaultLibraryDirectoryName);
+   const defaultInstallRoot = createDefaultInstallRoot({
+      platform: options.platform,
+      userDataPath: options.dataPath
+   });
    let loadedSettings: LoadedSettings | null = null;
    let writeQueue = Promise.resolve();
 
@@ -105,31 +109,27 @@ export function createSettingsStore(options: SettingsStoreOptions) {
    }
 
    async function writeSettings(settings: LoadedSettings): Promise<SettingsWriteResult> {
-      const writeResult = await Result.tryPromise({
-         try: async () => {
-            const file: StoredSettingsFile = {
-               schemaVersion: settingsSchemaVersion,
-               app: settings.app,
-               library: settings.library
-            };
-            const temporaryPath = `${settingsPath}.tmp`;
-
-            await mkdir(options.dataPath, { recursive: true });
-            await writeFile(temporaryPath, `${JSON.stringify(file, null, 3)}\n`, 'utf8');
-            await rename(temporaryPath, settingsPath);
-         },
-         catch: (cause) => createSettingsProblem('settings.write.failed', 'failed to write settings', cause)
+      const file: StoredSettingsFile = {
+         schemaVersion: settingsSchemaVersion,
+         app: settings.app,
+         library: settings.library
+      };
+      const writeResult = await writeJsonFileAtomic(settingsPath, file, storedSettingsFileSchema, {
+         root: options.dataPath,
+         scope: 'settings'
       });
 
       if (Result.isError(writeResult)) {
+         const problem = createSettingsProblem('settings.write.failed', 'failed to write settings', writeResult.error);
+
          return {
             ok: false,
             error: {
-               code: writeResult.error.code,
-               message: writeResult.error.message,
+               code: problem.code,
+               message: problem.message,
                details: {
-                  path: writeResult.error.path,
-                  detail: writeResult.error.detail ?? null
+                  path: problem.path,
+                  detail: problem.detail ?? null
                }
             }
          };
@@ -221,6 +221,8 @@ function isMissingFile(problem: SettingsProblem) {
 }
 
 function errorDetail(cause: unknown) {
+   if (cause && typeof cause === 'object' && 'detail' in cause && typeof cause.detail === 'string') return cause.detail;
+   if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') return cause.code;
    if (cause instanceof Error && 'code' in cause && typeof cause.code === 'string') return cause.code;
    if (cause instanceof Error) return cause.message;
    return String(cause);
