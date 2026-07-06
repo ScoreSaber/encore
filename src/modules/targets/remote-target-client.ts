@@ -1,27 +1,13 @@
-import type { Target, TargetClient } from '@/shared/targets';
+import { getEncoreApi } from '@/renderer/electron/encore-api';
+import type { TargetClient } from '@/shared/targets';
 
-// static placeholder until receiver pairing lands; no network behavior
-export function createRemotePlaceholderTargetClient(options: { name: string }): TargetClient {
-   const target: Target = {
-      id: 'remote-placeholder',
-      kind: 'remote',
-      name: options.name,
-      status: 'unpaired',
-      capabilities: []
-   };
+export function createRemoteReceiverTargetClient(): TargetClient {
+   const api = getEncoreApi();
 
    return {
-      listTargets: () => Promise.resolve([target]),
-      listInstalls: () => Promise.resolve([]),
-      getHealth: (targetId) =>
-         Promise.resolve(
-            targetId === target.id
-               ? {
-                    status: target.status,
-                    capabilities: target.capabilities
-                 }
-               : null
-         ),
-      onEvent: () => () => {}
+      listTargets: () => api.receiver.listRemoteTargets(),
+      listInstalls: (targetId) => api.receiver.listRemoteInstalls(targetId),
+      getHealth: (targetId) => api.receiver.getRemoteHealth(targetId),
+      onEvent: (listener) => api.receiver.onRemoteTargetEvent(listener)
    };
 }
