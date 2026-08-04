@@ -1,14 +1,8 @@
 import { relative } from 'node:path';
 
-const ignoredFiles = new Set(['src/routeTree.gen.ts']);
-
-function filterIgnored(files) {
-   return files.filter((file) => !ignoredFiles.has(relative(process.cwd(), file).replaceAll('\\', '/')));
-}
-
 export default {
    '*.{js,jsx,ts,tsx}': (files) => {
-      const filteredFiles = filterIgnored(files);
+      const filteredFiles = files.filter((file) => relative(process.cwd(), file).replaceAll('\\', '/') !== 'src/routeTree.gen.ts');
       if (filteredFiles.length === 0) return [];
 
       const args = filteredFiles.map((file) => JSON.stringify(file)).join(' ');

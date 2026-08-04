@@ -4,11 +4,12 @@ on:
    workflow_dispatch:
       inputs:
          bump:
-            description: Version bump to use when the package version already has a release
+            description: Version bump
             required: true
-            default: patch
+            default: none
             type: choice
             options:
+               - none
                - patch
                - minor
                - major
@@ -62,7 +63,7 @@ jobs:
               version="$current_version"
               tag="v$version"
 
-              if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              if [[ "$BUMP" != "none" ]]; then
                  IFS=. read -r major minor patch <<< "$current_version"
 
                  case "$BUMP" in
@@ -88,7 +89,7 @@ jobs:
                  tag="v$version"
 
                  if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                    echo "::error::Release $tag already exists. Update package.json or choose a different bump."
+                    echo "::error::Release $tag already exists. Choose a different bump."
                     exit 1
                  fi
 
@@ -112,6 +113,11 @@ jobs:
                  git commit -m "release: v$version"
                  git push origin "HEAD:${GITHUB_REF_NAME}"
               else
+                 if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                    echo "::error::Release $tag already exists. Update package.json or choose a version bump."
+                    exit 1
+                 fi
+
                  if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
                     git fetch --force --tags origin "refs/tags/$tag:refs/tags/$tag"
 
@@ -346,15 +352,10 @@ jobs:
                  exit 1
               fi
 
-              cat > release-notes.md <<'NOTES'
-              _We're in super early development. None of what you expect has been implemented in the slightest. Downloading and attempting to use a release right now is the equivalent of installing a brick, except a brick has more use cases_
-
-              NOTES
-
               gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
                  -f tag_name="$TAG" \
                  -f target_commitish="$SHA" \
-                 --jq .body >> release-notes.md
+                 --jq .body > release-notes.md
 
               gh release create "$TAG" "${assets[@]}" \
                  --repo "$GITHUB_REPOSITORY" \

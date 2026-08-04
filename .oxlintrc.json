@@ -22,13 +22,18 @@
    },
    "overrides": [
       {
-         "files": ["src/main/**/*.{ts,tsx}", "src/preload/**/*.{ts,tsx}"],
+         "files": ["src/app/main.ts", "src/app/preload.ts", "src/modules/*/main/**/*.{ts,tsx}"],
          "rules": {
             "no-restricted-globals": "off"
          }
       },
       {
-         "files": ["src/renderer/**/*.{ts,tsx}", "src/routes/**/*.{ts,tsx}", "src/shared/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}"],
+         "files": [
+            "src/app/renderer/**/*.{ts,tsx}",
+            "src/routes/**/*.{ts,tsx}",
+            "src/components/**/*.{ts,tsx}",
+            "src/modules/*/renderer/**/*.{ts,tsx}"
+         ],
          "rules": {
             "no-restricted-imports": [
                "error",

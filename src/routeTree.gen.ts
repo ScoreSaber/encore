@@ -9,18 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root';
+import { Route as SharedRouteImport } from './routes/shared';
 import { Route as SettingsRouteImport } from './routes/settings';
-import { Route as RemoteRouteImport } from './routes/remote';
 import { Route as IndexRouteImport } from './routes/index';
+import { Route as InstallsInstallIdRouteImport } from './routes/installs_.$installId';
 
+const SharedRoute = SharedRouteImport.update({
+  id: '/shared',
+  path: '/shared',
+  getParentRoute: () => rootRouteImport,
+} as any);
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any);
-const RemoteRoute = RemoteRouteImport.update({
-  id: '/remote',
-  path: '/remote',
   getParentRoute: () => rootRouteImport,
 } as any);
 const IndexRoute = IndexRouteImport.update({
@@ -28,51 +29,60 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any);
+const InstallsInstallIdRoute = InstallsInstallIdRouteImport.update({
+  id: '/installs_/$installId',
+  path: '/installs/$installId',
+  getParentRoute: () => rootRouteImport,
+} as any);
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
-  '/remote': typeof RemoteRoute;
   '/settings': typeof SettingsRoute;
+  '/shared': typeof SharedRoute;
+  '/installs/$installId': typeof InstallsInstallIdRoute;
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
-  '/remote': typeof RemoteRoute;
   '/settings': typeof SettingsRoute;
+  '/shared': typeof SharedRoute;
+  '/installs/$installId': typeof InstallsInstallIdRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
-  '/remote': typeof RemoteRoute;
   '/settings': typeof SettingsRoute;
+  '/shared': typeof SharedRoute;
+  '/installs_/$installId': typeof InstallsInstallIdRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/' | '/remote' | '/settings';
+  fullPaths: '/' | '/settings' | '/shared' | '/installs/$installId';
   fileRoutesByTo: FileRoutesByTo;
-  to: '/' | '/remote' | '/settings';
-  id: '__root__' | '/' | '/remote' | '/settings';
+  to: '/' | '/settings' | '/shared' | '/installs/$installId';
+  id: '__root__' | '/' | '/settings' | '/shared' | '/installs_/$installId';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
-  RemoteRoute: typeof RemoteRoute;
   SettingsRoute: typeof SettingsRoute;
+  SharedRoute: typeof SharedRoute;
+  InstallsInstallIdRoute: typeof InstallsInstallIdRoute;
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/shared': {
+      id: '/shared';
+      path: '/shared';
+      fullPath: '/shared';
+      preLoaderRoute: typeof SharedRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     '/settings': {
       id: '/settings';
       path: '/settings';
       fullPath: '/settings';
       preLoaderRoute: typeof SettingsRouteImport;
-      parentRoute: typeof rootRouteImport;
-    };
-    '/remote': {
-      id: '/remote';
-      path: '/remote';
-      fullPath: '/remote';
-      preLoaderRoute: typeof RemoteRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     '/': {
@@ -82,13 +92,21 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/installs_/$installId': {
+      id: '/installs_/$installId';
+      path: '/installs/$installId';
+      fullPath: '/installs/$installId';
+      preLoaderRoute: typeof InstallsInstallIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  RemoteRoute: RemoteRoute,
   SettingsRoute: SettingsRoute,
+  SharedRoute: SharedRoute,
+  InstallsInstallIdRoute: InstallsInstallIdRoute,
 };
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

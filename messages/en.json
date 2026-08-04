@@ -1,21 +1,53 @@
 {
    "app": {
-      "name": "Encore"
+      "name": "Encore",
+      "alphaWarning": {
+         "title": "Alpha warning",
+         "body": "Encore is currently in alpha. Bugs are to be expected and may cause your puter to explode (and all ur friends in it)\r\n\r\n Last chance to turn back, wanna continue?",
+         "quit": "Get me outa here",
+         "accept": "I understand, less go"
+      }
    },
    "common": {
-      "desktop": "Desktop",
+      "back": "Back",
+      "cancel": "Cancel",
+      "close": "Close",
+      "copyPath": "Copy path",
+      "copyUrl": "Copy URL",
       "goHome": "Go home",
+      "import": "Import",
       "loading": "Loading",
-      "retry": "Retry"
+      "more": "More actions",
+      "openFolder": {
+         "action": "Open folder",
+         "failed": "The folder could not be opened",
+         "unsupported": "Encore opens folders on this computer only"
+      },
+      "operation": {
+         "preparing": "Preparing",
+         "progress": "Handled {copied} of {total}"
+      },
+      "refresh": "Refresh",
+      "rescan": "Rescan",
+      "retry": "Retry",
+      "scope": {
+         "install": "Install",
+         "path": "Install folder",
+         "device": "Device",
+         "summary": "{install} on {device}",
+         "unknownInstall": "Unknown install",
+         "unknownPath": "Unknown folder",
+         "unknownDevice": "Unknown device"
+      }
    },
    "nav": {
       "addVersion": "Add version",
       "home": "Home",
+      "shared": "Shared content",
+      "label": "Main",
       "settings": "Settings"
    },
    "targets": {
-      "remotePlaceholderName": "Remote device",
-      "officialInstall": "{store} Beat Saber",
       "store": {
          "steam": "Steam",
          "oculus": "Oculus PC"
@@ -23,146 +55,1387 @@
       "status": {
          "ready": "Ready",
          "unpaired": "Unpaired",
-         "disconnected": "Disconnected"
+         "disconnected": "Disconnected",
+         "incompatible": "Incompatible"
       },
-      "noVersions": "No versions",
+      "capability": {
+         "adopt-bsmanager": "BSManager adoption",
+         "download-install": "Downloads",
+         "import-install": "Folder import",
+         "launch-install": "Launching",
+         "list-installs": "Install list",
+         "manage-installs": "Install management",
+         "read-logs": "Logs",
+         "run-operations": "Operations"
+      },
       "empty": "No devices",
-      "loadError": "Versions unavailable"
+      "loadError": "Versions unavailable",
+      "picker": "Device"
+   },
+   "home": {
+      "pageTitle": "Home",
+      "connection": {
+         "title": "Manage Beat Saber from this Mac",
+         "description": "Connect to Encore on a Windows or Linux PC to manage its installs, mods and content from here",
+         "connect": "Setup",
+         "offlineTitle": "Your Beat Saber PC is offline",
+         "offlineDescription": "Keep Encore open on the other PC and make sure both PCs are on the same local network. Encore will reconnect automatically",
+         "settings": "Connection settings",
+         "connectAnother": "Connect another PC"
+      },
+      "links": {
+         "title": "Quick links",
+         "sections": {
+            "encore": "Encore",
+            "support": "Support / Discords",
+            "services": "Services",
+            "wikis": "Wikis"
+         },
+         "support-encore": "Support Encore",
+         "give-feedback": "Give feedback",
+         "source-code": "Source code",
+         "report-issue": "Report an issue",
+         "bsmg-discord": "BSMG Discord",
+         "scoresaber-discord": "ScoreSaber Discord",
+         "beatmods": "BeatMods",
+         "beatsaver": "BeatSaver",
+         "scoresaber": "ScoreSaber",
+         "encore-docs": "Encore Docs",
+         "bsmg-wiki": "BSMG Wiki",
+         "scoresaber-wiki": "ScoreSaber Wiki"
+      },
+      "logs": {
+         "title": "Logs",
+         "supportInfo": "Copy for support",
+         "copy": "Copy log",
+         "save": "Save log",
+         "open": "Open log",
+         "actionDescription": "View, copy, save or open this log",
+         "loadError": "Logs are unavailable right now",
+         "source": {
+            "app": "Encore",
+            "install": "Beat Saber"
+         },
+         "groupStatus": {
+            "empty": "No log files",
+            "missing": "No log folder yet",
+            "ready": "Ready",
+            "unreadable": "The log folder could not be read",
+            "unsupported": "This device does not share logs"
+         },
+         "issues": {
+            "invalidPath": "That log is not inside the log folder anymore",
+            "notFound": "That log file is gone",
+            "unreadable": "That log file could not be read",
+            "unsupportedTarget": "This device does not share logs"
+         }
+      },
+      "diagnostics": {
+         "title": "Encore support info",
+         "description": "Includes Encore details and your three latest Beat Saber logs",
+         "meta": "{name}, {size}",
+         "logExcluded": "{file} was left out: {reason}",
+         "failed": "The bundle could not be built",
+         "copy": "Copy",
+         "save": "Save file"
+      },
+      "notice": {
+         "blocked": "Encore refused to open that link",
+         "cancelled": "Nothing was written",
+         "failed": "That did not work",
+         "saved": "Saved to"
+      }
+   },
+   "installs": {
+      "import": {
+         "action": "Add folder",
+         "title": "Add an existing install",
+         "description": "Encore manages the folder where it is. Nothing is copied or moved",
+         "unsupportedTarget": "This device cannot add a folder",
+         "folder": "Folder",
+         "version": "Version",
+         "confirm": "Add install",
+         "chooseAnother": "Choose another folder",
+         "issues": {
+            "alreadyRegistered": "Encore already manages this folder",
+            "inspectFailed": "This folder could not be read",
+            "missingExecutable": "This folder has no Beat Saber executable",
+            "missingGameData": "This folder has no Beat Saber game data",
+            "notADirectory": "This path is not a folder",
+            "notAbsolute": "This path is not a full folder path",
+            "notFound": "This folder does not exist anymore",
+            "unknownVersion": "The Beat Saber version in this folder could not be detected"
+         },
+         "result": {
+            "completed": "Encore manages this install now",
+            "failed": "The install could not be added"
+         }
+      },
+      "status": {
+         "ready": "Ready",
+         "incomplete": "Incomplete",
+         "missing": "Missing"
+      },
+      "problems": {
+         "pathUnreadable": "This install folder could not be read at {path}",
+         "registryWriteFailed": "The install list could not be saved at {path}",
+         "versionUnknown": "The Beat Saber version could not be detected"
+      },
+      "manage": {
+         "size": "Size",
+         "sizeValue": "{size} in {count} files",
+         "edit": {
+            "action": "Edit",
+            "title": "Edit install",
+            "description": "The name and colour are stored by Encore and never written into the install folder",
+            "name": "Name",
+            "namePlaceholder": "Install name",
+            "color": "Colour",
+            "noColor": "No colour",
+            "save": "Save",
+            "failed": "The install could not be saved"
+         },
+         "delete": {
+            "action": "Delete",
+            "title": "Delete install",
+            "description": "Encore removes this folder from disk. The files cannot be recovered from Encore",
+            "path": "Folder",
+            "confirm": "Delete install",
+            "preparing": "Preparing the delete",
+            "progress": "Removed {copied} of {total}",
+            "result": {
+               "completed": "The install was deleted and the install list is up to date",
+               "cancelled": "The delete was cancelled, so part of the folder is still on disk",
+               "failed": "The delete failed"
+            }
+         },
+         "issues": {
+            "inspectFailed": "This install folder could not be read",
+            "invalidColor": "That colour is not one Encore can store",
+            "invalidName": "The name has to be between 1 and 60 characters",
+            "notFound": "This install is not in the registry anymore",
+            "storeDetected": "Steam and Oculus installs stay in the list while the store still has them",
+            "storeOwned": "Steam and Oculus own these files. Remove the install from the store instead",
+            "unsupportedTarget": "This device cannot manage installs from Encore"
+         },
+         "forget": {
+            "action": "Forget",
+            "title": "Forget install",
+            "description": "Encore stops tracking this install. Every file stays exactly where it is",
+            "path": "Folder",
+            "confirm": "Forget install",
+            "result": {
+               "completed": "Encore forgot this install. The folder is untouched",
+               "failed": "The install could not be forgotten"
+            }
+         }
+      },
+      "detail": {
+         "loadError": "This install is unavailable right now",
+         "missing": {
+            "title": "Install not found",
+            "description": "This install is not in the registry anymore. It was deleted or moved outside Encore"
+         },
+         "tabs": {
+            "mods": "Mods",
+            "maps": "Maps",
+            "models": "Models",
+            "playlists": "Playlists"
+         }
+      }
+   },
+   "maps": {
+      "title": "Custom maps",
+      "count": "{count, plural, one {# map} other {# maps}}",
+      "countFiltered": "{visible, number} of {total, number} maps",
+      "empty": "This install has no custom maps yet",
+      "missing": "This install has no CustomLevels folder yet. Encore creates it the first time a map is added",
+      "unsupportedTarget": "This device cannot manage maps from Encore",
+      "loadError": "The map library is unavailable right now",
+      "scanning": "Reading maps {scanned} of {total}",
+      "selectAll": "Select every map",
+      "filter": "Filter maps",
+      "noMatches": "No maps match that filter",
+      "deleteSelected": "{count, plural, =0 {Delete} one {Delete # map} other {Delete # maps}}",
+      "duplicate": "Duplicate",
+      "unreadable": "Unreadable",
+      "columns": {
+         "title": "Map",
+         "mapper": "Mapper",
+         "size": "Size",
+         "date": "Date"
+      },
+      "issues": {
+         "alreadyInstalled": "This map is already in the install",
+         "inspectFailed": "The selected map folders could not be read",
+         "installNotFound": "This install is not in the registry anymore",
+         "mapsMissing": "This install has no CustomLevels folder yet",
+         "noSelection": "Select at least one map first",
+         "noSource": "No archive was chosen",
+         "notFound": "One of the selected maps is not in this install anymore",
+         "sourceUnavailable": "BeatSaver did not return this map",
+         "unsupportedTarget": "This device cannot manage maps from Encore"
+      },
+      "find": "Find maps",
+      "export": "{count, plural, =0 {Export} one {Export # map} other {Export # maps}}",
+      "actions": {
+         "delete": {
+            "action": "{count, plural, one {Delete # map} other {Delete # maps}}",
+            "title": "Delete maps",
+            "description": "Encore removes these folders from CustomLevels. The files cannot be recovered from Encore",
+            "sizeValue": "{size} in {count, plural, one {# file} other {# files}}",
+            "confirm": "Delete"
+         },
+         "download": {
+            "title": "Download map",
+            "description": "Encore downloads the map from BeatSaver and checks it before it lands in CustomLevels"
+         },
+         "export": {
+            "title": "Export maps",
+            "description": "Encore writes the selected maps into one zip archive"
+         },
+         "import": {
+            "title": "Import maps"
+         },
+         "result": {
+            "completed": "Encore finished and the map library is up to date",
+            "cancelled": "The map operation was cancelled, so the library may be partly changed",
+            "failed": "The map operation failed"
+         }
+      },
+      "search": {
+         "title": "Find maps",
+         "description": "Search BeatSaver and download straight into this install",
+         "browse": "Search on BeatSaver",
+         "placeholder": "Search by title, artist or mapper",
+         "submit": "Search",
+         "empty": "No maps matched that search",
+         "installed": "Installed",
+         "ranked": "Ranked",
+         "curated": "Curated",
+         "by": "{mapper} - {artist}",
+         "download": "Download",
+         "previous": "Previous",
+         "next": "Next",
+         "issues": {
+            "fetchFailed": "BeatSaver could not be reached right now",
+            "invalidResponse": "BeatSaver sent something Encore could not read",
+            "unsupported": "This device cannot search BeatSaver from Encore"
+         }
+      },
+      "link": {
+         "title": "Open map link",
+         "description": "A link asked Encore to download a map from BeatSaver",
+         "map": "Map",
+         "mapper": "Mapper",
+         "unknownMap": "BeatSaver key {key}",
+         "install": "Install",
+         "noInstalls": "Add an install first, then open the link again",
+         "confirm": "Download map",
+         "issues": {
+            "invalidKey": "That link does not name a BeatSaver map",
+            "unsupportedLink": "Encore does not handle that kind of link"
+         }
+      }
+   },
+   "models": {
+      "title": "Models",
+      "countFiltered": "{visible, number} of {total, number} models",
+      "empty": "This install has no {type} yet",
+      "missing": "This install has no model folders yet. Encore creates them the first time a model is added",
+      "unsupportedTarget": "This device cannot manage models from Encore",
+      "loadError": "The model list is unavailable right now",
+      "scanning": "Reading models {scanned} of {total}",
+      "selectAll": "Select every model",
+      "filter": "Filter models",
+      "noMatches": "No models match that filter",
+      "deleteSelected": "{count, plural, =0 {Delete} one {Delete # model} other {Delete # models}}",
+      "duplicate": "Duplicate",
+      "unreadable": "Unreadable",
+      "find": "Find models",
+      "export": "{count, plural, =0 {Export} one {Export # model} other {Export # models}}",
+      "tabs": {
+         "avatar": "Avatars",
+         "bloq": "Bloqs",
+         "platform": "Platforms",
+         "saber": "Sabers",
+         "wall": "Walls"
+      },
+      "sources": {
+         "local": "Local",
+         "modelsaber": "ModelSaber"
+      },
+      "columns": {
+         "name": "Model",
+         "author": "Author",
+         "size": "Size",
+         "date": "Date"
+      },
+      "issues": {
+         "alreadyInstalled": "This model is already in the install",
+         "inspectFailed": "The selected models could not be read",
+         "installNotFound": "This install is not in the registry anymore",
+         "modelsMissing": "This install has no model folders yet",
+         "noSelection": "Select at least one model first",
+         "noSource": "No model file was chosen",
+         "notFound": "One of the selected models is not in this install anymore",
+         "sourceUnavailable": "ModelSaber did not return this model",
+         "unsupportedTarget": "This device cannot manage models from Encore",
+         "unsupportedType": "ModelSaber does not serve this kind of model, so Encore manages it locally"
+      },
+      "actions": {
+         "delete": {
+            "action": "{count, plural, one {Delete # model} other {Delete # models}}",
+            "title": "Delete models",
+            "description": "Encore removes these files from the install. They cannot be recovered from Encore",
+            "sizeValue": "{size} across {count, plural, one {# model} other {# models}}",
+            "confirm": "Delete"
+         },
+         "download": {
+            "title": "Download model",
+            "description": "Encore downloads the model from ModelSaber and checks it before it lands in the install"
+         },
+         "export": {
+            "title": "Export models",
+            "description": "Encore writes the selected models into one zip archive, one folder per model type"
+         },
+         "import": {
+            "title": "Import models",
+            "description": "Encore checks each file before it copies the model into the install"
+         },
+         "result": {
+            "completed": "Encore finished and the model list is up to date",
+            "cancelled": "The model operation was cancelled, so the install may be partly changed",
+            "failed": "The model operation failed"
+         }
+      },
+      "search": {
+         "title": "Find {type}",
+         "description": "Search ModelSaber and download straight into this install",
+         "browse": "Search on ModelSaber",
+         "placeholder": "Search by name or author",
+         "submit": "Search",
+         "empty": "No models matched that search",
+         "installed": "Installed",
+         "by": "By {author}",
+         "download": "Download",
+         "previous": "Previous",
+         "next": "Next",
+         "issues": {
+            "fetchFailed": "ModelSaber could not be reached right now",
+            "invalidResponse": "ModelSaber sent something Encore could not read",
+            "unsupported": "This device cannot search ModelSaber from Encore",
+            "unsupportedType": "ModelSaber does not serve this kind of model, so Encore manages it locally"
+         }
+      },
+      "link": {
+         "title": "Open model link",
+         "description": "A link asked Encore to download a model from ModelSaber",
+         "model": "Model",
+         "author": "Author",
+         "type": "Kind",
+         "unknownModel": "ModelSaber id {id}",
+         "install": "Install",
+         "noInstalls": "Add an install first, then open the link again",
+         "confirm": "Download model",
+         "issues": {
+            "invalidId": "That link does not name a ModelSaber model",
+            "unsupportedLink": "Encore does not handle that kind of link"
+         }
+      }
+   },
+   "playlists": {
+      "title": "Playlists",
+      "count": "{count, plural, one {# playlist} other {# playlists}}",
+      "countFiltered": "{visible, number} of {total, number} playlists",
+      "empty": "This install has no playlists yet",
+      "missing": "This install has no Playlists folder yet. Encore creates it the first time a playlist is added",
+      "unsupportedTarget": "This device cannot manage playlists from Encore",
+      "loadError": "The playlist list is unavailable right now",
+      "scanning": "Reading playlists {scanned} of {total}",
+      "selectAll": "Select every playlist",
+      "filter": "Filter playlists",
+      "noMatches": "No playlists match that filter",
+      "deleteSelected": "{count, plural, =0 {Delete} one {Delete # playlist} other {Delete # playlists}}",
+      "export": "{count, plural, =0 {Export} one {Export # playlist} other {Export # playlists}}",
+      "unreadable": "Unreadable",
+      "columns": {
+         "title": "Playlist",
+         "author": "Author",
+         "songs": "Songs",
+         "missing": "Missing",
+         "size": "Size",
+         "date": "Date"
+      },
+      "issues": {
+         "inspectFailed": "The selected playlists could not be read",
+         "installNotFound": "This install is not in the registry anymore",
+         "invalidSource": "That address does not point at a playlist",
+         "noMissingMaps": "Every map in this playlist is already installed",
+         "noSelection": "Select at least one playlist first",
+         "noSource": "No playlist file was chosen",
+         "notFound": "One of the selected playlists is not in this install anymore",
+         "playlistsMissing": "This install has no Playlists folder yet",
+         "sourceUnavailable": "The playlist could not be downloaded",
+         "unsupportedTarget": "This device cannot manage playlists from Encore"
+      },
+      "actions": {
+         "delete": {
+            "action": "{count, plural, one {Delete # playlist} other {Delete # playlists}}",
+            "title": "Delete playlists",
+            "description": "Encore removes these files from the Playlists folder. The maps they list stay in the install unless you say otherwise",
+            "sizeValue": "{size}",
+            "mapsValue": "{count, plural, =0 {No maps} one {# map} other {# maps}} - {size}",
+            "alsoMaps": "Also delete the maps in these playlists",
+            "alsoMapsHint": "Only maps this install has on disk are removed. Maps other playlists use go too",
+            "confirm": "Delete"
+         },
+         "download": {
+            "title": "Add playlist",
+            "description": "Encore downloads the playlist file and checks it before it lands in the Playlists folder"
+         },
+         "export": {
+            "title": "Export playlists",
+            "description": "Encore writes one playlist as a file and a selection into one zip archive"
+         },
+         "import": {
+            "title": "Import playlists",
+            "description": "Encore checks each file before it copies the playlist into the Playlists folder"
+         },
+         "installMissing": {
+            "title": "Install missing maps",
+            "description": "Encore downloads the maps this playlist lists that are not in the install yet"
+         },
+         "result": {
+            "completed": "Encore finished and the playlist list is up to date",
+            "cancelled": "The playlist operation was cancelled, so the folder may be partly changed",
+            "failed": "The playlist operation failed"
+         }
+      },
+      "detail": {
+         "title": "Playlist",
+         "description": "The songs this playlist lists and whether the install already has them",
+         "by": "By {author}",
+         "summary": "{count, plural, =0 {No songs} one {# song} other {# songs}}, {missing, plural, =0 {none missing} other {# missing}}",
+         "loadError": "This playlist could not be read",
+         "missing": "Missing",
+         "noHash": "No hash",
+         "difficulties": "{count, plural, one {# difficulty} other {# difficulties}}",
+         "unknownAuthor": "unknown",
+         "unknownSong": "Unnamed song",
+         "unknownMapper": "Unknown mapper",
+         "installMissing": "{count, plural, one {Install # missing map} other {Install # missing maps}}"
+      },
+      "add": {
+         "action": "Add playlist",
+         "title": "Add playlist",
+         "description": "Choose a playlist file or paste its https address. Encore checks it before anything is written",
+         "urlDescription": "Paste the https address of a playlist file. Encore checks it before anything is written",
+         "placeholder": "https://example.com/playlist.bplist",
+         "invalid": "Encore only downloads playlists over https",
+         "browse": "Browse files",
+         "confirm": "Add from URL"
+      },
+      "link": {
+         "title": "Open playlist",
+         "description": "A link or a playlist file asked Encore to add a playlist to an install",
+         "address": "Address",
+         "file": "File",
+         "install": "Install",
+         "noInstalls": "Add an install first, then open the playlist again",
+         "confirm": "Add playlist",
+         "issues": {
+            "invalidSource": "That link does not carry a playlist address",
+            "unsupportedLink": "Encore does not handle that kind of link"
+         }
+      }
+   },
+   "bsmanager": {
+      "title": "Adopt the BSManager setup",
+      "description": "Keep your BSManager versions and bring them into Encore",
+      "source": "BSManager versions",
+      "sharedContent": "BSManager shared content",
+      "sharedRoot": "Shared folder root",
+      "confirm": "Adopt selected",
+      "shareContent": "Use BSManager shared content as a Library",
+      "shareContentHint": "Adds {path} to Libraries without moving files",
+      "table": {
+         "version": "Version",
+         "store": "Store",
+         "shared": "Shared folders",
+         "status": "Status"
+      },
+      "store": {
+         "steam": "Steam",
+         "oculus": "Oculus PC",
+         "unknown": "Unknown"
+      },
+      "status": {
+         "adopted": "Already in Encore",
+         "missing": "Folder missing",
+         "ready": "Ready to register"
+      },
+      "shared": {
+         "none": "Own folders",
+         "linked": "{count} of {total} linked",
+         "outside": "{count, plural, one {# link outside the Library} other {# links outside the Library}}"
+      },
+      "settings": {
+         "title": "BSManager",
+         "source": "Detected folder",
+         "review": "Review",
+         "prompt": "Start-up prompt",
+         "showPrompt": "Show again"
+      },
+      "issues": {
+         "inspectFailed": "The BSManager folder could not be read",
+         "notBSManager": "That folder does not look like a BSManager folder",
+         "notFound": "No BSManager folder was found",
+         "nothingSelected": "Nothing was selected to register",
+         "nothingToClean": "There are no BSManager links to clean up",
+         "nothingToAdopt": "This BSManager folder holds no versions",
+         "registerFailed": "The install registry could not be saved",
+         "unsupportedTarget": "This device cannot adopt a BSManager setup"
+      },
+      "result": {
+         "adopted": "{count, plural, =0 {No versions were registered} one {# version is now in Encore} other {# versions are now in Encore}}",
+         "failed": "The BSManager setup could not be adopted"
+      },
+      "prompt": {
+         "title": "BSManager found",
+         "description": "Encore found a BSManager setup at {path}. It can use those versions where they are, without copying anything",
+         "review": "Review what Encore would register",
+         "dismiss": "Start fresh"
+      },
+      "cleanup": {
+         "button": "Clean up",
+         "title": "Clean up BSManager links",
+         "description": "Copy content from links outside the Library into {path}, then reconnect them",
+         "links": "{count, plural, one {# link} other {# links}}",
+         "confirm": "Clean up",
+         "progress": "Copied {copied} of {total} {label}",
+         "completed": "BSManager now uses the Library",
+         "cancelled": "Cleanup was cancelled",
+         "failed": "Cleanup failed"
+      }
+   },
+   "sharedContent": {
+      "unsupportedTarget": "This device cannot share folders from Encore",
+      "loadError": "The shared folder list is unavailable right now",
+      "risky": "Holds settings",
+      "support": {
+         "unavailable": "This machine cannot create folder links right now: {detail}",
+         "unknownReason": "the link test failed"
+      },
+      "columns": {
+         "folder": "Folder",
+         "state": "State"
+      },
+      "folders": {
+         "avatars": "Avatars",
+         "maps": "Maps",
+         "notes": "Notes",
+         "platforms": "Platforms",
+         "playlists": "Playlists",
+         "sabers": "Sabers",
+         "user-data": "User data",
+         "wip-maps": "WIP maps"
+      },
+      "states": {
+         "absent": "Not created",
+         "blocked": "Unavailable",
+         "broken": "Needs repair",
+         "foreign": "Connected elsewhere",
+         "linked": "Connected",
+         "unlinked": "Not connected"
+      },
+      "sharedFolder": {
+         "blocked": "This folder cannot be shared: something that is not a folder sits at that path",
+         "broken": "The link to the shared folder is broken, so repair it before adding anything here",
+         "foreign": "This folder links somewhere Encore does not manage"
+      },
+      "warnings": {
+         "creates-shared-folder": "Encore creates this folder in the active library when it is first used",
+         "discards-contents": "The files in the install folder are deleted before the link is made",
+         "merges-into-shared": "The files in the install folder move into the shared folder, next to what is already there",
+         "move-blocked": "Another install still reads this shared folder, so Encore copies the files instead of moving them",
+         "name-conflicts": "Names that exist on both sides are moved into a folder next to the install folder instead of being overwritten",
+         "risky-folder": "This folder holds settings and scores, so Encore keeps a backup copy next to it",
+         "shared-kept": "The shared folder keeps everything it has, other installs are untouched",
+         "still-linked": "Other installs read this shared folder right now"
+      },
+      "issues": {
+         "alreadyLinked": "This folder is already shared",
+         "inspectFailed": "That folder could not be read",
+         "installNotFound": "This install is not in the registry anymore",
+         "linkUnsupported": "This machine cannot create folder links right now",
+         "notLinked": "This folder is not shared",
+         "nothingToConnect": "Every folder is already where it should be",
+         "pathBlocked": "Something that is not a folder sits at that path",
+         "sharedRootUnavailable": "The shared library could not be created",
+         "unknownFolder": "Encore does not share that folder",
+         "unknownRoot": "That library is no longer available",
+         "unsupportedTarget": "This device cannot share folders from Encore"
+      },
+      "actions": {
+         "link": {
+            "action": "Connect",
+            "title": "Connect this folder",
+            "description": "Encore moves this folder into the Library so connected installs use the same files",
+            "confirm": "Connect folder"
+         },
+         "unlink": {
+            "action": "Disconnect",
+            "title": "Disconnect this folder",
+            "description": "Encore gives this install its own folder again. The Library keeps its files",
+            "confirm": "Disconnect folder"
+         },
+         "repair": {
+            "action": "Repair",
+            "title": "Repair this link",
+            "description": "Encore replaces the link with a fresh one pointing at the shared folder. Nothing inside the shared folder is touched",
+            "confirm": "Repair link"
+         },
+         "installContents": "This install",
+         "sharedContents": "Library",
+         "contentsValue": "{size} in {files, plural, =0 {no files} one {# file} other {# files}}",
+         "conflictsValue": "{count, plural, one {# matching name will be moved aside} other {# matching names will be moved aside}}",
+         "linkedInstalls": "Also connected",
+         "review": "Before you continue",
+         "contentsChoice": {
+            "link": "Files already in this install",
+            "unlink": "Files from the Library"
+         },
+         "contents": {
+            "copy": "Copy",
+            "discard": "Delete",
+            "keep": "Keep",
+            "move": "Move"
+         },
+         "contentsHint": {
+            "copy": "The shared folder keeps its files and this install gets its own copy of them",
+            "discard": "The files in the install folder are deleted and the shared folder is used from now on",
+            "keep": "Nothing is copied, this install starts with an empty folder",
+            "move": {
+               "link": "The files move from the install folder into the Library folder, so only one copy remains",
+               "unlink": "The files move from the Library folder into this install. Other connected installs prevent this option"
+            }
+         },
+         "result": {
+            "completed": "Encore finished and the folder list is up to date",
+            "cancelled": "The change was cancelled, so the folder may be partly moved",
+            "failed": "The change failed"
+         }
+      },
+      "page": {
+         "title": "Shared content",
+         "help": {
+            "label": "About shared content",
+            "title": "How shared content works",
+            "summary": "Learn how libraries share content between Beat Saber installs",
+            "library": "A library stores maps, playlists and models in one folder",
+            "connect": "Any install connected to a library uses those files. You can keep more than one library and choose which one each install uses",
+            "disconnect": "Disconnecting an install gives it separate folders again. The library keeps its files"
+         },
+         "readOnly": "This device is view only, so links are managed on the device itself",
+         "installsTitle": "Installs",
+         "noInstalls": "No installs found yet. Add one from the Installs page first",
+         "issues": "{count, plural, one {# issue} other {# issues}}",
+         "folderCounts": "{linked} of {total} folders use this library{elsewhere, plural, =0 {} other {, # use another library}}",
+         "switch": "Switch here",
+         "connect": "Connect",
+         "disconnect": "Disconnect",
+         "folderDetails": "Folder details",
+         "connection": {
+            "connected": "Connected",
+            "partial": "Partly connected",
+            "elsewhere": "Using another library",
+            "none": "Not connected"
+         }
+      },
+      "roots": {
+         "title": "Libraries",
+         "select": "Choose a library",
+         "add": "Add library",
+         "active": "Active",
+         "sharedContentName": "Shared content",
+         "bsmanager": "BSManager",
+         "missing": "Missing",
+         "setActive": "Make active",
+         "forget": "Forget",
+         "addTitle": "Add a library",
+         "addDescription": "Encore uses this folder to share content between installs",
+         "alreadyKnown": "This library has already been added",
+         "willCreate": "Encore will create this folder",
+         "foundFolders": "Already inside: {folders}",
+         "addAction": "Add",
+         "addAndActivate": "Add and make active",
+         "enterDescription": "Enter a folder path on the selected device",
+         "enterPlaceholder": "C:\\BeatSaber\\SharedContent",
+         "check": "Check folder",
+         "checkFailed": "That folder could not be checked, so make sure the device is reachable",
+         "issues": {
+            "create-failed": "The folder could not be created",
+            "remote-failed": "The remote device could not make that change",
+            "root-active": "Choose another active library before removing this one",
+            "root-inside-install": "Choose a folder outside your Beat Saber installs",
+            "root-unknown": "That library is no longer available",
+            "unsupported-target": "This device cannot manage libraries from Encore"
+         }
+      },
+      "connect": {
+         "connect": {
+            "title": "Connect this install",
+            "description": "This install will use the same files as every other install connected to this library",
+            "confirm": "Connect install"
+         },
+         "disconnect": {
+            "title": "Disconnect this install",
+            "description": "This install gets its own folders again. The library keeps its files",
+            "confirm": "Disconnect install"
+         },
+         "install": "Install",
+         "root": "Library",
+         "columns": {
+            "plan": "Plan",
+            "contents": "Contents"
+         },
+         "steps": {
+            "link": "Link",
+            "repair": "Repoint",
+            "skip": "Nothing to do",
+            "unlink": "Unlink"
+         },
+         "conflicts": "{count, plural, one {# name conflict} other {# name conflicts}}",
+         "nothingPlanned": "Every folder is already where it should be",
+         "includeRisky": "Include save data folders",
+         "includeRiskyHint": "UserData and similar folders can break when shared between game versions",
+         "contentsHint": {
+            "move": "Files already in the install folders move into the library, so only one copy is left on disk",
+            "discard": "Files already in the install folders are deleted and the library is used from now on",
+            "copy": "Each folder gets its own copy of the shared files",
+            "keep": "Nothing is copied, the folders start empty"
+         }
+      }
+   },
+   "downloads": {
+      "title": "Download a Beat Saber version",
+      "description": "Choose a store and Beat Saber version to download",
+      "step": "Step {current} of {total}",
+      "recommended": "Recommended",
+      "checking": "Checking {version}",
+      "preparing": "Preparing the download",
+      "authenticating": "Waiting for the Meta sign-in window",
+      "downloading": "Downloaded {size} so far",
+      "copying": "Copied {size}",
+      "chooseAnother": "Choose another version",
+      "stores": {
+         "steam": {
+            "name": "Steam",
+            "requirements": "Requires Steam on {name}",
+            "confirm": "Download with Steam"
+         },
+         "oculus": {
+            "name": "Oculus PC",
+            "confirm": "Download from Meta"
+         }
+      },
+      "catalog": {
+         "loading": "Loading the version list",
+         "unavailable": "The Beat Saber version list is unavailable",
+         "refresh": "Refresh list"
+      },
+      "issues": {
+         "binaryUnavailable": "Meta does not serve an Oculus PC build of this Beat Saber version",
+         "catalogUnavailable": "The Beat Saber version list is unavailable, so no version can be downloaded",
+         "depotNotEmpty": "The Steam depot folder still holds content Encore did not download. Move it somewhere else first",
+         "inspectFailed": "The download could not be prepared",
+         "steamMissing": "Steam isn't installed on {name}",
+         "steamSignedOut": "Steam isn't signed in on {name}. Sign in and try again",
+         "unknownVersion": "This Beat Saber version is not in the version list",
+         "unsupportedPlatform": "Store downloads need Windows",
+         "unsupportedTarget": "Oculus PC downloads have to be started on the device that signs in to Meta"
+      },
+      "result": {
+         "completed": "The version was downloaded and the install list is up to date",
+         "cancelled": "The download was cancelled. Nothing was added to the install root",
+         "failed": "The download failed"
+      },
+      "library": {
+         "label": "Download folder",
+         "change": "Change folder",
+         "rootIssue": {
+            "empty": "Pick a folder to keep downloaded versions in",
+            "inspect-failed": "That folder could not be inspected",
+            "not-a-directory": "That path is not a folder",
+            "not-absolute": "Pick a full folder path",
+            "not-writable": "Encore cannot write to that folder",
+            "parent-missing": "The parent folder does not exist",
+            "unchanged": "Downloads already land in that folder"
+         },
+         "rootChange": {
+            "description": "Encore only points at the new folder. Nothing is copied or moved, so move an existing library yourself if you need it there",
+            "currentRoot": "Current folder",
+            "newRoot": "New folder",
+            "staying": "{count, plural, =0 {No installs stay behind} one {# install stays behind} other {# installs stay behind}}",
+            "found": "{count, plural, =0 {No installs found} one {# install found} other {# installs found}}",
+            "confirm": "Use new folder"
+         }
+      }
+   },
+   "launch": {
+      "start": "Launch Beat Saber",
+      "advanced": "Advanced",
+      "flags": {
+         "oculusMode": {
+            "label": "Oculus mode",
+            "description": "Starts the game against the Meta runtime instead of SteamVR"
+         },
+         "fpfc": {
+            "label": "Desktop mode",
+            "description": "Runs the game with keyboard and mouse instead of a headset"
+         },
+         "debug": {
+            "label": "Verbose",
+            "description": "Starts the game with verbose logging turned on"
+         },
+         "skipSteam": {
+            "label": "Skip Steam",
+            "description": "Starts the game without waiting for the Steam client"
+         },
+         "editor": {
+            "label": "Map editor",
+            "description": "Opens the built-in level editor on start"
+         },
+         "protonLogs": {
+            "label": "Proton logs",
+            "description": "Writes Proton and wine logs into the install Logs folder"
+         }
+      },
+      "runAsAdmin": {
+         "label": "Run as admin",
+         "description": "Windows asks for elevation before the game starts"
+      },
+      "args": {
+         "label": "Extra arguments",
+         "placeholder": "--example value"
+      },
+      "preview": {
+         "executable": "Executable",
+         "workingDirectory": "Working folder",
+         "args": "Arguments",
+         "noArgs": "No arguments",
+         "proton": "Proton",
+         "compatData": "Compatibility data",
+         "protonLogs": "Proton log folder",
+         "wrapper": "Wrapper",
+         "steamRun": "steam-run, picked because NixOS was detected"
+      },
+      "warnings": {
+         "adminPrompt": "Windows shows an elevation prompt before the game starts",
+         "oculusClientStarts": "Encore starts the Oculus client first because this install needs the Meta runtime",
+         "steamClientStarts": "Encore starts Steam first because it is not signed in yet",
+         "steamSkipped": "Steam stays closed, so Steam features are unavailable in this session",
+         "adminUnsupported": "Linux has no elevation that keeps the Proton environment intact, so Encore starts the game as the normal user",
+         "protonLogs": "Proton logging is on, which slows the game down and writes large files into the install"
+      },
+      "issues": {
+         "executableMissing": "The Beat Saber executable is not in this install folder",
+         "inspectFailed": "This install folder could not be read",
+         "invalidOptions": "These launch options are not something Encore can pass to Beat Saber",
+         "notFound": "This install is not in the registry anymore",
+         "storeClientMissing": "The store client this install needs is not installed on that device",
+         "unsupportedPlatform": "Encore starts Beat Saber on Windows and Linux only for now",
+         "unsupportedTarget": "This device cannot launch installs from Encore",
+         "protonNotSet": "No Proton build is set. Pick one above before starting Beat Saber on Linux",
+         "protonNotFound": "The Proton folder set above does not contain a usable Proton build"
+      },
+      "result": {
+         "starting": "Starting Beat Saber",
+         "completed": "Beat Saber was started. It keeps running after Encore hands it over",
+         "failed": "Beat Saber could not be started"
+      },
+      "proton": {
+         "label": "Proton build",
+         "change": "Change",
+         "clear": "Clear",
+         "notSet": "Not set. Encore needs a Proton build to start Beat Saber on Linux",
+         "unavailable": "The Proton folder could not be checked",
+         "nixOs": "NixOS detected, Encore runs Proton through steam-run",
+         "flatpak": "Flatpak detected, Proton needs access to the Steam folders on the host",
+         "issue": {
+            "empty": "Pick the folder of a Proton build",
+            "inspect-failed": "That folder could not be inspected",
+            "not-a-directory": "That path is not a folder",
+            "not-absolute": "Pick a full folder path",
+            "not-found": "That folder does not exist",
+            "proton-binary-missing": "That folder has no proton launch script, so it is not a Proton build",
+            "wine-binary-missing": "That Proton build has no wine64 binary Encore can run"
+         }
+      }
+   },
+   "shortcuts": {
+      "action": "Create shortcut",
+      "kinds": {
+         "desktop": {
+            "action": "Desktop shortcut",
+            "target": "Shortcut file"
+         },
+         "steam": {
+            "action": "Steam shortcut",
+            "target": "Steam shortcuts file"
+         }
+      },
+      "dialog": {
+         "title": "Create shortcut",
+         "description": "The shortcut starts this install with the options picked on the Launch tab and Encore still starts the game itself",
+         "name": "Name",
+         "starts": "Starts",
+         "link": "Link",
+         "confirm": "Create shortcut"
+      },
+      "warnings": {
+         "replacesExisting": "A shortcut with this name is already there and gets replaced",
+         "steamMustBeClosed": "Steam has to be closed while this is written, otherwise it writes its own copy back over it"
+      },
+      "issues": {
+         "installNotFound": "This install is not in the registry anymore",
+         "invalidOptions": "These launch options are not something Encore can put in a shortcut",
+         "steamClientMissing": "The Steam client is not installed on this machine",
+         "steamFileUnreadable": "The Steam shortcuts file could not be read, so Encore left it alone",
+         "steamUserMissing": "No Steam user folder was found. Sign in to Steam once and try again",
+         "unsupportedKind": "This shortcut kind is not supported on this platform",
+         "unsupportedPlatform": "Encore creates shortcuts on Windows and Linux. This platform is not supported",
+         "writeFailed": "The shortcut file could not be written"
+      },
+      "result": {
+         "creating": "Writing the shortcut",
+         "created": {
+            "desktop": "The shortcut is on your desktop",
+            "steam": "The shortcut is in your Steam library. Start Steam again to see it"
+         },
+         "failed": "The shortcut could not be created"
+      },
+      "link": {
+         "title": "Launch from a link",
+         "description": "This link came from outside Encore. Nothing starts until you confirm it",
+         "install": "Install",
+         "issues": {
+            "invalidRequest": "This link is not a launch Encore can run",
+            "unknownAction": "This link asks for something Encore does not do",
+            "unknownInstall": "The install this link points at is not in the registry anymore",
+            "unsupportedLink": "This is not an Encore link"
+         }
+      }
+   },
+   "mods": {
+      "title": "Mods",
+      "summary": "{count, plural, =0 {No mods for Beat Saber {version} on {platform}} one {# mod for Beat Saber {version} on {platform}} other {# mods for Beat Saber {version} on {platform}}}",
+      "size": "Size",
+      "moreActions": "More mod actions",
+      "selectFromInstall": {
+         "action": "Select from install",
+         "title": "Select mods from install",
+         "description": "Select another install and Encore will tick its installed mods when they are available for this install",
+         "install": "Install",
+         "matchSummary": "{count, plural, =0 {None of its installed mods are available for this install} one {# installed mod is available and ready to select} other {# installed mods are available and ready to select}}",
+         "loadError": "The installed mods could not be read from that install",
+         "confirm": "Select mods"
+      },
+      "pending": {
+         "hint": "Tick a mod to install it, untick to remove it",
+         "install": "Install",
+         "remove": "Remove",
+         "reset": "Reset"
+      },
+      "filter": "Filter mods",
+      "filterEmpty": "No mods match that filter",
+      "loadError": "The mod list could not be read",
+      "bsipaMissing": "BSIPA is not installed yet. Encore installs it first whenever you install another mod",
+      "unknownAuthor": "Unknown author",
+      "unknownSize": "Unknown size",
+      "versionPair": "{installed} -> {latest}",
+      "source": {
+         "cache": "from the last BeatMods response at {time}",
+         "remote": "from BeatMods at {time}"
+      },
+      "groups": {
+         "count": "{count, plural, one {# mod} other {# mods}}",
+         "collapse": "Collapse {name}",
+         "expand": "Expand {name}",
+         "reorder": "Reorder {name}",
+         "reorderHint": "Drag or use Alt+Up and Alt+Down to reorder"
+      },
+      "sources": {
+         "ready": "{name}: {count, plural, =0 {no mods} one {# mod} other {# mods}}",
+         "unavailable": "{name}: {reason}",
+         "manage": {
+            "action": "Manage sources",
+            "title": "Manage mod sources",
+            "description": "Add and remove repositories or turn them on and off"
+         }
+      },
+      "platform": {
+         "steampc": "Steam",
+         "oculuspc": "Oculus",
+         "universalpc": "PC"
+      },
+      "states": {
+         "available": "Available",
+         "installed": "Installed",
+         "updateAvailable": "Update available"
+      },
+      "detail": {
+         "empty": {
+            "title": "No mod selected",
+            "description": "Pick a mod on the left to read what it does"
+         },
+         "external": {
+            "title": "No details for {name}",
+            "description": "Encore did not install this mod and cannot match it to a BeatMods release"
+         },
+         "error": "The mod details could not be read",
+         "meta": "by {author}, <accent>{sourceLabel}</accent> {source}, {size}",
+         "source": {
+            "official": "From",
+            "unofficial": "From Custom Repository"
+         },
+         "version": "Version {version}",
+         "versionPair": "Installed {installed}, latest {latest}",
+         "install": "Install",
+         "update": "Update",
+         "uninstall": "Uninstall",
+         "sponsor": "Sponsor",
+         "noDescription": "This mod has no description",
+         "linkBlocked": "That link could not be opened",
+         "links": {
+            "listing": "Mod page",
+            "source": "Source",
+            "issues": "Issues"
+         }
+      },
+      "reason": {
+         "dependency": "dependency",
+         "selected": "selected",
+         "update": "update"
+      },
+      "category": {
+         "core": "Core",
+         "essential": "Essential",
+         "leaderboards": "Leaderboards",
+         "library": "Library",
+         "cosmetic": "Cosmetic",
+         "practice": "Practice",
+         "gameplay": "Gameplay",
+         "streamtools": "Stream tools",
+         "ui": "UI",
+         "lighting": "Lighting",
+         "tweaks": "Tweaks",
+         "multiplayer": "Multiplayer",
+         "text": "Text",
+         "editor": "Editor",
+         "other": "Other"
+      },
+      "unavailable": {
+         "title": "No mod list"
+      },
+      "empty": {
+         "title": "No mods listed",
+         "description": "BeatMods has no verified mods for Beat Saber {version} yet"
+      },
+      "external": {
+         "category": "Unmanaged"
+      },
+      "install": {
+         "action": "{count, plural, =0 {Install} one {Install # mod} other {Install # mods}}",
+         "updateAction": "{count, plural, =0 {Update} one {Update # mod} other {Update # mods}}",
+         "title": "Install mods",
+         "description": "Encore downloads the mods from BeatMods, checks their hashes and stages them for the game to load",
+         "dependency": "(dependency)",
+         "downloadSize": "{size} download",
+         "confirm": "Install",
+         "preparing": "Preparing the download",
+         "progress": "Installed {copied} of {total} - {label}",
+         "result": {
+            "completed": "The mods are installed and the list is up to date",
+            "cancelled": "The install was cancelled, so some mods were not installed",
+            "failed": "The install failed"
+         }
+      },
+      "uninstall": {
+         "action": "{count, plural, =0 {Uninstall} one {Uninstall # mod} other {Uninstall # mods}}",
+         "allAction": "Uninstall all",
+         "title": "Uninstall mods",
+         "description": "Encore removes the files it knows these mods put in the install. The files cannot be recovered from Encore",
+         "fileCount": "{count, plural, one {# file} other {# files}} will be removed",
+         "externalCount": "{count, plural, one {# unmanaged file included} other {# unmanaged files included}}",
+         "confirm": "Uninstall",
+         "preparing": "Preparing the removal",
+         "progress": "Removed {copied} of {total}",
+         "result": {
+            "completed": "The mods were removed and the list is up to date",
+            "cancelled": "The removal was cancelled, so some files are still on disk",
+            "failed": "The removal failed"
+         }
+      },
+      "import": {
+         "action": "Import mod",
+         "title": "Import mod",
+         "description": "This file came from outside BeatMods, so Encore copies it as it is and checks nothing about what it does",
+         "source": "File",
+         "destination": "Copied to",
+         "confirm": "Import mod",
+         "preparing": "Preparing the copy",
+         "progress": "Copied {copied} of {total}",
+         "result": {
+            "completed": "The mod was imported and the list is up to date",
+            "cancelled": "The import was cancelled, so the mod was not added",
+            "failed": "The import failed"
+         }
+      },
+      "warnings": {
+         "bsipaFirst": "BSIPA is installed first. If it fails, nothing else is installed",
+         "missingDependency": "A mod depends on something BeatMods does not list for this version, so it may not load",
+         "patcherRuns": "Encore runs the BSIPA patcher against the game so mods load",
+         "patcherUnsupported": "The BSIPA patcher only runs on Windows, so these files are staged and nothing is patched here",
+         "removesExternal": "Files Encore did not install are removed too",
+         "replacesInstalled": "Installed mod files are replaced with the new version",
+         "unverifiedSource": "This file is not from BeatMods, so Encore cannot check it",
+         "unofficialSource": "Some of these mods come from a repository you added. Encore does not check what is in it"
+      },
+      "issues": {
+         "catalogUnavailable": "BeatMods could not be reached, so the mod list is unavailable",
+         "inspectFailed": "This install folder could not be read",
+         "notFound": "This install is not in the registry anymore",
+         "nothingSelected": "No mods were selected",
+         "unknownVersion": "Encore cannot tell which Beat Saber version this install is, so it cannot pick mods for it",
+         "unsupportedFile": "Encore imports .dll and .zip mod files only",
+         "unsupportedTarget": "This device cannot manage mods from Encore"
+      },
+      "repositories": {
+         "issues": {
+            "denylisted": "ScoreSaber blocked this repository, so Encore does not read it",
+            "duplicate": "This repository is already in the list",
+            "fetchFailed": "The listing could not be read from that address",
+            "invalidListing": "That address answered with something Encore cannot read as a listing",
+            "invalidUrl": "Encore reads listings from plain https addresses only",
+            "notAcknowledged": "Confirm you understand the risk before adding a repository",
+            "notFound": "That repository is not in the list anymore",
+            "policyUnavailable": "The ScoreSaber block list could not be read, so unofficial repositories stay off",
+            "unsupportedSchema": "That listing uses a format this version of Encore does not read",
+            "writeFailed": "The repository list could not be saved"
+         }
+      }
    },
    "updates": {
-      "checking": "Checking for updates",
-      "available": "Update available",
-      "downloading": "Downloading update ({percent}%)",
-      "downloaded": "Restart to update",
-      "error": "Update check failed"
+      "downloaded": "Restart to update"
    },
    "settings": {
       "pageTitle": "Settings",
-      "pageDescription": "App preferences, library defaults and receiver state",
-      "refresh": "Refresh",
+      "advanced": {
+         "title": "Advanced",
+         "useSymlinks": {
+            "title": "Use symlinks",
+            "description": "Use directory symlinks instead of junctions when connecting shared content"
+         }
+      },
       "appearance": {
-         "title": "Appearance",
-         "description": "Language and window appearance"
+         "title": "Appearance"
       },
       "language": {
-         "title": "Language",
-         "description": "Interface locale"
+         "title": "Language"
       },
       "theme": {
          "title": "Theme",
-         "description": "Window appearance",
          "light": "Light",
          "dark": "Dark",
          "system": "System"
       },
-      "library": {
-         "title": "Library",
-         "description": "Defaults used for local Beat Saber installs",
-         "installRoot": "Install root",
-         "defaultStore": "Default store",
-         "defaultStoreDescription": "Preferred source for downloads",
-         "noDefaultStore": "No default"
+      "accentColor": {
+         "title": "Accent colour",
+         "pickerLabel": "Choose an accent colour",
+         "inputLabel": "Accent colour hex value"
       },
-      "store": {
-         "steam": "Steam",
-         "oculus": "Oculus PC"
+      "deepLinks": {
+         "title": "Links",
+         "linkLabel": "{name} ({schemes})",
+         "scheme": "Encore links",
+         "mapScheme": "Map links",
+         "modelScheme": "Model links",
+         "playlistScheme": "Playlist links",
+         "registeredPermanent": "Linux keeps the desktop entry, so remove it there to undo this",
+         "unavailable": "The link setting could not be read"
       },
-      "storeDetection": {
-         "title": "Store detection",
-         "description": "Official local Steam and Oculus PC installs Encore can inspect",
-         "rescan": "Rescan",
-         "loading": "Checking stores",
-         "installName": "{store} Beat Saber",
-         "protected": "Protected",
-         "readOnly": "Read-only",
-         "clientPath": "Client: {path}",
-         "defaultLibrary": "Default",
-         "containsBeatSaber": "Beat Saber",
-         "scan": {
-            "title": "Scan",
-            "description": "Check this device for supported local PC stores",
-            "lastScanned": "Last checked {time}"
+      "modRepositories": {
+         "title": "Mod repositories",
+         "link": {
+            "title": "Add mod source",
+            "description": "Review this source before adding it to Encore.",
+            "invalid": "This source link is invalid."
          },
-         "status": {
-            "detected": "Detected",
-            "error": "Error",
-            "missing": "Missing",
-            "unsupported": "Unsupported"
+         "unavailable": "The repository list could not be read",
+         "official": {
+            "label": "Official"
          },
-         "installs": {
-            "title": "Detected installs",
-            "description": "Official installs are protected and read-only",
-            "empty": "No official installs detected"
+         "add": {
+            "label": "Add a custom repository",
+            "placeholder": "https://example.github.io/mods",
+            "inspect": "Read listing",
+            "confirm": "Add repository"
          },
-         "libraries": {
-            "title": "Stores and libraries",
-            "description": "Detected store clients and library folders",
-            "empty": "No libraries detected"
+         "preview": {
+            "summary": "By {owner}, {count, plural, =0 {no mods} one {# mod} other {# mods}}",
+            "hosts": "Downloads come from {hosts}",
+            "noHosts": "nowhere it named",
+            "package": "{name} {version}",
+            "unknownOwner": "an unnamed owner",
+            "unknownVersion": "no version",
+            "acknowledge": "I understand Encore doesn't check these mods and I install them at my own risk"
          },
-         "diagnostics": {
-            "title": "Diagnostics",
-            "description": "What Encore found during detection",
-            "empty": "No diagnostics",
-            "steamUnsupportedPlatform": "Steam local PC detection is supported on Windows and Linux only.",
-            "steamRootMissing": "Steam was not found on this device.",
-            "steamLibraryfoldersMissing": "Steam was found but library data is missing at {path}.",
-            "steamLibraryfoldersReadFailed": "Steam library data could not be read at {path}.",
-            "steamBeatSaberMissing": "No Steam Beat Saber install was found.",
-            "steamDetected": "Steam Beat Saber was found at {path}.",
-            "oculusUnsupportedPlatform": "Oculus PC local detection is supported on Windows only.",
-            "oculusLibrariesMissing": "Oculus PC libraries were not found on this device.",
-            "oculusRegistryReadFailed": "Oculus PC library data could not be read.",
-            "oculusBeatSaberMissing": "No Oculus PC Beat Saber install was found.",
-            "oculusDetected": "Oculus PC Beat Saber was found at {path}."
-         },
-         "unavailable": {
-            "title": "Store detection unavailable",
-            "description": "Encore could not read the current store snapshot."
+         "list": {
+            "label": "Your repositories",
+            "meta": "By {owner}, {count, plural, =0 {no mods listed} one {# mod listed} other {# mods listed}}",
+            "blocked": "Blocked by ScoreSaber: {reason}",
+            "toggle": "Use this repository",
+            "open": "Open {name}",
+            "remove": "Remove",
+            "removeConfirm": {
+               "title": "Remove this repository?",
+               "description": "Encore stops listing mods from this repository. Mods already installed stay where they are",
+               "name": "Repository",
+               "listing": "Listing",
+               "confirm": "Remove repository"
+            }
          }
       },
-      "receiver": {
-         "title": "Receiver",
-         "description": "Local pairing preferences for remote control",
-         "enabled": "Receiver",
-         "enabledDescription": "Accept paired Encore clients from this LAN",
-         "status": "Status",
-         "statusValue": {
-            "disabled": "Disabled",
-            "starting": "Starting",
-            "running": "Running",
-            "stopped": "Stopped",
-            "error": "Error"
+      "remote": {
+         "title": "Connected PCs",
+         "overview": {
+            "offTitle": "Use Encore across your computers",
+            "offDescription": "Manage Beat Saber on another PC or make this PC available to Encore elsewhere over your local network",
+            "manageDescription": "Connect to Encore on a Windows or Linux PC over your local network"
          },
-         "listenAddress": "Listen address",
-         "pairing": "Pairing",
-         "pairingExpires": "Expires at {time}",
-         "startPairing": "Start pairing",
-         "remotePairing": "Connect to receiver",
-         "remotePairingDescription": "Pair this Encore client with a receiver on this LAN",
-         "remoteHost": "Receiver address",
-         "remoteHostPlaceholder": "192.168.1.50",
-         "remoteCode": "Pairing code",
-         "remoteCodePlaceholder": "Code",
-         "remoteDeviceName": "This device name",
-         "remoteDefaultDeviceName": "Encore controller",
-         "remotePair": "Pair",
-         "remoteTargets": "Paired receivers",
-         "remoteDisconnect": "Disconnect",
-         "pairedDevices": "Paired devices",
-         "deviceName": "Device name",
-         "deviceSeenAt": "Last seen {time}",
-         "rename": "Rename",
-         "revoke": "Revoke",
-         "errorTitle": "Receiver action failed"
+         "setUp": "Setup",
+         "connectComputer": "Connect a computer",
+         "errorTitle": "Connection failed",
+         "turnOff": {
+            "action": "Disconnect all",
+            "confirmTitle": "Disconnect every PC?",
+            "confirmDescription": "Encore removes access to this PC and forgets every connected PC. You'll need to pair them again",
+            "devices": "PCs that lose access",
+            "receivers": "PCs Encore forgets",
+            "nothing": "Nothing is paired right now",
+            "working": "Disconnecting",
+            "confirm": "Disconnect all"
+         },
+         "receiver": {
+            "address": "{count, plural, one {Encore address} other {Encore addresses}}",
+            "statusValue": {
+               "disabled": "Disabled",
+               "starting": "Starting",
+               "running": "Running",
+               "stopped": "Stopped",
+               "error": "Error"
+            },
+            "identity": "Connection fingerprint",
+            "identityDescription": "Check this fingerprint on the PC you're connecting before accepting the pairing",
+            "securityDetails": "Security details",
+            "pairing": "Pairing code",
+            "pairingExpires": "Expires at {time}",
+            "interface": "Network interface",
+            "interfaceAutomatic": "Automatic",
+            "interfaceAll": "All interfaces (0.0.0.0)",
+            "interfaceAllWarning": "This may expose Encore beyond your LAN. Check your firewall and pair only devices you trust",
+            "pairedDevices": "PCs with access",
+            "deviceCount": "{count, plural, =0 {No devices} one {# device} other {# devices}}",
+            "deviceName": "Device name",
+            "deviceSeenAt": "Last seen {time}",
+            "rename": "Rename",
+            "revoke": "Revoke",
+            "revokeConfirm": {
+               "title": "Revoke this device?",
+               "description": "This PC loses access and has to pair again",
+               "name": "Device",
+               "seen": "Last seen",
+               "confirm": "Revoke device"
+            },
+            "secureStorage": {
+               "title": "Secure storage is unavailable",
+               "description": "Pairings are kept in memory only and are lost when Encore closes"
+            }
+         },
+         "thisComputer": {
+            "title": "This computer",
+            "description": "Make Beat Saber on this PC available to Encore elsewhere"
+         },
+         "remotes": {
+            "title": "Other computers",
+            "loadError": "Encore could not read the connected PC list",
+            "forget": "Forget",
+            "forgetConfirm": {
+               "title": "Forget this PC?",
+               "description": "Encore removes the saved pairing from this device. Nothing on the other PC changes",
+               "name": "PC",
+               "address": "Address",
+               "confirm": "Forget PC"
+            }
+         },
+         "setup": {
+            "title": "Connect PCs",
+            "description": "Nothing is turned on until you finish a step. Everything stays on your LAN",
+            "step": "Step {current} of {total}",
+            "mode": {
+               "title": "How do you want to connect?",
+               "shareTitle": "Make this PC available",
+               "shareDescription": "Lets Encore on another PC manage Beat Saber here using a one time pairing code",
+               "manageTitle": "Manage Beat Saber on another PC",
+               "manageDescription": "Enter the Encore address and pairing code shown on that PC"
+            },
+            "share": {
+               "title": "Make this PC available",
+               "description": "Encore accepts paired connections on your LAN only and access can be revoked at any time",
+               "enable": "Make this PC available",
+               "starting": "Starting the connection",
+               "failed": "Encore could not make this PC available",
+               "failedDescription": "Check the network interface and try again",
+               "running": "This PC is available. Enter these details on the PC you'll manage it from",
+               "address": "{count, plural, one {Encore address} other {Encore addresses}}",
+               "fingerprint": "Connection fingerprint",
+               "createCode": "Create pairing code",
+               "code": "Pairing code",
+               "codeExpires": "Expires at {time}",
+               "codeAttempts": "{count, plural, one {# attempt left} other {# attempts left}}",
+               "codeHint": "Enter this code on the other PC before it expires",
+               "codeMissing": "Create a pairing code when the other PC is ready",
+               "continue": "Continue"
+            },
+            "connect": {
+               "description": "Make the other PC available first, then enter the address and code it shows",
+               "host": "Encore address",
+               "hostPlaceholder": "192.168.1.50",
+               "code": "Pairing code",
+               "deviceName": "This device name",
+               "defaultDeviceName": "Encore desktop",
+               "pair": "Pair",
+               "pairing": "Pairing"
+            },
+            "done": {
+               "shareTitle": "This PC is available now",
+               "shareDescription": "PCs with access, the fingerprint and the network interface are managed in settings",
+               "manageTitle": "Connected to {name}",
+               "manageDescription": "Its Beat Saber installs and content now show up in Encore",
+               "finish": "Done"
+            }
+         }
       },
       "recovery": {
          "title": "Settings recovered",
-         "description": "Encore ignored invalid settings and loaded defaults from {path}.",
+         "description": "Encore ignored invalid settings and loaded defaults from {path}",
          "action": "Save recovered settings"
       },
       "loadError": {
          "title": "Settings unavailable",
-         "description": "Encore could not load settings."
+         "description": "Encore could not load settings"
       },
       "writeError": {
          "title": "Settings were not saved"

@@ -4,13 +4,19 @@ import * as React from 'react';
 
 import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
+import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
+import { cn } from '@/components/utils';
 
-import { cn } from '@/shared/format/helpers';
+const DialogOpenContext = React.createContext<boolean | undefined>(undefined);
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
-   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
+   return (
+      <DialogOpenContext.Provider value={props.open}>
+         <DialogPrimitive.Root data-slot="dialog" {...props} />
+      </DialogOpenContext.Provider>
+   );
 }
 
 function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
@@ -46,6 +52,12 @@ function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
    showCloseButton?: boolean;
 }) {
+   const common = useTranslations('common');
+   const open = React.useContext(DialogOpenContext);
+   const openChildren = React.useRef(children);
+
+   if (open !== false) openChildren.current = children;
+
    return (
       <DialogPortal data-slot="dialog-portal">
          <DialogOverlay />
@@ -57,14 +69,14 @@ function DialogContent({
             )}
             {...props}
          >
-            {children}
+            {open === false ? openChildren.current : children}
             {showCloseButton && (
                <DialogPrimitive.Close
                   data-slot="dialog-close"
-                  className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-md opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+                  className="data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-2.5 right-2.5 flex size-8 items-center justify-center rounded-md opacity-70 transition-opacity outline-none hover:opacity-100 disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
                >
                   <XIcon />
-                  <span className="sr-only">Close</span>
+                  <span className="sr-only">{common('close')}</span>
                </DialogPrimitive.Close>
             )}
          </DialogPrimitive.Content>
@@ -101,7 +113,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
 }
 
 function DialogDescription({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Description>) {
-   return <DialogPrimitive.Description data-slot="dialog-description" className={cn('text-muted-foreground text-sm', className)} {...props} />;
+   return <DialogPrimitive.Description data-slot="dialog-description" className={cn('sr-only', className)} {...props} />;
 }
 
 export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger };

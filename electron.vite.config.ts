@@ -12,13 +12,17 @@ const logger = createLogger();
 const warn = logger.warn;
 const warnOnce = logger.warnOnce;
 
+function isDependencySourceMapWarning(message: string) {
+   return message.includes('Failed to load source map for') || (message.includes('Sourcemap for') && message.includes('node_modules'));
+}
+
 logger.warn = (message, options) => {
-   if (isNoisyDependencySourcemapWarning(message)) return;
+   if (isDependencySourceMapWarning(message)) return;
    warn(message, options);
 };
 
 logger.warnOnce = (message, options) => {
-   if (isNoisyDependencySourcemapWarning(message)) return;
+   if (isDependencySourceMapWarning(message)) return;
    warnOnce(message, options);
 };
 
@@ -29,7 +33,7 @@ const commonResolve = {
    alias: {
       '@': srcPath
    }
-} as const;
+};
 
 export default defineConfig({
    main: {
@@ -38,7 +42,9 @@ export default defineConfig({
       build: {
          rollupOptions: {
             external: ['electron'],
-            input: fileURLToPath(new URL('./src/main/index.ts', import.meta.url))
+            input: {
+               index: fileURLToPath(new URL('./src/app/main.ts', import.meta.url))
+            }
          }
       }
    },
@@ -49,7 +55,12 @@ export default defineConfig({
          externalizeDeps: false,
          rollupOptions: {
             external: ['electron'],
-            input: fileURLToPath(new URL('./src/preload/index.ts', import.meta.url))
+            input: {
+               index: fileURLToPath(new URL('./src/app/preload.ts', import.meta.url))
+            },
+            output: {
+               format: 'cjs'
+            }
          }
       }
    },
@@ -85,7 +96,3 @@ export default defineConfig({
       }
    }
 });
-
-function isNoisyDependencySourcemapWarning(message: string) {
-   return message.includes('Failed to load source map for') || (message.includes('Sourcemap for') && message.includes('node_modules'));
-}

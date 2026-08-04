@@ -1,20 +1,15 @@
 import * as React from 'react';
 
-import { cn } from '@/shared/format/helpers';
+import { cn } from '@/components/utils';
 
-type CardVariant = 'default' | 'settings';
-
-const cardSurfaceVariants: Record<CardVariant, string> = {
-   default: 'bg-card text-card-foreground rounded-xl border shadow-sm',
-   settings: 'bg-background/35 text-card-foreground rounded-lg border shadow-none'
-};
-
-type CardProps = React.ComponentProps<'div'> & {
-   variant?: CardVariant;
-};
-
-function Card({ className, variant = 'default', ...props }: CardProps) {
-   return <div data-slot="card" className={cn('flex flex-col gap-6 py-6', cardSurfaceVariants[variant], className)} {...props} />;
+function Card({ className, ...props }: React.ComponentProps<'div'>) {
+   return (
+      <div
+         data-slot="card"
+         className={cn('bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm', className)}
+         {...props}
+      />
+   );
 }
 
 function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
@@ -50,5 +45,4 @@ function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
    return <div data-slot="card-footer" className={cn('flex items-center px-6 [.border-t]:pt-6', className)} {...props} />;
 }
 
-export { Card, CardHeader, CardFooter, CardTitle, CardAction, CardDescription, CardContent, cardSurfaceVariants };
-export type { CardVariant };
+export { Card, CardHeader, CardFooter, CardTitle, CardAction, CardDescription, CardContent };

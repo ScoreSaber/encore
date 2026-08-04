@@ -1,6 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 
-import { cn } from '@/shared/format/helpers';
+import { cn } from '@/components/utils';
 
 const kbdVariants = cva(
    'bg-muted text-muted-foreground pointer-events-none inline-flex w-fit items-center justify-center gap-1 rounded-sm px-1 font-sans font-medium select-none [[data-slot=tooltip-content]_&]:bg-background/20 [[data-slot=tooltip-content]_&]:text-background dark:[[data-slot=tooltip-content]_&]:bg-background/10',

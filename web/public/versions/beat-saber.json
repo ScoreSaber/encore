@@ -1,0 +1,1046 @@
+[
+  {
+    "version": "0.10.1",
+    "manifestId": "6316038906315325420",
+    "oculusBinaryId": "1392433784189730",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1662268711472777795",
+    "releaseDate": "2018-05-01T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.10.2",
+    "manifestId": "2542095265882143144",
+    "oculusBinaryId": "1401326316633810",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3199123443061240805",
+    "releaseDate": "2018-05-11T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.10.2p1",
+    "manifestId": "5611588554149133260",
+    "oculusBinaryId": "1408948315871610",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1660018815112331498",
+    "releaseDate": "2018-05-20T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.11.0b1",
+    "manifestId": "8892605455517437772",
+    "oculusBinaryId": null,
+    "releaseUrl": null,
+    "releaseDate": "2018-07-01T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.11.0",
+    "manifestId": "8700049030626148111",
+    "oculusBinaryId": "1480180522081722",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1675787121569907303",
+    "releaseDate": "2018-07-19T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.11.1",
+    "manifestId": "6574193224879562324",
+    "oculusBinaryId": "1481807568585684",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1675787121577641471",
+    "releaseDate": "2018-07-20T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.11.2",
+    "manifestId": "2707973953401625222",
+    "oculusBinaryId": "1529600877139686",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1700559455389069835",
+    "releaseDate": "2018-08-20T19:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.12.0",
+    "manifestId": "6094599000655593822",
+    "oculusBinaryId": "1645858012180638",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1708449632708343984",
+    "releaseDate": "2018-11-27T20:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.12.0p1",
+    "manifestId": "2068421223689664394",
+    "oculusBinaryId": "1648187958614310",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1708450266986928520",
+    "releaseDate": "2018-11-28T20:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.12.1",
+    "manifestId": "2472041066434647526",
+    "oculusBinaryId": "1668279893271783",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3142848113551335636",
+    "releaseDate": "2018-12-14T20:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.12.2",
+    "manifestId": "5325635033564462932",
+    "oculusBinaryId": "1676445885788517",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1708452169977638962",
+    "releaseDate": "2018-12-21T20:11:00Z",
+    "year": "2018",
+    "recommended": false
+  },
+  {
+    "version": "0.13.0",
+    "manifestId": "3102409495238838111",
+    "oculusBinaryId": "1796264627139975",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1809790777736470809",
+    "releaseDate": "2019-03-14T20:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "0.13.0p1",
+    "manifestId": "6827433614670733798",
+    "oculusBinaryId": null,
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1809790964563689188",
+    "releaseDate": "2019-03-19T20:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "0.13.1",
+    "manifestId": "6033025349617217666",
+    "oculusBinaryId": "1823415097758261",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1735482645687974657",
+    "releaseDate": "2019-04-01T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "0.13.2",
+    "manifestId": "6839388023573913446",
+    "oculusBinaryId": "1827595530673551",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1779393376014546213",
+    "releaseDate": "2019-04-04T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.0.0",
+    "manifestId": "152937782137361764",
+    "oculusBinaryId": "1901720436594393",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2655347409592352590",
+    "releaseDate": "2019-05-21T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.0.1",
+    "manifestId": "7950322551526208347",
+    "oculusBinaryId": "1910612422371861",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1617268229025488499",
+    "releaseDate": "2019-05-27T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.1.0",
+    "manifestId": "1400454104881094752",
+    "oculusBinaryId": "1929327700500333",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1606010497768610092",
+    "releaseDate": "2019-06-10T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.1.0p1",
+    "manifestId": "1041583928494277430",
+    "oculusBinaryId": null,
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1607139567641962696",
+    "releaseDate": "2019-07-15T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.2.0",
+    "manifestId": "3820905673516362176",
+    "oculusBinaryId": "2007606406005795",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3266717385279679846",
+    "releaseDate": "2019-07-25T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.3.0",
+    "manifestId": "2440312204809283162",
+    "oculusBinaryId": "2063391663760602",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1602640407719691235",
+    "releaseDate": "2019-08-29T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.4.0",
+    "manifestId": "3532596684905902618",
+    "oculusBinaryId": "2126093504157084",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1595888090489865366",
+    "releaseDate": "2019-08-29T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.4.2",
+    "manifestId": "1199049250928380207",
+    "oculusBinaryId": "2136904763075958",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3172148783714663931",
+    "releaseDate": "2019-10-11T19:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.5.0",
+    "manifestId": "2831333980042022356",
+    "oculusBinaryId": "2179706668795767",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1604898551795379829",
+    "releaseDate": "2019-11-07T20:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.6.0",
+    "manifestId": "1869974316274529288",
+    "oculusBinaryId": "2264419510324482",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3462636667924814182",
+    "releaseDate": "2019-12-13T20:11:00Z",
+    "year": "2019",
+    "recommended": false
+  },
+  {
+    "version": "1.6.1",
+    "manifestId": "6122319670026856947",
+    "oculusBinaryId": "2313973998702366",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1702855647517326143",
+    "releaseDate": "2020-01-07T20:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.6.2",
+    "manifestId": "4932559146183937357",
+    "oculusBinaryId": "2319779251455174",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1702857555888635029",
+    "releaseDate": "2020-01-09T20:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.7.0",
+    "manifestId": "3516084911940449222",
+    "oculusBinaryId": "2355681587864940",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/1708488968117071534",
+    "releaseDate": "2020-01-29T20:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.8.0",
+    "manifestId": "3177969677109016846",
+    "oculusBinaryId": "2483396065093491",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2080040995048021450",
+    "releaseDate": "2020-03-26T20:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.9.0",
+    "manifestId": "7885463693258878294",
+    "oculusBinaryId": "2509250149174749",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2194884053816491058",
+    "releaseDate": "2020-04-09T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.9.1",
+    "manifestId": "6222769774084748916",
+    "oculusBinaryId": "2555492557883841",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2196011856188103369",
+    "releaseDate": "2020-05-05T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.10.0",
+    "manifestId": "6711131863503994755",
+    "oculusBinaryId": "2611337982299298",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2179125258536373088",
+    "releaseDate": "2020-05-25T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.11.0",
+    "manifestId": "1919603726987963829",
+    "oculusBinaryId": "2827873783979049",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3961432516746159538",
+    "releaseDate": "2020-08-17T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.11.1",
+    "manifestId": "3268824881806146387",
+    "oculusBinaryId": "2844730055626755",
+    "releaseUrl": null,
+    "releaseDate": "2020-08-20T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.12.1",
+    "manifestId": "2928416283534881313",
+    "oculusBinaryId": "3002627316503694",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2889580787311737971",
+    "releaseDate": "2020-10-13T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.12.2",
+    "manifestId": "543439039654962432",
+    "oculusBinaryId": "3027756187324140",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/5096345334644252275",
+    "releaseDate": "2020-10-19T19:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.13.0",
+    "manifestId": "4635119747389290346",
+    "oculusBinaryId": "3087480618018363",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2903094755791760339",
+    "releaseDate": "2020-11-12T20:11:00Z",
+    "year": "2020",
+    "recommended": false
+  },
+  {
+    "version": "1.13.2",
+    "manifestId": "8571679771389514488",
+    "oculusBinaryId": "3259559474143809",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3025824186763919109",
+    "releaseDate": "2021-01-21T20:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.13.4",
+    "manifestId": "1257277263145069282",
+    "oculusBinaryId": "3377183652381390",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3020198491530803202",
+    "releaseDate": "2021-03-09T20:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.13.5",
+    "manifestId": "7007516983116400336",
+    "oculusBinaryId": "3391815807584841",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3021325027071201045",
+    "releaseDate": "2021-03-12T20:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.14.0",
+    "manifestId": "9218225910501819399",
+    "oculusBinaryId": "3405570192876069",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3012318462417082617",
+    "releaseDate": "2021-03-18T20:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.15.0",
+    "manifestId": "7624554893344753887",
+    "oculusBinaryId": "3512427425523678",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3041595663499101523",
+    "releaseDate": "2021-04-29T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.16.0",
+    "manifestId": "3667184295685865706",
+    "oculusBinaryId": "3602735303159556",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3001065803744427929",
+    "releaseDate": "2021-05-27T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.16.1",
+    "manifestId": "9201874499606445062",
+    "oculusBinaryId": "3608513445915075",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3001065803748822093",
+    "releaseDate": "2021-05-28T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.16.2",
+    "manifestId": "3692829915208062825",
+    "oculusBinaryId": "3631747100258376",
+    "releaseUrl": "http://steamcommunity.com/games/620980/announcements/detail/3024710972645830369",
+    "releaseDate": "2021-06-10T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.16.3",
+    "manifestId": "6392596175313869009",
+    "oculusBinaryId": "3737896816310070",
+    "releaseUrl": "http://steamcommunity.com/games/620980/announcements/detail/5293402556388135977",
+    "releaseDate": "2021-07-20T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.16.4",
+    "manifestId": "8820433629543698585",
+    "oculusBinaryId": "3759730617460023",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2965042081090310028",
+    "releaseDate": "2021-07-26T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.17.0",
+    "manifestId": "7826684224434229804",
+    "oculusBinaryId": "3858475637585520",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2945905042782366475",
+    "releaseDate": "2021-08-31T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.17.1",
+    "manifestId": "4668547658954826996",
+    "oculusBinaryId": "3894496013983482",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2947032120578243378",
+    "releaseDate": "2021-09-09T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.18.0",
+    "manifestId": "5599254819160454367",
+    "oculusBinaryId": "3926417640791319",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/5570379635768010184",
+    "releaseDate": "2021-09-21T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.18.1",
+    "manifestId": "8961661233382948062",
+    "oculusBinaryId": "3968051796627903",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/2994322456166449763",
+    "releaseDate": "2021-10-06T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.18.2",
+    "manifestId": "6835596583028648427",
+    "oculusBinaryId": "4024867594279656",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3026974832179662032",
+    "releaseDate": "2021-10-25T19:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.18.3",
+    "manifestId": "6558821762131072991",
+    "oculusBinaryId": "4042806399152442",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3067508483705433949",
+    "releaseDate": "2021-11-04T20:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.19.0",
+    "manifestId": "8948172000430595334",
+    "oculusBinaryId": "4132873813479033",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3105792342251200877",
+    "releaseDate": "2021-12-10T20:11:00Z",
+    "year": "2021",
+    "recommended": false
+  },
+  {
+    "version": "1.19.1",
+    "manifestId": "1175216641760077721",
+    "oculusBinaryId": "4409301142502964",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/5771929045825669047",
+    "releaseDate": "2022-02-14T20:11:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.20.0",
+    "manifestId": "4202491068770948196",
+    "oculusBinaryId": "4473099549456456",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3096792662638975765",
+    "releaseDate": "2022-03-08T20:11:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.21.0",
+    "manifestId": "3648558848715327622",
+    "oculusBinaryId": "4527595284006882",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3180111792066790947",
+    "releaseDate": "2022-03-31T19:11:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.22.0",
+    "manifestId": "4038188869828689801",
+    "oculusBinaryId": "4634406099992466",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3181240878804806326",
+    "releaseDate": "2022-05-05T19:11:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.22.1",
+    "manifestId": "3771211058784167267",
+    "oculusBinaryId": "4660898857343190",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3185745740381652029",
+    "releaseDate": "2022-05-19T19:11:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.23.0",
+    "manifestId": "8051970117665729770",
+    "oculusBinaryId": "4681198518646557",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3346751320551809488",
+    "releaseDate": "2022-06-14T15:03:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.24.0",
+    "manifestId": "649695825989344999",
+    "oculusBinaryId": "4793158617450546",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4719226562388423388",
+    "releaseDate": "2022-07-14T15:02:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.24.1",
+    "manifestId": "3141359577983993890",
+    "oculusBinaryId": "4962706317162441",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4719226562388423388",
+    "releaseDate": "2022-08-30T12:56:54Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.25.0",
+    "manifestId": "4529582051007915041",
+    "oculusBinaryId": "4996170620482677",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3312985013538143172",
+    "releaseDate": "2022-10-06T15:02:09Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.25.1",
+    "manifestId": "7372469314660649150",
+    "oculusBinaryId": "5074476459318759",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/5346361068670142187",
+    "releaseDate": "2022-10-13T15:01:09Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.26.0",
+    "manifestId": "3634450655207470002",
+    "oculusBinaryId": "5116093325157072",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3414318646334948892",
+    "releaseDate": "2022-11-08T16:06:00Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.27.0",
+    "manifestId": "3485516174915301618",
+    "oculusBinaryId": "5232077970225273",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3629368753553708497",
+    "releaseDate": "2022-12-13T14:50:03Z",
+    "year": "2022",
+    "recommended": false
+  },
+  {
+    "version": "1.28.0",
+    "manifestId": "7463243155526905423",
+    "oculusBinaryId": "5425534454212956",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3666530358620442392",
+    "releaseDate": "2023-02-28T14:17:02Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.29.0",
+    "manifestId": "3341527958186345367",
+    "oculusBinaryId": "5550538398379227",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/6169409105082976092",
+    "releaseDate": "2023-03-30T15:06:00Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.29.1",
+    "manifestId": "886973241045584398",
+    "oculusBinaryId": "5581819385251128",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/6169409105101272202",
+    "releaseDate": "2023-04-04T15:58:05Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.29.4",
+    "manifestId": "6291266771922375922",
+    "oculusBinaryId": "5659705544129178",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3708194993422325380",
+    "releaseDate": "2023-05-09T15:09:51Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.30.0",
+    "manifestId": "7304715857122259127",
+    "oculusBinaryId": "5699848430114889",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3725085394628677636",
+    "releaseDate": "2023-05-24T21:56:30Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.30.2",
+    "manifestId": "8042804988990059618",
+    "oculusBinaryId": "5770096269756771",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3655280868312846230",
+    "releaseDate": "2023-06-13T14:59:24Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.31.0",
+    "manifestId": "676582354127623831",
+    "oculusBinaryId": "5824747874291610",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3674423070127121445",
+    "releaseDate": "2023-06-29T14:57:26Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.31.1",
+    "manifestId": "5239818041644201119",
+    "oculusBinaryId": "6044391715660557",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3664295677895178184",
+    "releaseDate": "2023-09-04T10:52:27Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.32.0",
+    "manifestId": "1660149393914874041",
+    "oculusBinaryId": "6168675063232221",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3723971545002767483",
+    "releaseDate": "2023-10-05T14:54:40Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.33.0",
+    "manifestId": "706865160400890715",
+    "oculusBinaryId": "6255299197903140",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3744239644488431243",
+    "releaseDate": "2023-10-30T15:10:11Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.34.0",
+    "manifestId": "3651119791147907495",
+    "oculusBinaryId": "6373048192794906",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3744239644488431243",
+    "releaseDate": "2023-12-05T16:58:48Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.34.2",
+    "manifestId": "8045892568861450718",
+    "oculusBinaryId": "6426757994090592",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/3865840827122760836",
+    "releaseDate": "2023-12-11T15:51:33Z",
+    "year": "2023",
+    "recommended": false
+  },
+  {
+    "version": "1.34.5",
+    "manifestId": "7413405154512822201",
+    "oculusBinaryId": "6639053626194360",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4036983137766828694",
+    "releaseDate": "2024-02-12T13:52:38Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.34.6",
+    "manifestId": "4398761375819224126",
+    "oculusBinaryId": "6682206641879058",
+    "releaseUrl": "https://store.steampowered.com/news/app/620980/view/7595953477644376720",
+    "releaseDate": "2024-02-16T13:51:13Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.35.0",
+    "manifestId": "1490986193481243578",
+    "oculusBinaryId": "6720809361352119",
+    "releaseUrl": "https://store.steampowered.com/news/app/620980/view/4142820264819707009",
+    "releaseDate": "2024-03-07T17:06:14Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.36.0",
+    "manifestId": "8533509040167838423",
+    "oculusBinaryId": "6863072637125790",
+    "releaseUrl": "https://store.steampowered.com/news/app/620980/view/4205873192610459250",
+    "releaseDate": "2024-04-09T16:47:43Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.36.2",
+    "manifestId": "4832237377879752064",
+    "oculusBinaryId": "6983660338400352",
+    "releaseUrl": "https://store.steampowered.com/news/app/620980/view/4181105931135110118",
+    "releaseDate": "2024-05-06T15:07:00Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.37.0",
+    "manifestId": "7270690075584855288",
+    "oculusBinaryId": "7062062833893435",
+    "releaseUrl": "https://store.steampowered.com/news/app/620980/view/4161968170153497460",
+    "releaseDate": "2024-06-04T15:02:26Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.37.1",
+    "manifestId": "9129356330007601179",
+    "oculusBinaryId": "7313068492126200",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4253168598913260422",
+    "releaseDate": "2024-07-11T15:08:49Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.37.2",
+    "manifestId": "6848299977215652352",
+    "oculusBinaryId": "7438773609555687",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4349999161850643744",
+    "releaseDate": "2024-08-06T12:03:34Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.37.3",
+    "manifestId": "5834150512217183366",
+    "oculusBinaryId": "7553569971409383",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/6808965920900622902",
+    "releaseDate": "2024-08-19T10:01:52Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.37.4",
+    "manifestId": "7585106640515547731",
+    "oculusBinaryId": "7630971613669218",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4601078012425941968",
+    "releaseDate": "2024-09-05T15:02:27Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.37.5",
+    "manifestId": "3122533396458693889",
+    "oculusBinaryId": "7685108391588873",
+    "releaseUrl": null,
+    "releaseDate": "2024-09-06T13:12:36Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.38.0",
+    "manifestId": "3482902979520746178",
+    "oculusBinaryId": "7834818833284494",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4669760442595134838",
+    "releaseDate": "2024-10-08T15:03:35Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.39.0",
+    "manifestId": "5365094543246905054",
+    "oculusBinaryId": "7978663688900007",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4451339035198095638",
+    "releaseDate": "2024-11-12T15:55:32Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.39.1",
+    "manifestId": "2179614296547473280",
+    "oculusBinaryId": "8189133517853022",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/4451340304252928024",
+    "releaseDate": "2024-11-20T13:02:28Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.40.0",
+    "manifestId": "8455036253884215709",
+    "oculusBinaryId": "8259984977434542",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/507314379973199787",
+    "releaseDate": "2024-12-10T15:55:28Z",
+    "year": "2024",
+    "recommended": false
+  },
+  {
+    "version": "1.40.1",
+    "manifestId": "8655702238937650396",
+    "oculusBinaryId": "8526525354113835",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510696972023234581",
+    "releaseDate": "2025-01-29T10:02:34Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.2",
+    "manifestId": "5496832903170665287",
+    "oculusBinaryId": "8626990240734012",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510697606000673692",
+    "releaseDate": "2025-02-07T18:10:37Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.3",
+    "manifestId": "2468336483467342711",
+    "oculusBinaryId": "8747607938672241",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510699509433500685",
+    "releaseDate": "2025-02-27T16:00:33Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.4",
+    "manifestId": "3323243802033113443",
+    "oculusBinaryId": "8889412401158460",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510702041542166484",
+    "releaseDate": "2025-04-01T13:53:42Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.5",
+    "manifestId": "2447038720841508806",
+    "oculusBinaryId": "9120095564756808",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/502825275922317447",
+    "releaseDate": "2025-05-15T15:01:45Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.6",
+    "manifestId": "3050696685250334115",
+    "oculusBinaryId": "9315734585192904",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510708375093248769",
+    "releaseDate": "2025-06-05T14:52:24Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.7",
+    "manifestId": "7263483117834945201",
+    "oculusBinaryId": "9533840436715650",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510710285788516821",
+    "releaseDate": "2025-07-10T15:05:22Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.8",
+    "manifestId": "8437413909225671968",
+    "oculusBinaryId": "9637940462972313",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510712822654566578",
+    "releaseDate": "2025-07-24T15:12:47Z",
+    "year": "2025",
+    "recommended": true
+  },
+  {
+    "version": "1.40.9",
+    "manifestId": "3458990238328802301",
+    "oculusBinaryId": "9907754402657583",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/510715359276302413",
+    "releaseDate": "2025-08-21T11:48:48Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.10",
+    "manifestId": "6631675572109548834",
+    "oculusBinaryId": "10067683139998041",
+    "releaseUrl": null,
+    "releaseDate": "2025-08-28T13:10:14Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.11",
+    "manifestId": "2631032361926028583",
+    "oculusBinaryId": "23961660520173735",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/539991294395549709",
+    "releaseDate": "2025-09-22T14:42:18Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.12",
+    "manifestId": "1671670480231783169",
+    "oculusBinaryId": "24069417846064668",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/539991928250303115",
+    "releaseDate": "2025-09-29T13:20:49Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.40.13",
+    "manifestId": "5625229280277602839",
+    "oculusBinaryId": "24341751555497961",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/637948480724140077",
+    "releaseDate": "2025-10-30T15:28:24Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.41.1",
+    "manifestId": "1904061226749256371",
+    "oculusBinaryId": "24664294529910327",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/542249438751490862",
+    "releaseDate": "2025-12-02T16:26:34Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.42.0",
+    "manifestId": "3610593956417791952",
+    "oculusBinaryId": "24766479246358521",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/542251341653738360",
+    "releaseDate": "2025-12-18T16:04:52Z",
+    "year": "2025",
+    "recommended": false
+  },
+  {
+    "version": "1.42.1",
+    "manifestId": "4753635509173254286",
+    "oculusBinaryId": "25154695844203524",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/534373847137255841",
+    "releaseDate": "2026-01-29T13:09:47Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.42.2",
+    "manifestId": "9067042658303247735",
+    "oculusBinaryId": "25217144241292017",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/536626281230369168",
+    "releaseDate": "2026-02-05T15:01:45Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.42.3",
+    "manifestId": "5798847223913166210",
+    "oculusBinaryId": "25563181170021654",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/511860284166506401",
+    "releaseDate": "2026-03-26T14:12:59Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.43.0",
+    "manifestId": "6499880290663953435",
+    "oculusBinaryId": "25964224259917341",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/692008075043799325",
+    "releaseDate": "2026-04-29T13:02:03Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.44.0",
+    "manifestId": "4180431244915746363",
+    "oculusBinaryId": "26135279289478503",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/690884711519617603",
+    "releaseDate": "2026-05-28T13:01:35Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.44.1",
+    "manifestId": "7621452421350879947",
+    "oculusBinaryId": "26497783233228105",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/703272148131643814",
+    "releaseDate": "2026-06-25T13:04:13Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.44.2",
+    "manifestId": "1193177938036980028",
+    "oculusBinaryId": "26695473026792457",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/684133750874833264",
+    "releaseDate": "2026-07-16T12:52:15Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.44.3",
+    "manifestId": "5151940350652702032",
+    "oculusBinaryId": "26906970178976073",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/699897618302501594",
+    "releaseDate": "2026-07-30T13:01:54Z",
+    "year": "2026",
+    "recommended": false
+  }
+]

@@ -1,0 +1,62 @@
+import "./global.css";
+
+import type { ReactNode } from "react";
+
+import type { Metadata, Viewport } from "next";
+import localFont from "next/font/local";
+
+import { Provider } from "@/components/provider";
+
+const geist = localFont({
+  src: [
+    {
+      path: "../../../public/fonts/geist-latin-400-normal.woff2",
+      weight: "400",
+    },
+    {
+      path: "../../../public/fonts/geist-latin-500-normal.woff2",
+      weight: "500",
+    },
+    {
+      path: "../../../public/fonts/geist-latin-600-normal.woff2",
+      weight: "600",
+    },
+    {
+      path: "../../../public/fonts/geist-latin-700-normal.woff2",
+      weight: "700",
+    },
+  ],
+  variable: "--font-sans",
+});
+
+const geistPixel = localFont({
+  src: "../../../public/fonts/GeistPixel-Square.woff2",
+  weight: "500",
+  variable: "--font-pixel",
+});
+
+export const metadata: Metadata = {
+  title: "Encore",
+  description: "A modern desktop companion for Beat Saber",
+  icons: {
+    icon: "/encore-logo.svg",
+  },
+};
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: "#00020b",
+};
+
+export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
+  return (
+    <html
+      lang="en"
+      className={`dark min-h-full min-w-[320px] bg-[var(--background)] ${geist.variable} ${geistPixel.variable}`}
+    >
+      <body className="min-h-screen bg-[var(--background)] text-[var(--foreground)] [font-family:var(--font-sans)]">
+        <Provider>{children}</Provider>
+      </body>
+    </html>
+  );
+}

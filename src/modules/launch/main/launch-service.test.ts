@@ -1,0 +1,170 @@
+import { Result } from 'better-result';
+
+import { createInstallRegistry } from '@/modules/installs/main/install-registry';
+import type { LaunchOptions } from '@/modules/launch/contract';
+import { quoteForPowerShell, type LaunchCommand, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
+import { createLaunchService } from '@/modules/launch/main/launch-service';
+import { ensureProtonCompatData, validateProtonFolder } from '@/modules/launch/main/proton';
+import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
+import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
+import { createSettingsStore } from '@/modules/settings/main/settings-store';
+import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
+
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const cleanups: (() => Promise<void>)[] = [];
+
+afterEach(async () => {
+   for (const cleanup of cleanups.reverse()) {
+      await cleanup();
+   }
+   cleanups.length = 0;
+});
+
+describe('launch service', () => {
+   test('builds argv entries instead of a shell string and records the last launch', async () => {
+      const harness = await createHarness();
+      const install = await harness.createInstall();
+      const options: LaunchOptions = {
+         flags: ['debug', 'fpfc'],
+         args: ['--room', 'my room', '--seed', '7'],
+         runAsAdmin: false
+      };
+
+      const started = await harness.launch.start({ installId: install.id, options });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
+      expect(harness.spawned).toEqual([
+         expect.objectContaining({
+            executablePath: join(install.path, 'Beat Saber.exe'),
+            args: ['--no-yeet', 'fpfc', '--verbose', '--room', 'my room', '--seed', '7'],
+            runAsAdmin: false
+         })
+      ]);
+      expect((await harness.launch.getState()).lastLaunch).toMatchObject({
+         installId: install.id,
+         options: { flags: ['fpfc', 'debug'], args: ['--room', 'my room', '--seed', '7'] }
+      });
+   });
+
+   test('runs the Windows build through Proton on Linux', async () => {
+      const harness = await createHarness('linux');
+      const install = await harness.createInstall();
+      const protonPath = await createProtonFolder(harness.dataPath);
+      await harness.settingsStore.updateLibrarySettings({ protonPath });
+
+      const started = await harness.launch.start({
+         installId: install.id,
+         options: { flags: ['proton-logs'], args: [], runAsAdmin: true }
+      });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
+      expect(harness.spawned[0]).toMatchObject({
+         executablePath: join(protonPath, 'proton'),
+         args: ['run', join(install.path, 'Beat Saber.exe'), '--no-yeet'],
+         runAsAdmin: false,
+         env: {
+            WINEDLLOVERRIDES: 'winhttp=n,b',
+            STEAM_COMPAT_DATA_PATH: join(harness.dataPath, 'compatdata'),
+            STEAM_COMPAT_INSTALL_PATH: install.path,
+            STEAM_COMPAT_CLIENT_INSTALL_PATH: join(harness.dataPath, 'steam'),
+            PROTON_LOG: '1',
+            PROTON_LOG_DIR: join(install.path, 'Logs')
+         }
+      });
+      expect((await stat(join(harness.dataPath, 'compatdata'))).isDirectory()).toBe(true);
+   });
+
+   test('rejects launch options that cannot be passed to a process', async () => {
+      const harness = await createHarness();
+      const install = await harness.createInstall();
+
+      expect(
+         await harness.launch.preview({
+            installId: install.id,
+            options: { flags: [], args: ['--room\n--fpfc'], runAsAdmin: false }
+         })
+      ).toMatchObject({ status: 'unavailable', issue: 'invalid-options' });
+      expect(harness.spawned).toEqual([]);
+   });
+});
+
+describe('launch arguments', () => {
+   test('escapes single quotes when Windows has to elevate the launch', () => {
+      expect(quoteForPowerShell("C:\\Games\\Todd's Beat Saber")).toBe("'C:\\Games\\Todd''s Beat Saber'");
+   });
+});
+
+async function createHarness(platform: NodeJS.Platform = 'win32') {
+   const dataPath = await mkdtemp(join(tmpdir(), 'encore-launch-'));
+   const installRoot = join(dataPath, 'library');
+   await mkdir(installRoot, { recursive: true });
+
+   const settingsStore = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+   await settingsStore.updateLibrarySettings({ installRoot });
+   const detectStores = (): Promise<StoreDetectionSnapshot> =>
+      Promise.resolve({
+         targetId: 'local',
+         platform: 'linux',
+         scannedAt: new Date().toISOString(),
+         stores: [],
+         candidates: [],
+         diagnostics: []
+      });
+   const registry = createInstallRegistry({ dataPath, settingsStore, detectStores });
+   const operations = createOperationRegistry();
+   const spawned: LaunchCommand[] = [];
+   const runtime: LaunchRuntime = {
+      platform,
+      readSteamClient: () => Promise.resolve({ status: 'missing' }),
+      readOculusClient: () => Promise.resolve({ status: 'missing' }),
+      readLinuxHost: () => Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: false, flatpak: false }),
+      validateProtonFolder,
+      prepareProtonCompatData: ensureProtonCompatData,
+      startSteamClient: () => Promise.resolve(Result.ok({ pid: 1_212 })),
+      startOculusClient: () => Promise.resolve(Result.ok({ pid: 1_213 })),
+      spawn: (command) => {
+         spawned.push(command);
+         return Promise.resolve(Result.ok({ pid: 4_242 }));
+      }
+   };
+
+   cleanups.push(async () => {
+      registry.dispose();
+      await rm(dataPath, { recursive: true, force: true });
+   });
+
+   return {
+      dataPath,
+      settingsStore,
+      operations,
+      spawned,
+      launch: createLaunchService({ settingsStore, registry, operations, runtime, storeClientDelayMs: 0 }),
+      createInstall: async () => {
+         const path = join(installRoot, 'Beat Saber');
+         await mkdir(join(path, 'Beat Saber_Data'), { recursive: true });
+         await writeFile(join(path, 'Beat Saber.exe'), 'stub', 'utf8');
+         await writeFile(join(path, 'Beat Saber_Data', 'globalgamemanagers'), 'public.app-category.games  1.37.0 ', 'latin1');
+         const registered = await registry.register({ source: 'library', path });
+         if (Result.isError(registered)) throw new Error('registration failed');
+
+         return registered.value;
+      }
+   };
+}
+
+async function createProtonFolder(parentPath: string) {
+   const protonPath = join(parentPath, 'Proton 9.0');
+   await mkdir(join(protonPath, 'files', 'bin'), { recursive: true });
+   await writeFile(join(protonPath, 'proton'), 'stub', 'utf8');
+   await writeFile(join(protonPath, 'files', 'bin', 'wine64'), 'stub', 'utf8');
+
+   return protonPath;
+}

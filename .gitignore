@@ -6,7 +6,12 @@ dist/
 out/
 release/
 build/
+.next/
+.source/
+.turbo/
+.wrangler/
 .output/
+.tanstack/
 *.tsbuildinfo
 electron.vite.*.mjs
 
