@@ -41,6 +41,7 @@ function mod(modId: string, sourceId: string, sourceName: string, sourceKind: Mo
       sizeBytes: null,
       isBsipa: false,
       isRequired: false,
-      dependencyIds: []
+      dependencyIds: [],
+      claimedIdentity: null
    };
 }

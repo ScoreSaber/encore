@@ -1,3 +1,5 @@
+import semver from 'semver';
+
 import type { ContentHash, ContentHashAlgorithm } from '@/lib/content/contract';
 import { evaluateHttpsUrl } from '@/lib/security/external-url';
 import {
@@ -12,6 +14,7 @@ import {
    type ModLink,
    type ModLinkKind,
    type ModPlatform,
+   type ModSourceResolutionSettings,
    type ModSummary
 } from '@/modules/mods/contract';
 import type { ModSourceKind, ModSourceStatus } from '@/modules/mods/contract';
@@ -44,6 +47,7 @@ export type ModIndexEntry = {
    version: string;
    sizeBytes: number | null;
    isBsipa: boolean;
+   claimedIdentity: string | null;
    dependencies: string[];
    downloadUrl: string;
    downloadHost: string;
@@ -69,6 +73,47 @@ export function modIndexKey(sourceId: string, packageId: string) {
 
 export function fileHashKey(hash: ContentHash) {
    return `${hash.algorithm}:${hash.value.toLowerCase()}`;
+}
+
+export function resolveModIdentities(input: { entries: ModIndexEntry[]; fileMatches: ModIndexFileMatch[] }, settings: ModSourceResolutionSettings) {
+   if (!settings.combine) return input;
+
+   const candidatesByIdentity = new Map<string, ModIndexEntry[]>();
+   const canonicalIdByModId = new Map<string, string>();
+
+   for (const entry of input.entries) {
+      const canonicalId = entry.claimedIdentity ?? entry.modId;
+      canonicalIdByModId.set(entry.modId, canonicalId);
+
+      const candidates = candidatesByIdentity.get(canonicalId) ?? [];
+      candidates.push(entry);
+      candidatesByIdentity.set(canonicalId, candidates);
+   }
+
+   const groups = [...candidatesByIdentity].map(([modId, candidates]) => ({
+      modId,
+      candidates,
+      selected: selectIdentityCandidate(candidates, settings.strategy)
+   }));
+   const entries = groups.map(({ modId, selected }) => ({
+      ...selected,
+      modId,
+      dependencies: selected.dependencies.map((dependencyId) => canonicalIdByModId.get(dependencyId) ?? dependencyId)
+   }));
+   const fileMatches: ModIndexFileMatch[] = input.fileMatches.map((match) => ({
+      ...match,
+      modId: canonicalIdByModId.get(match.modId) ?? match.modId
+   }));
+
+   for (const { modId, candidates, selected } of groups) {
+      if (candidates.length < 2) continue;
+
+      for (const candidate of [...candidates.filter((entry) => entry !== selected), selected]) {
+         fileMatches.push(...candidate.files.map((file) => ({ hash: file.hash, modId, version: candidate.version })));
+      }
+   }
+
+   return { entries, fileMatches };
 }
 
 export function buildModIndex(input: {
@@ -128,6 +173,7 @@ export function toModIndexEntries(entries: BeatModsEntry[]): ModIndexEntry[] {
          version: entry.version.modVersion,
          sizeBytes: entry.version.fileSize ?? null,
          isBsipa: entry.mod.name.trim().toLowerCase() === bsipaModName,
+         claimedIdentity: null,
          dependencies: entry.version.dependencies
             .map((versionId) => packageIdByVersionId.get(versionId))
             .filter((dependencyId) => dependencyId !== undefined)
@@ -159,7 +205,8 @@ export function toModSummary(entry: ModIndexEntry, installedVersion: string | nu
       sizeBytes: entry.sizeBytes,
       isBsipa: entry.isBsipa,
       isRequired: isRequiredModCategory(entry.category),
-      dependencyIds: entry.dependencies
+      dependencyIds: entry.dependencies,
+      claimedIdentity: entry.claimedIdentity
    };
 }
 
@@ -178,4 +225,29 @@ function describeAuthor(entry: BeatModsEntry) {
    const author = entry.version.author ?? entry.mod.authors[0];
 
    return author?.displayName ?? author?.username ?? '';
+}
+
+function selectIdentityCandidate(candidates: ModIndexEntry[], strategy: ModSourceResolutionSettings['strategy']) {
+   const first = candidates[0];
+   if (!first) throw new Error('an identity group cannot be empty');
+
+   return candidates.slice(1).reduce((selected, candidate) => {
+      if (strategy === 'prefer-unofficial' && selected.sourceKind !== candidate.sourceKind) {
+         return candidate.sourceKind === 'unofficial' ? candidate : selected;
+      }
+
+      const compared = compareVersions(candidate.version, selected.version);
+      if (compared !== 0) return compared > 0 ? candidate : selected;
+      if (selected.sourceKind !== candidate.sourceKind) return candidate.sourceKind === 'official' ? candidate : selected;
+
+      return selected;
+   }, first);
+}
+
+function compareVersions(first: string, second: string) {
+   const parsedFirst = semver.coerce(first);
+   const parsedSecond = semver.coerce(second);
+   if (parsedFirst && parsedSecond) return semver.compare(parsedFirst, parsedSecond);
+
+   return first.localeCompare(second);
 }

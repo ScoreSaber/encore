@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { localeSchema } from '@/app/renderer/i18n/config';
 import { launchRecordSchema } from '@/modules/launch/contract';
-import { modRepositoryRecordSchema } from '@/modules/mods/contract';
+import { modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
 import {
    accentColorSchema,
    appSettingsSchema,
@@ -46,6 +46,7 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          receiver,
          modRepositories: z.array(modRepositoryRecordSchema).catch(defaults.app.modRepositories),
          officialModSourceEnabled: z.boolean().catch(defaults.app.officialModSourceEnabled),
+         modSourceResolution: modSourceResolutionSettingsSchema.catch(defaults.app.modSourceResolution),
          alphaWarningAccepted: z.boolean().catch(defaults.app.alphaWarningAccepted),
          bsmanagerPromptDismissed: z.boolean().catch(defaults.app.bsmanagerPromptDismissed),
          modGroups: modGroupSettingsSchema.catch(defaults.app.modGroups)

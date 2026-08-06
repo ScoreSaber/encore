@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field, FieldContent, FieldTitle } from '@/components/ui/field';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 
 import { useSnapshotMutation } from '@/app/renderer/query/use-snapshot-mutation';
@@ -21,10 +22,11 @@ import type {
    ModRepositoryResult,
    ModRepositorySummary
 } from '@/modules/mods/contract';
+import { modIdentityResolutionStrategySchema } from '@/modules/mods/contract';
 import { modRepositoryIssueKeys } from '@/modules/mods/renderer/mod-issue-keys';
 import { modRepositoryListQueryOptions } from '@/modules/mods/renderer/mod-queries';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import { SettingsSection } from '@/modules/settings/renderer/settings-layout';
+import { SettingsRow, SettingsSection } from '@/modules/settings/renderer/settings-layout';
 import { useTargets } from '@/modules/targets/renderer/use-targets';
 
 export function ModRepositoriesSection() {
@@ -79,6 +81,11 @@ export function ModRepositoriesFields({
       run: mods.removeRepository,
       snapshot: (result) => (result.status === 'ok' ? result.snapshot : undefined)
    });
+   const setResolution = useSnapshotMutation({
+      queryKey,
+      run: mods.setModSourceResolution,
+      snapshot: (result) => (result.status === 'ok' ? result.snapshot : undefined)
+   });
 
    const snapshot = repositories.data ?? null;
    const preview = previewRepository.data ?? null;
@@ -87,6 +94,7 @@ export function ModRepositoriesFields({
       refreshRepositories.isPending ||
       addRepository.isPending ||
       toggleRepository.isPending ||
+      setResolution.isPending ||
       removeRepository.isPending;
    const loadFailed = repositories.isError || refreshRepositories.isError;
    const showRepositoryList = !snapshot || loadFailed || snapshot.repositories.length > 0;
@@ -132,23 +140,69 @@ export function ModRepositoriesFields({
    return (
       <>
          {!addOnly ? (
-            <Field orientation="vertical" className="py-2">
-               <FieldContent className="min-w-0 gap-0.5">
-                  <FieldTitle>{t('official.label')}</FieldTitle>
-               </FieldContent>
+            <>
+               <Field orientation="vertical" className="py-2">
+                  <FieldContent className="min-w-0 gap-0.5">
+                     <FieldTitle>{t('official.label')}</FieldTitle>
+                  </FieldContent>
 
-               <div className="flex w-full flex-col gap-2">
-                  {snapshot?.official.map((source) => (
-                     <RepositoryRow
-                        key={source.id}
-                        repository={source}
-                        disabled={busy}
-                        linkUrl={source.listingUrl}
-                        onToggle={(enabled) => void apply(toggleRepository.mutateAsync({ id: source.id, enabled }))}
-                     />
-                  ))}
-               </div>
-            </Field>
+                  <div className="flex w-full flex-col gap-2">
+                     {snapshot?.official.map((source) => (
+                        <RepositoryRow
+                           key={source.id}
+                           repository={source}
+                           disabled={busy}
+                           linkUrl={source.listingUrl}
+                           onToggle={(enabled) => void apply(toggleRepository.mutateAsync({ id: source.id, enabled }))}
+                        />
+                     ))}
+                  </div>
+               </Field>
+
+               {snapshot ? (
+                  <>
+                     <SettingsRow label={t('resolution.combine.title')} description={t('resolution.combine.description')}>
+                        <Switch
+                           checked={snapshot.resolution.combine}
+                           disabled={busy}
+                           aria-label={t('resolution.combine.title')}
+                           onCheckedChange={(combine) => void apply(setResolution.mutateAsync({ ...snapshot.resolution, combine }))}
+                        />
+                     </SettingsRow>
+                     <SettingsRow
+                        label={t('resolution.strategy.title')}
+                        description={t('resolution.strategy.description')}
+                        htmlFor="settings-mod-source-resolution"
+                     >
+                        <Select
+                           value={snapshot.resolution.strategy}
+                           disabled={busy || !snapshot.resolution.combine}
+                           onValueChange={(value) =>
+                              void apply(
+                                 setResolution.mutateAsync({
+                                    ...snapshot.resolution,
+                                    strategy: modIdentityResolutionStrategySchema.parse(value)
+                                 })
+                              )
+                           }
+                        >
+                           <SelectTrigger id="settings-mod-source-resolution" className="w-full min-w-44 @md/field-group:w-56">
+                              <SelectValue />
+                           </SelectTrigger>
+                           <SelectContent>
+                              <SelectGroup>
+                                 {modIdentityResolutionStrategySchema.options.map((strategy) => (
+                                    <SelectItem key={strategy} value={strategy}>
+                                       {t(`resolution.strategy.options.${strategy}`)}
+                                    </SelectItem>
+                                 ))}
+                              </SelectGroup>
+                           </SelectContent>
+                        </Select>
+                     </SettingsRow>
+                  </>
+               ) : null}
+            </>
          ) : null}
 
          <Field orientation="vertical" className={reviewOnly ? undefined : 'py-2'}>
@@ -216,10 +270,16 @@ export function ModRepositoriesFields({
                            {preview.packages.map((listed) => (
                               <li key={listed.id} className="break-words">
                                  {t('preview.package', { name: listed.name, version: listed.version || t('preview.unknownVersion') })}
+                                 {listed.identity ? ` ${t('preview.identityClaim', { identity: listed.identity })}` : ''}
                               </li>
                            ))}
                         </ul>
                      </>
+                  ) : null}
+                  {preview.identityClaimCount > 0 ? (
+                     <WarningLine className="text-status-warning w-full">
+                        {t('preview.identityClaims', { count: preview.identityClaimCount })}
+                     </WarningLine>
                   ) : null}
                   <label className={reviewOnly ? 'flex items-center gap-2 text-sm' : 'flex items-center gap-2 text-xs'}>
                      <Checkbox checked={acknowledged} disabled={busy} onCheckedChange={(next) => setAcknowledged(next === true)} />

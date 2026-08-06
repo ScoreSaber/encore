@@ -16,7 +16,8 @@ export function useRepositorySync() {
 
       const input = {
          officialEnabled: repositories.data.official.every((source) => source.enabled),
-         repositories: repositories.data.repositories.map((repository) => ({ listingUrl: repository.listingUrl, enabled: repository.enabled }))
+         repositories: repositories.data.repositories.map((repository) => ({ listingUrl: repository.listingUrl, enabled: repository.enabled })),
+         resolution: repositories.data.resolution
       };
       const signature = JSON.stringify(input);
       const eligible = targets.filter(

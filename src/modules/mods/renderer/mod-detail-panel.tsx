@@ -6,6 +6,7 @@ import { useTranslations } from 'use-intl';
 
 import { CopyPathContextMenu } from '@/components/copy-path-context-menu';
 import { RefreshButton } from '@/components/refresh-button';
+import { WarningLine } from '@/components/state/state-panel';
 import { Button } from '@/components/ui/button';
 import { RemoteImage } from '@/components/ui/remote-image';
 import { Separator } from '@/components/ui/separator';
@@ -158,6 +159,10 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
          </div>
 
          {mods.linkBlocked ? <p className="text-muted-foreground text-xs">{t('detail.linkBlocked')}</p> : null}
+
+         {mod.claimedIdentity ? (
+            <WarningLine>{t('detail.claimedIdentity', { source: mod.sourceName, identity: mod.claimedIdentity })}</WarningLine>
+         ) : null}
 
          <Separator />
 

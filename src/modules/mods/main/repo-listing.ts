@@ -34,6 +34,11 @@ const listingDependencySchema = z
       message: 'a BeatMods dependency must use beatmods:<mod id>'
    });
 
+const listingIdentitySchema = z
+   .string()
+   .trim()
+   .regex(/^beatmods:[1-9]\d*$/, 'an identity must use beatmods:<mod id>');
+
 const listingVersionSchema = z.object({
    version: z.string().trim().min(1).max(64),
    gameVersions: z.array(z.string().trim().min(1)).max(64).default([]),
@@ -47,6 +52,7 @@ const listingVersionSchema = z.object({
 
 const listingPackageSchema = z.object({
    id: z.string().trim().min(1).max(120),
+   identity: listingIdentitySchema.optional(),
    name: z.string().trim().min(1).max(120),
    summary: z.string().trim().max(512).default(''),
    description: z.string().max(20_000).catch('').default(''),
@@ -217,6 +223,7 @@ export function selectRepositoryEntries(
          version: version.version,
          sizeBytes: version.fileSizeBytes ?? null,
          isBsipa: false,
+         claimedIdentity: listed.identity ?? null,
          dependencies: version.dependencies.map((dependencyId) => resolveDependencyId(listing.id, dependencyId)),
          downloadUrl: download.url,
          downloadHost: download.host,

@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { defaultLocale, localeSchema } from '@/app/renderer/i18n/config';
 import { launchRecordSchema } from '@/modules/launch/contract';
-import { modRepositoryRecordSchema } from '@/modules/mods/contract';
+import { defaultModSourceResolutionSettings, modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
 import { localTargetId } from '@/modules/targets/contract';
 
 export const defaultAccentColor = '#59b0f4';
@@ -61,6 +61,7 @@ export const appSettingsSchema = z.object({
    receiver: receiverSettingsSchema,
    modRepositories: z.array(modRepositoryRecordSchema),
    officialModSourceEnabled: z.boolean().default(true),
+   modSourceResolution: modSourceResolutionSettingsSchema.default(defaultModSourceResolutionSettings),
    alphaWarningAccepted: z.boolean().default(false),
    bsmanagerPromptDismissed: z.boolean().default(false),
    modGroups: modGroupSettingsSchema.default({ order: [], collapsed: [] })
@@ -84,6 +85,7 @@ export const appSettingsPatchSchema = z.object({
    receiver: receiverSettingsSchema.partial().optional(),
    modRepositories: z.array(modRepositoryRecordSchema).optional(),
    officialModSourceEnabled: z.boolean().optional(),
+   modSourceResolution: modSourceResolutionSettingsSchema.optional(),
    alphaWarningAccepted: z.boolean().optional(),
    bsmanagerPromptDismissed: z.boolean().optional(),
    modGroups: modGroupSettingsSchema.optional()
@@ -148,6 +150,7 @@ export function createDefaultAppSettings(): AppSettings {
       },
       modRepositories: [],
       officialModSourceEnabled: true,
+      modSourceResolution: defaultModSourceResolutionSettings,
       alphaWarningAccepted: false,
       bsmanagerPromptDismissed: false,
       modGroups: {
@@ -185,6 +188,7 @@ export function applyAppSettingsPatch(settings: AppSettings, patch: AppSettingsP
       },
       modRepositories: patch.modRepositories ?? settings.modRepositories,
       officialModSourceEnabled: patch.officialModSourceEnabled ?? settings.officialModSourceEnabled,
+      modSourceResolution: patch.modSourceResolution ?? settings.modSourceResolution,
       alphaWarningAccepted: patch.alphaWarningAccepted ?? settings.alphaWarningAccepted,
       bsmanagerPromptDismissed: patch.bsmanagerPromptDismissed ?? settings.bsmanagerPromptDismissed,
       modGroups: patch.modGroups ?? settings.modGroups

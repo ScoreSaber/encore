@@ -1115,6 +1115,7 @@
          "sponsor": "Sponsor",
          "noDescription": "This mod has no description",
          "linkBlocked": "That link could not be opened",
+         "claimedIdentity": "{source} claims this package is {identity}. Encore cannot verify that claim",
          "links": {
             "listing": "Mod page",
             "source": "Source",
@@ -1202,6 +1203,7 @@
       },
       "warnings": {
          "bsipaFirst": "BSIPA is installed first. If it fails, nothing else is installed",
+         "claimedIdentity": "A custom repository claims one of these packages has a BeatMods identity. Encore cannot verify that claim",
          "missingDependency": "A mod depends on something BeatMods does not list for this version, so it may not load",
          "patcherRuns": "Encore runs the BSIPA patcher against the game so mods load",
          "patcherUnsupported": "The BSIPA patcher only runs on Windows, so these files are staged and nothing is patched here",
@@ -1295,9 +1297,25 @@
             "hosts": "Downloads come from {hosts}",
             "noHosts": "nowhere it named",
             "package": "{name} {version}",
+            "identityClaim": "— claims {identity}",
+            "identityClaims": "This repository claims {count, plural, one {one package is} other {# packages are}} the same as mods on BeatMods. Encore cannot verify these claims",
             "unknownOwner": "an unnamed owner",
             "unknownVersion": "no version",
             "acknowledge": "I understand Encore doesn't check these mods and I install them at my own risk"
+         },
+         "resolution": {
+            "combine": {
+               "title": "Combine matching mods",
+               "description": "Treat custom packages that claim a BeatMods identity as the same mod"
+            },
+            "strategy": {
+               "title": "Choose between matches",
+               "description": "Decide which package Encore lists when several sources use the same identity",
+               "options": {
+                  "highest-version": "Highest version",
+                  "prefer-unofficial": "Prefer custom repositories"
+               }
+            }
          },
          "list": {
             "label": "Your repositories",

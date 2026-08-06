@@ -18,6 +18,7 @@ import {
    type ModRepositorySyncResult,
    type ModRepositorySummary,
    type ModRepositoryToggleRequest,
+   type ModSourceResolutionRequest,
    type ModSourceStatus
 } from '@/modules/mods/contract';
 import type { ModIndexEntry, ModIndexFileMatch } from '@/modules/mods/main/mod-index';
@@ -166,7 +167,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          listing
       });
 
-      return { status: 'ok', snapshot: describeSnapshot(policy, await readRecords(), await isOfficialEnabled()) };
+      return { status: 'ok', snapshot: await describeSnapshot(policy, await readRecords(), await isOfficialEnabled()) };
    }
 
    async function setEnabled(input: ModRepositoryToggleRequest): Promise<ModRepositoryResult> {
@@ -174,7 +175,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          const written = await options.settingsStore.updateAppSettings({ officialModSourceEnabled: input.enabled });
          if (!written.ok) return modRepositoryProblem('write-failed');
 
-         return { status: 'ok', snapshot: describeSnapshot(await policyService.get(), await readRecords(), input.enabled) };
+         return { status: 'ok', snapshot: await describeSnapshot(await policyService.get(), await readRecords(), input.enabled) };
       }
 
       const records = await readRecords();
@@ -196,7 +197,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
       if (input.enabled) await loadListing({ ...record, enabled: true }, { force: true });
 
-      return { status: 'ok', snapshot: describeSnapshot(policy, await readRecords(), await isOfficialEnabled()) };
+      return { status: 'ok', snapshot: await describeSnapshot(policy, await readRecords(), await isOfficialEnabled()) };
    }
 
    async function remove(input: ModRepositoryIdRequest): Promise<ModRepositoryResult> {
@@ -209,11 +210,22 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       states.delete(input.id);
       await saveCache();
 
-      return { status: 'ok', snapshot: describeSnapshot(await policyService.get(), await readRecords(), await isOfficialEnabled()) };
+      return { status: 'ok', snapshot: await describeSnapshot(await policyService.get(), await readRecords(), await isOfficialEnabled()) };
+   }
+
+   async function setSourceResolution(input: ModSourceResolutionRequest): Promise<ModRepositoryResult> {
+      const written = await options.settingsStore.updateAppSettings({ modSourceResolution: input });
+      if (!written.ok) return modRepositoryProblem('write-failed');
+
+      return { status: 'ok', snapshot: await getSnapshot() };
    }
 
    async function sync(input: ModRepositorySyncRequest): Promise<ModRepositorySyncResult> {
       const failures: ModRepositorySyncResult['failures'] = [];
+      const resolution = await setSourceResolution(input.resolution);
+      if (resolution.status === 'invalid') {
+         failures.push({ listingUrl: beatModsOrigin, issue: resolution.issue, ...(resolution.detail ? { detail: resolution.detail } : {}) });
+      }
       const official = await setEnabled({ id: officialModSourceId, enabled: input.officialEnabled });
       if (official.status === 'invalid')
          failures.push({ listingUrl: beatModsOrigin, issue: official.issue, ...(official.detail ? { detail: official.detail } : {}) });
@@ -284,7 +296,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          sources.push({ id: record.id, name: record.name, kind: 'unofficial', state: 'ready', modCount: allowed.length });
       }
 
-      return { sources, entries, fileMatches };
+      return { sources, entries, fileMatches, resolution: await readSourceResolution() };
    }
 
    async function loadListing(record: ModRepositoryRecord, input: { force: boolean }): Promise<RepositoryState> {
@@ -364,10 +376,15 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       return denied ? { issue: 'denylisted', detail: denied.reason } : null;
    }
 
-   function describeSnapshot(policy: ModRepositoryPolicySnapshot, records: ModRepositoryRecord[], officialEnabled: boolean): ModRepositoriesSnapshot {
+   async function describeSnapshot(
+      policy: ModRepositoryPolicySnapshot,
+      records: ModRepositoryRecord[],
+      officialEnabled: boolean
+   ): Promise<ModRepositoriesSnapshot> {
       return {
          official: [{ id: officialModSourceId, name: officialModSourceName, listingUrl: beatModsOrigin, enabled: officialEnabled }],
-         repositories: records.map((record) => describeRepository(policy, record))
+         repositories: records.map((record) => describeRepository(policy, record)),
+         resolution: await readSourceResolution()
       };
    }
 
@@ -407,6 +424,12 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       return snapshot.app.officialModSourceEnabled;
    }
 
+   async function readSourceResolution() {
+      const snapshot = await options.settingsStore.getSnapshot();
+
+      return snapshot.app.modSourceResolution;
+   }
+
    async function writeRecords(records: ModRepositoryRecord[]) {
       const written = await options.settingsStore.updateAppSettings({ modRepositories: records });
 
@@ -432,7 +455,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       await writeJsonFileAtomic(cachePath, { repositories }, listingCacheFileSchema, { root: options.dataPath, scope: 'settings' });
    }
 
-   return { getSnapshot, refresh, preview, add, setEnabled, remove, sync, listEntries, isOfficialEnabled };
+   return { getSnapshot, refresh, preview, add, setEnabled, setSourceResolution, remove, sync, listEntries, isOfficialEnabled };
 }
 
 function describePreview(listing: ModRepositoryListing, listingUrl: string): ModRepositoryPreview {
@@ -443,7 +466,13 @@ function describePreview(listing: ModRepositoryListing, listingUrl: string): Mod
       const host = repositoryUrlHost(version?.downloadUrl ?? '');
       if (host) hosts.add(host);
 
-      return { id: listed.id, name: listed.name, version: version?.version ?? '', downloadHost: host ?? '' };
+      return {
+         id: listed.id,
+         name: listed.name,
+         version: version?.version ?? '',
+         downloadHost: host ?? '',
+         identity: listed.identity ?? null
+      };
    });
 
    for (const listed of packages) {
@@ -462,6 +491,7 @@ function describePreview(listing: ModRepositoryListing, listingUrl: string): Mod
       infoUrl: listing.infoUrl ?? null,
       contactUrl: listing.contactUrl ?? null,
       packageCount: packages.length,
+      identityClaimCount: packages.filter((listed) => listed.identity !== undefined).length,
       packages: previews,
       downloadHosts: [...hosts]
    };

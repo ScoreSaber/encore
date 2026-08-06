@@ -49,6 +49,7 @@ export function createModsIpcModule(service: ModService, repositories: ModReposi
       previewRepository: (_event, request) => repositories.preview(request),
       addRepository: (_event, request) => repositories.add(request),
       setRepositoryEnabled: (_event, request) => repositories.setEnabled(request),
+      setModSourceResolution: (_event, request) => repositories.setSourceResolution(request),
       removeRepository: (_event, request) => repositories.remove(request)
    });
 }

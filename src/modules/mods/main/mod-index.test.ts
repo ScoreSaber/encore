@@ -1,5 +1,5 @@
 import type { ContentHash } from '@/lib/content/contract';
-import { buildModIndex, fileHashKey, type ModIndexEntry } from '@/modules/mods/main/mod-index';
+import { buildModIndex, fileHashKey, resolveModIdentities, type ModIndexEntry } from '@/modules/mods/main/mod-index';
 import { summarizeMods } from '@/modules/mods/main/mod-plan';
 
 import { describe, expect, test } from 'bun:test';
@@ -44,12 +44,90 @@ describe('mod index', () => {
          latestVersion: '3.4.2'
       });
    });
+
+   test('combines claimed identities and rewrites local dependencies and file matches', () => {
+      const official = entry({ modId: 'beatmods:256', sourceId: 'beatmods', sourceName: 'BeatMods', version: '1.2.3', hash: sharedHash });
+      const custom = entry({
+         modId: 'com.example.repo:songcore',
+         sourceId: 'com.example.repo',
+         sourceName: 'Example Mods',
+         version: '1.3.0',
+         hash: previousHash,
+         claimedIdentity: 'beatmods:256'
+      });
+      const dependent = entry({
+         modId: 'com.example.repo:dependent',
+         sourceId: 'com.example.repo',
+         sourceName: 'Example Mods',
+         version: '1.0.0',
+         hash: { algorithm: 'sha256', value: '4'.repeat(64) },
+         dependencies: [custom.modId]
+      });
+
+      const resolved = resolveModIdentities(
+         {
+            entries: [official, custom, dependent],
+            fileMatches: [{ hash: previousHash, modId: custom.modId, version: '1.2.0' }]
+         },
+         { combine: true, strategy: 'highest-version' }
+      );
+
+      expect(resolved.entries).toHaveLength(2);
+      expect(resolved.entries.find((candidate) => candidate.modId === 'beatmods:256')).toMatchObject({
+         sourceId: 'com.example.repo',
+         version: '1.3.0',
+         claimedIdentity: 'beatmods:256'
+      });
+      expect(resolved.entries.find((candidate) => candidate.packageId === dependent.packageId)?.dependencies).toEqual(['beatmods:256']);
+      expect(resolved.fileMatches).toContainEqual({ hash: sharedHash, modId: 'beatmods:256', version: '1.2.3' });
+      expect(resolved.fileMatches.at(-1)).toEqual({ hash: previousHash, modId: 'beatmods:256', version: '1.3.0' });
+   });
+
+   test('keeps BeatMods on a version tie unless custom repositories are preferred', () => {
+      const official = entry({ modId: 'beatmods:256', sourceId: 'beatmods', sourceName: 'BeatMods', version: '2.0.0', hash: sharedHash });
+      const custom = entry({
+         modId: 'com.example.repo:songcore',
+         sourceId: 'com.example.repo',
+         sourceName: 'Example Mods',
+         version: '1.0.0',
+         hash: previousHash,
+         claimedIdentity: 'beatmods:256'
+      });
+
+      const highest = resolveModIdentities(
+         { entries: [official, { ...custom, version: '2.0.0' }], fileMatches: [] },
+         {
+            combine: true,
+            strategy: 'highest-version'
+         }
+      );
+      const customFirst = resolveModIdentities(
+         { entries: [official, custom], fileMatches: [] },
+         {
+            combine: true,
+            strategy: 'prefer-unofficial'
+         }
+      );
+      const separate = resolveModIdentities({ entries: [official, custom], fileMatches: [] }, { combine: false, strategy: 'highest-version' });
+
+      expect(highest.entries[0]?.sourceKind).toBe('official');
+      expect(customFirst.entries[0]).toMatchObject({ sourceKind: 'unofficial', version: '1.0.0', modId: 'beatmods:256' });
+      expect(separate.entries.map((candidate) => candidate.modId)).toEqual(['beatmods:256', 'com.example.repo:songcore']);
+   });
 });
 
-function entry(input: { modId: string; sourceId: string; sourceName: string; version: string; hash: ContentHash }): ModIndexEntry {
+function entry(input: {
+   modId: string;
+   sourceId: string;
+   sourceName: string;
+   version: string;
+   hash: ContentHash;
+   claimedIdentity?: string;
+   dependencies?: string[];
+}): ModIndexEntry {
    return {
       modId: input.modId,
-      packageId: 'scoresaber',
+      packageId: input.modId.split(':').at(-1) ?? input.modId,
       sourceId: input.sourceId,
       sourceName: input.sourceName,
       sourceKind: input.sourceId === 'beatmods' ? 'official' : 'unofficial',
@@ -63,7 +141,8 @@ function entry(input: { modId: string; sourceId: string; sourceName: string; ver
       version: input.version,
       sizeBytes: null,
       isBsipa: false,
-      dependencies: [],
+      claimedIdentity: input.claimedIdentity ?? null,
+      dependencies: input.dependencies ?? [],
       downloadUrl: 'https://downloads.example.com/scoresaber.zip',
       downloadHost: 'downloads.example.com',
       archiveHash: input.hash,

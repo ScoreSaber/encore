@@ -1,6 +1,7 @@
 import type { JsonDocumentFetch } from '@/lib/http/json';
 import type { ModPlatform } from '@/modules/mods/contract';
 import { modRepositoryPolicyUrl } from '@/modules/mods/contract';
+import type { ModRepositoryListing } from '@/modules/mods/main/repo-listing';
 import { samplePackage, sampleListing, samplePolicy, sampleVersion } from '@/modules/mods/main/repo-listing.fixture';
 import type { ModRepositoryPolicy } from '@/modules/mods/main/repo-policy';
 import { createModRepositoryService } from '@/modules/mods/main/repo-service';
@@ -51,6 +52,16 @@ describe('mod repositories', () => {
       ]);
    });
 
+   test('reports BeatMods identity claims while reviewing a repository', async () => {
+      const harness = await createHarness({ listing: sampleListing({ packages: [samplePackage({ identity: 'beatmods:256' })] }) });
+
+      expect(await harness.repositories.preview({ url: listingUrl })).toMatchObject({
+         status: 'ok',
+         identityClaimCount: 1,
+         packages: [expect.objectContaining({ identity: 'beatmods:256' })]
+      });
+   });
+
    test('refuses a denylisted repository and switches one off that lands on the list later', async () => {
       const harness = await createHarness();
       await harness.repositories.add({ url: listingUrl, acknowledged: true });
@@ -59,7 +70,12 @@ describe('mod repositories', () => {
       const refreshed = await harness.repositories.refresh();
 
       expect(refreshed.repositories[0]).toMatchObject({ enabled: false, blocked: true, blockedReason: 'malware', issue: 'denylisted' });
-      expect(await harness.repositories.listEntries(install)).toEqual({ sources: [], entries: [], fileMatches: [] });
+      expect(await harness.repositories.listEntries(install)).toEqual({
+         sources: [],
+         entries: [],
+         fileMatches: [],
+         resolution: { combine: true, strategy: 'highest-version' }
+      });
       expect(await harness.repositories.setEnabled({ id: 'com.example.repo', enabled: true })).toMatchObject({ issue: 'denylisted' });
       expect(await harness.repositories.add({ url: listingUrl, acknowledged: true })).toMatchObject({ issue: 'duplicate' });
    });
@@ -83,17 +99,20 @@ describe('mod repositories', () => {
 
       const synced = await harness.repositories.sync({
          officialEnabled: false,
-         repositories: [{ listingUrl, enabled: false }]
+         repositories: [{ listingUrl, enabled: false }],
+         resolution: { combine: true, strategy: 'prefer-unofficial' }
       });
 
       expect(synced.failures).toEqual([]);
       expect(synced.snapshot.official).toEqual([expect.objectContaining({ enabled: false })]);
       expect(synced.snapshot.repositories).toEqual([expect.objectContaining({ listingUrl, enabled: false })]);
+      expect(synced.snapshot.resolution).toEqual({ combine: true, strategy: 'prefer-unofficial' });
    });
 });
 
 type HarnessOptions = {
    policy?: ModRepositoryPolicy | null;
+   listing?: ModRepositoryListing;
 };
 
 async function createHarness(options: HarnessOptions = {}) {
@@ -101,7 +120,7 @@ async function createHarness(options: HarnessOptions = {}) {
    tempRoots.push(dataPath);
 
    let policy = 'policy' in options ? options.policy : samplePolicy();
-   const listing = sampleListing({ packages: [samplePackage({ versions: [sampleVersion()] })] });
+   const listing = options.listing ?? sampleListing({ packages: [samplePackage({ versions: [sampleVersion()] })] });
    const clock = Date.parse('2026-07-20T12:00:00.000Z');
 
    const fetchJson: JsonDocumentFetch = (url) => {

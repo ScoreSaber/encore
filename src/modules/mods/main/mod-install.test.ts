@@ -72,6 +72,7 @@ function githubEntry(archive: Buffer): ModIndexEntry {
       version: '3.4.1',
       sizeBytes: archive.byteLength,
       isBsipa: false,
+      claimedIdentity: null,
       dependencies: [],
       downloadUrl: 'https://github.com/ScoreSaber/pc-mod/releases/download/v3.4.1/ScoreSaber.zip',
       downloadHost: 'github.com',

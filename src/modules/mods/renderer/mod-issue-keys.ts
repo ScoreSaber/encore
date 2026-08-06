@@ -14,6 +14,7 @@ export const modIssueKeys: Record<ModIssue, MessageKey<'mods.issues'>> = {
 
 export const modWarningKeys: Record<ModWarning, MessageKey<'mods.warnings'>> = {
    'bsipa-first': 'bsipaFirst',
+   'claimed-identity': 'claimedIdentity',
    'missing-dependency': 'missingDependency',
    'patcher-runs': 'patcherRuns',
    'patcher-unsupported': 'patcherUnsupported',

@@ -75,6 +75,14 @@ describe('repository listing', () => {
       expect(selectRepositoryEntries(listing, install).entries[0]?.dependencies).toEqual(['com.example.repo:com.example.library', 'beatmods:1']);
    });
 
+   test('accepts only positive BeatMods package identities', () => {
+      const claimed = parse(sampleListing({ packages: [samplePackage({ identity: 'beatmods:256' })] }));
+      const invalid = parseRepositoryListing(sampleListing({ packages: [{ ...samplePackage(), identity: 'beatmods:0' }] }));
+
+      expect(selectRepositoryEntries(claimed, install).entries[0]?.claimedIdentity).toBe('beatmods:256');
+      expect(Result.isOk(invalid) && invalid.value.packages[0]).toBeNull();
+   });
+
    test('keeps file matches for older compatible versions', () => {
       const oldHash: ModRepositoryVersion['hash'] = { algorithm: 'sha256', value: '3'.repeat(64) };
       const listing = parse(

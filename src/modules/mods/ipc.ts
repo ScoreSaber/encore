@@ -17,8 +17,10 @@ import type {
    ModRepositoryLinkEvent,
    ModRepositoryPreview,
    ModRepositoryResult,
-   ModRepositoryToggleRequest
+   ModRepositoryToggleRequest,
+   ModSourceResolutionRequest
 } from '@/modules/mods/contract';
+import { modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
 import type { TargetRequest } from '@/modules/targets/contract';
 import { targetInstallRequestSchema } from '@/modules/targets/ipc';
 
@@ -58,6 +60,10 @@ export const modsIpc = defineIpcDescriptor({
    setRepositoryEnabled: defineIpcCommand<ModRepositoryResult, ModRepositoryToggleRequest>(
       'mods:repositories:set-enabled',
       modRepositoryToggleRequestSchema
+   ),
+   setModSourceResolution: defineIpcCommand<ModRepositoryResult, ModSourceResolutionRequest>(
+      'mods:repositories:set-resolution',
+      modSourceResolutionSettingsSchema
    ),
    removeRepository: defineIpcCommand<ModRepositoryResult, ModRepositoryIdRequest>('mods:repositories:remove', modRepositoryIdRequestSchema)
 });

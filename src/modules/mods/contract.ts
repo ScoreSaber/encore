@@ -43,6 +43,18 @@ export const modRepositoryLimits = {
 export const modSourceKindSchema = z.enum(['official', 'unofficial']);
 export const modSourceStateSchema = z.enum(['ready', 'unavailable']);
 export const modRepositoryPolicyStateSchema = z.enum(['ready', 'stale', 'unavailable']);
+export const modIdentityResolutionStrategySchema = z.enum(['highest-version', 'prefer-unofficial']);
+export const modSourceResolutionSettingsSchema = z.object({
+   combine: z.boolean(),
+   strategy: modIdentityResolutionStrategySchema
+});
+
+export type ModSourceResolutionSettings = z.infer<typeof modSourceResolutionSettingsSchema>;
+
+export const defaultModSourceResolutionSettings: ModSourceResolutionSettings = {
+   combine: true,
+   strategy: 'highest-version'
+};
 
 export const modRepositoryIssueSchema = z.enum([
    'denylisted',
@@ -113,12 +125,14 @@ export const modOfficialSourceSummarySchema = z.object({
 
 export const modRepositoriesSnapshotSchema = z.object({
    official: z.array(modOfficialSourceSummarySchema),
-   repositories: z.array(modRepositorySummarySchema)
+   repositories: z.array(modRepositorySummarySchema),
+   resolution: modSourceResolutionSettingsSchema
 });
 
 export const modRepositorySyncRequestSchema = z.object({
    officialEnabled: z.boolean(),
-   repositories: z.array(z.object({ listingUrl: z.string().min(1), enabled: z.boolean() }))
+   repositories: z.array(z.object({ listingUrl: z.string().min(1), enabled: z.boolean() })),
+   resolution: modSourceResolutionSettingsSchema
 });
 
 export const modRepositorySyncResultSchema = z.object({
@@ -137,6 +151,7 @@ export type ModRepositoryPackagePreview = {
    name: string;
    version: string;
    downloadHost: string;
+   identity: string | null;
 };
 
 export type ReadyModRepositoryPreview = {
@@ -148,6 +163,7 @@ export type ReadyModRepositoryPreview = {
    infoUrl: string | null;
    contactUrl: string | null;
    packageCount: number;
+   identityClaimCount: number;
    packages: ModRepositoryPackagePreview[];
    downloadHosts: string[];
 };
@@ -177,6 +193,8 @@ export type ModRepositoryToggleRequest = {
 export type ModRepositoryIdRequest = {
    id: string;
 };
+
+export type ModSourceResolutionRequest = ModSourceResolutionSettings;
 
 export function modRepositoryProblem(issue: ModRepositoryIssue, detail?: string): ModRepositoryProblem {
    return { status: 'invalid', issue, ...(detail ? { detail } : {}) };
@@ -235,6 +253,7 @@ export const modIssueSchema = z.enum([
 
 export const modWarningSchema = z.enum([
    'bsipa-first',
+   'claimed-identity',
    'missing-dependency',
    'patcher-runs',
    'patcher-unsupported',
@@ -280,7 +299,8 @@ export const modSummarySchema = z.object({
    sizeBytes: z.number().nullable(),
    isBsipa: z.boolean(),
    isRequired: z.boolean(),
-   dependencyIds: z.array(z.string())
+   dependencyIds: z.array(z.string()),
+   claimedIdentity: z.string().nullable()
 });
 
 export const externalModSchema = z.object({

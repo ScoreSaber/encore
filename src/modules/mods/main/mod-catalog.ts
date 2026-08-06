@@ -3,7 +3,14 @@ import { z } from 'zod';
 
 import { readRecent, setRecent } from '@/lib/content/content-cache';
 import { createPersistentCache } from '@/lib/content/content-cache';
-import { officialModSourceId, officialModSourceName, type ModCatalogSource, type ModPlatform } from '@/modules/mods/contract';
+import {
+   defaultModSourceResolutionSettings,
+   officialModSourceId,
+   officialModSourceName,
+   type ModCatalogSource,
+   type ModPlatform,
+   type ModSourceResolutionSettings
+} from '@/modules/mods/contract';
 import type { ModSourceStatus } from '@/modules/mods/contract';
 import {
    beatModsModSchema,
@@ -16,6 +23,7 @@ import {
 import {
    buildModIndex,
    modIndexKey,
+   resolveModIdentities,
    toModIndexEntries,
    type ModIndex,
    type ModIndexEntry,
@@ -39,6 +47,7 @@ export type ModRepositoryEntries = {
       sources: ModSourceStatus[];
       entries: ModIndexEntry[];
       fileMatches: ModIndexFileMatch[];
+      resolution: ModSourceResolutionSettings;
    }>;
    isOfficialEnabled: () => Promise<boolean>;
 };
@@ -146,7 +155,16 @@ export function createModCatalogService(options: ModCatalogOptions) {
       source: ModCatalogSource,
       fetchedAt: number
    ): Promise<Result<ModIndex, BeatModsProblem>> {
-      const unofficial = (await options.repositories?.listEntries(request)) ?? { sources: [], entries: [], fileMatches: [] };
+      const unofficial = (await options.repositories?.listEntries(request)) ?? {
+         sources: [],
+         entries: [],
+         fileMatches: [],
+         resolution: defaultModSourceResolutionSettings
+      };
+      const resolved = resolveModIdentities(
+         { entries: [...official, ...unofficial.entries], fileMatches: unofficial.fileMatches },
+         unofficial.resolution
+      );
 
       return Result.ok<ModIndex, BeatModsProblem>(
          buildModIndex({
@@ -155,8 +173,8 @@ export function createModCatalogService(options: ModCatalogOptions) {
             source,
             updatedAt: new Date(fetchedAt).toISOString(),
             sources: [...officialSources, ...unofficial.sources],
-            entries: [...official, ...unofficial.entries],
-            fileMatches: unofficial.fileMatches
+            entries: resolved.entries,
+            fileMatches: resolved.fileMatches
          })
       );
    }
