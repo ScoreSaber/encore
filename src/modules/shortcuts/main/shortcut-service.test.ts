@@ -62,7 +62,8 @@ describe('shortcut service', () => {
       const options: LaunchOptions = {
          flags: ['fpfc'],
          args: ['--room', 'my room'],
-         runAsAdmin: false
+         runAsAdmin: false,
+         closeEncore: true
       };
       const request: ShortcutRequest = {
          targetId: 'local',
@@ -79,6 +80,7 @@ describe('shortcut service', () => {
       expect(vdfMap(entries?.get('0'))).toEqual(other);
       expect(vdfText(vdfMap(entries?.get('1'))?.get('AppName'))).toBe('Beat Saber 1.37.0');
       expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('encore://launch?target=local&install=install_abcdef012345');
+      expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('close=1');
    });
 });
 
@@ -92,7 +94,7 @@ describe('launch link intake', () => {
          request: {
             targetId: 'local',
             installId: install.id,
-            options: { flags: ['fpfc'], args: [], runAsAdmin: false }
+            options: { flags: ['fpfc'], args: [], runAsAdmin: false, closeEncore: false }
          },
          installName: install.name
       });

@@ -17,7 +17,8 @@ const launchLinkParamsSchema = z.object({
    install: linkIdSchema,
    flags: z.array(launchFlagSchema).max(launchFlags.length),
    args: launchArgsSchema,
-   admin: z.stringbool({ truthy: ['1'], falsy: ['0'] }).catch(false)
+   admin: z.stringbool({ truthy: ['1'], falsy: ['0'] }).catch(false),
+   close: z.stringbool({ truthy: ['1'], falsy: ['0'] }).catch(false)
 });
 
 export const launchLinkIssueSchema = z.enum(['unknown-action', 'unknown-install', 'invalid-request', 'unsupported-link']);
@@ -123,6 +124,7 @@ export function buildLaunchLink(request: LaunchLinkRequest) {
    }
 
    if (request.options.runAsAdmin) url.searchParams.set('admin', '1');
+   if (request.options.closeEncore) url.searchParams.set('close', '1');
 
    return url.toString();
 }
@@ -137,7 +139,8 @@ export function parseLaunchLink(value: string): LaunchLinkParse {
       install: url.searchParams.get('install') ?? '',
       flags: [...new Set(url.searchParams.getAll('flag'))],
       args: url.searchParams.getAll('arg'),
-      admin: url.searchParams.get('admin')
+      admin: url.searchParams.get('admin'),
+      close: url.searchParams.get('close')
    });
 
    if (!parsed.success) return { status: 'invalid', issue: 'invalid-request' };
@@ -147,7 +150,7 @@ export function parseLaunchLink(value: string): LaunchLinkParse {
       request: {
          targetId: parsed.data.target,
          installId: parsed.data.install,
-         options: { flags: parsed.data.flags, args: parsed.data.args, runAsAdmin: parsed.data.admin }
+         options: { flags: parsed.data.flags, args: parsed.data.args, runAsAdmin: parsed.data.admin, closeEncore: parsed.data.close }
       }
    };
 }

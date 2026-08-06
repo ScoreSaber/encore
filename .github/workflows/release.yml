@@ -234,14 +234,14 @@ jobs:
                     release/latest-linux.yml
                     release/*.blockmap
                  flatpak: false
-                 linux_packages: libarchive-tools rpm xz-utils
+                 linux_packages: libarchive-tools musl-tools rpm xz-utils
                - name: Linux x86_64 Flatpak
                  os: ubuntu-latest
                  package_args: --linux flatpak --x64
                  artifact: encore-linux-flatpak
                  artifact_paths: release/*.flatpak
                  flatpak: true
-                 linux_packages: flatpak flatpak-builder xz-utils
+                 linux_packages: flatpak flatpak-builder musl-tools xz-utils
       steps:
          - name: Checkout
            uses: actions/checkout@v4
@@ -308,6 +308,9 @@ jobs:
                  org.freedesktop.Platform//25.08 \
                  org.freedesktop.Sdk//25.08 \
                  org.electronjs.Electron2.BaseApp//25.08
+
+         - name: Build launch watchdog
+           run: bun run build:watchdog
 
          - name: Package app
            shell: bash

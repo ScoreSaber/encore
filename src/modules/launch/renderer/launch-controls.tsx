@@ -1,4 +1,17 @@
-import { AlertTriangle, Bug, ChevronRight, Glasses, Loader2, Monitor, Play, ScrollText, ShieldCheck, SkipForward, SquarePen } from 'lucide-react';
+import {
+   AlertTriangle,
+   Bug,
+   ChevronRight,
+   Glasses,
+   Loader2,
+   MemoryStick,
+   Monitor,
+   Play,
+   ScrollText,
+   ShieldCheck,
+   SkipForward,
+   SquarePen
+} from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { PathText } from '@/components/text/path-text';
@@ -61,7 +74,16 @@ const flagIcons: Record<LaunchFlag, typeof Play> = {
    'proton-logs': ScrollText
 };
 
-const launchOptionOrder: (LaunchFlag | 'run-as-admin')[] = ['editor', 'oculus-mode', 'skip-steam', 'fpfc', 'run-as-admin', 'debug', 'proton-logs'];
+const launchOptionOrder: (LaunchFlag | 'run-as-admin' | 'close-encore')[] = [
+   'editor',
+   'oculus-mode',
+   'skip-steam',
+   'fpfc',
+   'run-as-admin',
+   'close-encore',
+   'debug',
+   'proton-logs'
+];
 
 function isStarting(launch: InstallLaunch) {
    return launch.state.status === 'starting' || launch.state.status === 'running';
@@ -136,7 +158,11 @@ export function LaunchFacets({ launch, name }: { launch: InstallLaunch; name: st
 export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
    const starting = isStarting(launch);
    const supportedFlags = launchFlagsFor(launch.platform);
-   const options = launchOptionOrder.filter((option) => (option === 'run-as-admin' ? launch.platform !== 'linux' : supportedFlags.includes(option)));
+   const options = launchOptionOrder.filter((option) => {
+      if (option === 'run-as-admin') return launch.platform !== 'linux';
+      if (option === 'close-encore') return launch.platform !== 'other';
+      return supportedFlags.includes(option);
+   });
 
    return (
       <>
@@ -150,6 +176,16 @@ export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
                   pressed={launch.runAsAdmin}
                   disabled={starting}
                   onPressedChange={launch.setRunAsAdmin}
+               />
+            ) : option === 'close-encore' ? (
+               <LaunchOption
+                  key={option}
+                  icon={MemoryStick}
+                  labelKey="closeEncore.label"
+                  descriptionKey="closeEncore.description"
+                  pressed={launch.closeEncore}
+                  disabled={starting}
+                  onPressedChange={launch.setCloseEncore}
                />
             ) : (
                <LaunchOption

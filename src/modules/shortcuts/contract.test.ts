@@ -3,12 +3,14 @@ import { parseLaunchLink } from '@/modules/shortcuts/contract';
 import { describe, expect, test } from 'bun:test';
 
 describe('launch links', () => {
-   test('accepts only the explicit admin flag', () => {
+   test('accepts only explicit boolean launch options', () => {
       const prefix = 'encore://launch?install=install_abcdef012345';
 
       expect(parseLaunchLink(`${prefix}&admin=1`)).toMatchObject({ status: 'ok', request: { options: { runAsAdmin: true } } });
       expect(parseLaunchLink(`${prefix}&admin=true`)).toMatchObject({ status: 'ok', request: { options: { runAsAdmin: false } } });
-      expect(parseLaunchLink(prefix)).toMatchObject({ status: 'ok', request: { options: { runAsAdmin: false } } });
+      expect(parseLaunchLink(`${prefix}&close=1`)).toMatchObject({ status: 'ok', request: { options: { closeEncore: true } } });
+      expect(parseLaunchLink(`${prefix}&close=true`)).toMatchObject({ status: 'ok', request: { options: { closeEncore: false } } });
+      expect(parseLaunchLink(prefix)).toMatchObject({ status: 'ok', request: { options: { runAsAdmin: false, closeEncore: false } } });
    });
 
    test('rejects ids, flags and args that could carry a command', () => {

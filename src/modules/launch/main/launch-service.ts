@@ -6,6 +6,7 @@ import { pathExists } from '@/lib/filesystem/path';
 import type { InstallDetail } from '@/modules/installs/contract';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
+   beatSaberExecutableName,
    launchOptionsSchema,
    launchFlags,
    launchFlagsFor,
@@ -28,8 +29,6 @@ import type { SettingsSnapshot } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 
 import { join } from 'node:path';
-
-const beatSaberExecutableName = 'Beat Saber.exe';
 
 const launchIssueMessages: Record<LaunchIssue, string> = {
    'executable-missing': 'the Beat Saber executable is not in the install folder',
@@ -231,6 +230,9 @@ export function createLaunchService(options: LaunchServiceOptions) {
            })
          : { executablePath: previewed.executablePath, args: previewed.args };
 
+      const watchdog = previewed.options.closeEncore ? await runtime.prepareWatchdog() : null;
+      if (watchdog && Result.isError(watchdog)) return options.operations.fail(operationId, watchdog.error);
+
       const spawned = await runtime.spawn({
          ...command,
          workingDirectory: previewed.workingDirectory,
@@ -243,6 +245,11 @@ export function createLaunchService(options: LaunchServiceOptions) {
       await options.settingsStore.updateLibrarySettings({
          lastLaunch: { installId: previewed.installId, launchedAt: new Date().toISOString(), options: previewed.options }
       });
+
+      if (watchdog && Result.isOk(watchdog)) {
+         const started = await runtime.spawnWatchdog(watchdog.value);
+         if (Result.isError(started)) return options.operations.fail(operationId, started.error);
+      }
 
       options.operations.complete(operationId, {
          installId: previewed.installId,

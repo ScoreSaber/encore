@@ -58,6 +58,7 @@ export function invalidProtonFolder(path: string, issue: ProtonIssue): ProtonVal
 }
 
 export const launchPlatformSchema = z.enum(['windows', 'linux', 'other']);
+export const beatSaberExecutableName = 'Beat Saber.exe';
 
 export const launchFlagSchema = z.enum(['oculus-mode', 'fpfc', 'debug', 'skip-steam', 'editor', 'proton-logs']);
 export const launchFlags = launchFlagSchema.options;
@@ -80,7 +81,8 @@ export const launchArgsSchema = z.array(launchArgSchema).max(24);
 export const launchOptionsSchema = z.object({
    flags: z.array(launchFlagSchema).max(launchFlags.length),
    args: launchArgsSchema,
-   runAsAdmin: z.boolean()
+   runAsAdmin: z.boolean(),
+   closeEncore: z.boolean().default(false)
 });
 
 export const launchRequestBodySchema = z.object({

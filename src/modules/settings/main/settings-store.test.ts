@@ -1,3 +1,4 @@
+import { createDefaultAppSettings, createDefaultLibrarySettings } from '@/modules/settings/contract';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -13,6 +14,31 @@ afterEach(async () => {
 });
 
 describe('settings store', () => {
+   test('defaults the resource saver off in an existing last launch', async () => {
+      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
+      tempRoots.push(dataPath);
+      const library = createDefaultLibrarySettings('/games/encore');
+      await writeFile(
+         join(dataPath, 'settings.json'),
+         JSON.stringify({
+            app: createDefaultAppSettings(),
+            library: {
+               ...library,
+               lastLaunch: {
+                  installId: 'install_abcdef012345',
+                  launchedAt: '2026-08-06T00:00:00.000Z',
+                  options: { flags: [], args: [], runAsAdmin: false }
+               }
+            }
+         }),
+         'utf8'
+      );
+
+      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+
+      expect((await store.getSnapshot()).library.lastLaunch?.options.closeEncore).toBe(false);
+   });
+
    test('recovers usable fields without overwriting a damaged file', async () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);

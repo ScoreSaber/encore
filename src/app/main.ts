@@ -4,6 +4,7 @@ import { app, BrowserWindow, safeStorage, session, shell } from 'electron';
 import { openExternalUrl } from '@/app/external-navigation';
 import { broadcastIpcEvent, registerIpcEventWindow, registerIpcModules } from '@/app/ipc/main';
 import { createTargetIpcModules } from '@/app/ipc/target-api';
+import { createLaunchWatchdog } from '@/app/main/launch-watchdog';
 import { defineApiHandlers } from '@/lib/api';
 import { createContentIngestionService } from '@/lib/content/content-ingestion';
 import { createContentStaging } from '@/lib/content/content-staging';
@@ -26,6 +27,7 @@ import { createInstallManagementService } from '@/modules/installs/main/install-
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import { createInstallsIpcModule } from '@/modules/installs/main/register-ipc';
 import { launchApi } from '@/modules/launch/api';
+import { createLaunchRuntime } from '@/modules/launch/main/launch-runtime';
 import { createLaunchService } from '@/modules/launch/main/launch-service';
 import { mapsApi } from '@/modules/maps/api';
 import { mapLinkSchemes } from '@/modules/maps/contract';
@@ -159,7 +161,8 @@ function registerIpcHandlers() {
    const launchService = createLaunchService({
       settingsStore,
       registry: installRegistry,
-      operations: operationRegistry
+      operations: operationRegistry,
+      runtime: createLaunchRuntime({ prepareWatchdog: createLaunchWatchdog(dataPath) })
    });
    const downloadService = createDownloadService({ steam: steamDownloader, oculus: oculusDownloader });
    const downloadApi = defineApiHandlers(downloadsApi, downloadService);
@@ -441,6 +444,10 @@ if (app.requestSingleInstanceLock()) {
    void app.whenReady().then(startEncore);
 } else {
    app.quit();
+}
+
+if (process.platform === 'linux') {
+   process.on('SIGTERM', () => app.quit());
 }
 
 app.on('window-all-closed', () => {

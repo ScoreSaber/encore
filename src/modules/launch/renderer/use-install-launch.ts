@@ -51,6 +51,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
    const [flags, setFlags] = useState<LaunchFlag[]>([]);
    const [argsInput, setArgsInput] = useState('');
    const [runAsAdmin, setRunAsAdmin] = useState(false);
+   const [closeEncore, setCloseEncore] = useState(false);
    const launchState = useQuery(launchStateQueryOptions(request.targetId));
    const [activeRequest, setActiveRequest] = useState(request);
    const [state, setState] = useState<InstallLaunchState>({
@@ -64,11 +65,15 @@ export function useInstallLaunch(request: InstallActionRequest) {
       setFlags([]);
       setArgsInput('');
       setRunAsAdmin(false);
+      setCloseEncore(false);
       setState({ status: 'checking' });
       setFailure(null);
    }
 
-   const options = useMemo<LaunchOptions>(() => ({ flags, args: parseLaunchArgs(argsInput), runAsAdmin }), [argsInput, flags, runAsAdmin]);
+   const options = useMemo<LaunchOptions>(
+      () => ({ flags, args: parseLaunchArgs(argsInput), runAsAdmin, closeEncore }),
+      [argsInput, closeEncore, flags, runAsAdmin]
+   );
 
    const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
 
@@ -82,6 +87,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
       setFlags(lastLaunch.options.flags);
       setArgsInput(formatLaunchArgs(lastLaunch.options.args));
       setRunAsAdmin(lastLaunch.options.runAsAdmin);
+      setCloseEncore(lastLaunch.options.closeEncore);
    }, [lastLaunch]);
 
    useEffect(() => {
@@ -153,9 +159,11 @@ export function useInstallLaunch(request: InstallActionRequest) {
       flags,
       argsInput,
       runAsAdmin,
+      closeEncore,
       failure,
       setArgsInput,
       setRunAsAdmin,
+      setCloseEncore,
       toggleFlag,
       recheck,
       launch,

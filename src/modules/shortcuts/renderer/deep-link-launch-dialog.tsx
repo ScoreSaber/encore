@@ -97,6 +97,7 @@ export function DeepLinkLaunchDialog() {
                      {state.preview.warnings.map((warning) => (
                         <WarningLine key={warning}>{launch(`warnings.${warningKeys[warning]}`)}</WarningLine>
                      ))}
+                     {state.preview.options.closeEncore ? <WarningLine>{launch('closeEncore.description')}</WarningLine> : null}
                   </>
                ) : null}
 

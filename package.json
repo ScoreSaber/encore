@@ -17,6 +17,7 @@
       "dev:web": "turbo run dev --filter=@encore/web",
       "predev": "install-electron",
       "build": "electron-vite build && bun run typecheck",
+      "build:watchdog": "bun run scripts/build-watchdog.ts",
       "build:all": "turbo run build",
       "build:web": "turbo run build --filter=@encore/web",
       "start": "electron-vite preview",
@@ -29,8 +30,8 @@
       "format": "oxfmt .",
       "format:check": "oxfmt --check .",
       "electron:install": "install-electron",
-      "package": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
-      "package:dir": "bun run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+      "package": "bun run build && bun run build:watchdog && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+      "package:dir": "bun run build && bun run build:watchdog && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
       "postinstall": "install-electron",
       "prepare": "husky"
    },
@@ -149,7 +150,13 @@
             "nsis"
          ],
          "verifyUpdateCodeSignature": false,
-         "artifactName": "${productName}-${version}-windows-${arch}.${ext}"
+         "artifactName": "${productName}-${version}-windows-${arch}.${ext}",
+         "extraResources": [
+            {
+               "from": "build/watchdog/encore-watchdog.exe",
+               "to": "encore-watchdog.exe"
+            }
+         ]
       },
       "nsis": {
          "artifactName": "${productName}-${version}-windows-${arch}.${ext}",
@@ -166,6 +173,12 @@
          "maintainer": "ScoreSaber <contact@scoresaber.com>",
          "vendor": "ScoreSaber",
          "syncDesktopName": true,
+         "extraResources": [
+            {
+               "from": "build/watchdog/encore-watchdog",
+               "to": "encore-watchdog"
+            }
+         ],
          "desktop": {
             "entry": {
                "StartupWMClass": "encore",

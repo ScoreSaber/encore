@@ -3,7 +3,7 @@ import { Result } from 'better-result';
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import type { LaunchOptions } from '@/modules/launch/contract';
 import { buildProtonCommand } from '@/modules/launch/main/launch-options';
-import { quoteForPowerShell, type LaunchCommand, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
+import { quoteForPowerShell, type LaunchCommand, type LaunchRuntime, type WatchdogCommand } from '@/modules/launch/main/launch-runtime';
 import { createLaunchService } from '@/modules/launch/main/launch-service';
 import { ensureProtonCompatData, validateProtonFolder } from '@/modules/launch/main/proton';
 import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
@@ -32,7 +32,8 @@ describe('launch service', () => {
       const options: LaunchOptions = {
          flags: ['debug', 'fpfc'],
          args: ['--room', 'my room', '--seed', '7'],
-         runAsAdmin: false
+         runAsAdmin: false,
+         closeEncore: false
       };
 
       const started = await harness.launch.start({ installId: install.id, options });
@@ -51,6 +52,50 @@ describe('launch service', () => {
          installId: install.id,
          options: { flags: ['fpfc', 'debug'], args: ['--room', 'my room', '--seed', '7'] }
       });
+      expect(harness.watchdogs).toEqual([]);
+   });
+
+   test('starts the resource saver after Beat Saber is handed off', async () => {
+      const harness = await createHarness();
+      const install = await harness.createInstall();
+
+      const started = await harness.launch.start({
+         installId: install.id,
+         options: { flags: [], args: [], runAsAdmin: false, closeEncore: true }
+      });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
+      expect(harness.events).toEqual(['prepare-watchdog', 'game', 'watchdog']);
+      expect(harness.watchdogs).toEqual([
+         {
+            executablePath: join(harness.dataPath, 'encore-watchdog'),
+            args: ['--parent', '123', 'Beat Saber.exe', join(harness.dataPath, 'encore')],
+            workingDirectory: harness.dataPath
+         }
+      ]);
+      expect((await harness.launch.getState()).lastLaunch?.options.closeEncore).toBe(true);
+   });
+
+   test('does not start Beat Saber when the resource saver is unavailable', async () => {
+      const harness = await createHarness();
+      const install = await harness.createInstall();
+      harness.disableWatchdog();
+
+      const started = await harness.launch.start({
+         installId: install.id,
+         options: { flags: [], args: [], runAsAdmin: false, closeEncore: true }
+      });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({
+         status: 'failed',
+         error: { code: 'launch.watchdog.unavailable' }
+      });
+      expect(harness.spawned).toEqual([]);
+      expect(harness.watchdogs).toEqual([]);
    });
 
    test('runs the Windows build through Proton on Linux', async () => {
@@ -61,7 +106,7 @@ describe('launch service', () => {
 
       const started = await harness.launch.start({
          installId: install.id,
-         options: { flags: ['proton-logs'], args: [], runAsAdmin: true }
+         options: { flags: ['proton-logs'], args: [], runAsAdmin: true, closeEncore: false }
       });
       expect(started.ok).toBe(true);
       if (!started.ok) return;
@@ -89,7 +134,10 @@ describe('launch service', () => {
       const protonPath = await createProtonFolder(harness.dataPath);
       await harness.settingsStore.updateLibrarySettings({ protonPath });
 
-      const preview = await harness.launch.preview({ installId: install.id, options: { flags: [], args: [], runAsAdmin: false } });
+      const preview = await harness.launch.preview({
+         installId: install.id,
+         options: { flags: [], args: [], runAsAdmin: false, closeEncore: false }
+      });
 
       expect(preview).toMatchObject({
          status: 'ok',
@@ -108,7 +156,7 @@ describe('launch service', () => {
       expect(
          await harness.launch.preview({
             installId: install.id,
-            options: { flags: [], args: ['--room\n--fpfc'], runAsAdmin: false }
+            options: { flags: [], args: ['--room\n--fpfc'], runAsAdmin: false, closeEncore: false }
          })
       ).toMatchObject({ status: 'unavailable', issue: 'invalid-options' });
       expect(harness.spawned).toEqual([]);
@@ -189,6 +237,14 @@ async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { 
    const registry = createInstallRegistry({ dataPath, settingsStore, detectStores });
    const operations = createOperationRegistry();
    const spawned: LaunchCommand[] = [];
+   const watchdogs: WatchdogCommand[] = [];
+   const events: string[] = [];
+   let watchdogAvailable = true;
+   const watchdogCommand = {
+      executablePath: join(dataPath, 'encore-watchdog'),
+      args: ['--parent', '123', 'Beat Saber.exe', join(dataPath, 'encore')],
+      workingDirectory: dataPath
+   };
    const runtime: LaunchRuntime = {
       platform,
       readSteamClient: () => Promise.resolve({ status: 'missing' }),
@@ -199,8 +255,22 @@ async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { 
       startSteamClient: () => Promise.resolve(Result.ok({ pid: 1_212 })),
       startOculusClient: () => Promise.resolve(Result.ok({ pid: 1_213 })),
       spawn: (command) => {
+         events.push('game');
          spawned.push(command);
          return Promise.resolve(Result.ok({ pid: 4_242 }));
+      },
+      prepareWatchdog: () => {
+         events.push('prepare-watchdog');
+         return Promise.resolve(
+            watchdogAvailable
+               ? Result.ok(watchdogCommand)
+               : Result.err({ code: 'launch.watchdog.unavailable', message: 'the resource saver is unavailable' })
+         );
+      },
+      spawnWatchdog: (command) => {
+         events.push('watchdog');
+         watchdogs.push(command);
+         return Promise.resolve(Result.ok({ pid: 4_243 }));
       }
    };
 
@@ -214,6 +284,11 @@ async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { 
       settingsStore,
       operations,
       spawned,
+      watchdogs,
+      events,
+      disableWatchdog: () => {
+         watchdogAvailable = false;
+      },
       launch: createLaunchService({ settingsStore, registry, operations, runtime, storeClientDelayMs: 0 }),
       createInstall: async () => {
          const path = join(installRoot, 'Beat Saber');

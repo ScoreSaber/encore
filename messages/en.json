@@ -916,6 +916,10 @@
          "label": "Run as admin",
          "description": "Windows asks for elevation before the game starts"
       },
+      "closeEncore": {
+         "label": "Resource saver",
+         "description": "Closes Encore while Beat Saber is running to conserve system resources"
+      },
       "args": {
          "label": "Extra arguments",
          "placeholder": "--example value"
