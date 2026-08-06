@@ -211,7 +211,7 @@ export const mapLinkSchemes = mapLinkSchemeSchema.options;
 
 export type MapLinkScheme = z.infer<typeof mapLinkSchemeSchema>;
 
-export const mapLinkIssueSchema = z.enum(['invalid-key', 'unsupported-link']);
+const mapLinkIssueSchema = z.enum(['invalid-key', 'unsupported-link']);
 
 export type MapLinkIssue = z.infer<typeof mapLinkIssueSchema>;
 

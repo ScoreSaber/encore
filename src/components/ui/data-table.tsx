@@ -166,6 +166,8 @@ export function DataTable<T>({
                                  <span
                                     role="separator"
                                     aria-orientation="vertical"
+                                    aria-label={`${label}: resize column`}
+                                    tabIndex={0}
                                     data-resizing={header.column.getIsResizing() ? '' : undefined}
                                     className="hover:bg-primary data-[resizing]:bg-primary absolute inset-y-1 right-0 w-1.5 cursor-col-resize touch-none rounded-full select-none"
                                     onMouseDown={header.getResizeHandler()}

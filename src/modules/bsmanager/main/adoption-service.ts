@@ -81,9 +81,11 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       const rootPath = resolved.rootPath;
       const versionsPath = bsmanagerVersionsPath(rootPath);
       const sharedContentPath = bsmanagerSharedContentPath(rootPath);
-      const appConfig = await readBSManagerAppConfig(bsmanagerAppConfigPath(options.locations));
-      const config = await readBSManagerConfig(bsmanagerConfigPath(rootPath));
-      const settings = await options.settingsStore.getSnapshot();
+      const [appConfig, config, settings] = await Promise.all([
+         readBSManagerAppConfig(bsmanagerAppConfigPath(options.locations)),
+         readBSManagerConfig(bsmanagerConfigPath(rootPath)),
+         options.settingsStore.getSnapshot()
+      ]);
       const currentSharedRootPath = settings.library.sharedRoot ?? defaultSharedContentRootPath(settings.library.installRoot);
       const versions = await describeVersions(versionsPath, sharedContentPath, config['custom-versions']);
 
@@ -165,8 +167,7 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       const resolved = await resolveRoot();
       if (!resolved.rootPath) return;
 
-      const config = await readBSManagerConfig(bsmanagerConfigPath(resolved.rootPath));
-      const registered = await options.registry.list();
+      const [config, registered] = await Promise.all([readBSManagerConfig(bsmanagerConfigPath(resolved.rootPath)), options.registry.list()]);
 
       for (const install of registered.installs) {
          if (install.source !== 'bsmanager' || install.store) continue;

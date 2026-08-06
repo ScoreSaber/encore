@@ -52,13 +52,14 @@ function MasterDetailList({ className, itemIds, selectedId, onSelect, children, 
    );
 }
 
-function MasterDetailRow({ id, className, ...props }: ComponentProps<'div'> & { id: string; 'aria-selected': boolean }) {
+function MasterDetailRow({ id, className, 'aria-selected': selected, ...props }: ComponentProps<'div'> & { id: string; 'aria-selected': boolean }) {
    return (
       <div
          data-slot="master-detail-row"
          data-item-id={id}
          id={`master-detail-row-${id}`}
          role="option"
+         aria-selected={selected}
          className={cn(
             'flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm',
             'aria-selected:bg-accent aria-selected:text-accent-foreground hover:bg-accent/50 cursor-default',

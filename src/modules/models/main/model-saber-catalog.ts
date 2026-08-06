@@ -139,7 +139,11 @@ function toRecord(document: ModelSaberDocument): ModelSaberRecord | null {
          author: stripMarkup(document.author),
          hash,
          thumbnailUrl: document.thumbnail?.trim() || null,
-         tags: document.tags?.map((tag) => stripMarkup(tag)).filter(Boolean) ?? [],
+         tags:
+            document.tags?.flatMap((tag) => {
+               const stripped = stripMarkup(tag);
+               return stripped ? [stripped] : [];
+            }) ?? [],
          publishedAt: document.date?.trim() || null,
          installed: false
       },

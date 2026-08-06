@@ -42,7 +42,7 @@ export const modRepositoryLimits = {
 
 export const modSourceKindSchema = z.enum(['official', 'unofficial']);
 export const modSourceStateSchema = z.enum(['ready', 'unavailable']);
-export const modRepositoryPolicyStateSchema = z.enum(['ready', 'stale', 'unavailable']);
+const modRepositoryPolicyStateSchema = z.enum(['ready', 'stale', 'unavailable']);
 export const modIdentityResolutionStrategySchema = z.enum(['highest-version', 'prefer-unofficial']);
 export const modSourceResolutionSettingsSchema = z.object({
    combine: z.boolean(),

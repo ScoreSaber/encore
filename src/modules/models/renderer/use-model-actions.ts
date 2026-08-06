@@ -58,7 +58,7 @@ export function useModelActions(request: TargetModelCollectionRequest, onFinishe
                : { status: 'invalid', kind: 'delete', problem: previewed }
          );
       },
-      [models, request]
+      [models, request, setState]
    );
 
    const confirm = useCallback(
@@ -83,7 +83,7 @@ export function useModelActions(request: TargetModelCollectionRequest, onFinishe
       }
 
       await start('import', () => models.importModels({ ...request, paths: chosen.paths }));
-   }, [models, request, start]);
+   }, [models, request, setState, start]);
 
    const exportModels = useCallback(
       async (modelIds: ModelId[]) => {
@@ -110,7 +110,7 @@ export function useModelActions(request: TargetModelCollectionRequest, onFinishe
             })
          );
       },
-      [models, request, start]
+      [models, request, setState, start]
    );
 
    const downloadModel = useCallback(

@@ -7,10 +7,11 @@ import { storeKindSchema, type StoreKind } from '@/modules/stores/contract';
 import type { TargetId } from '@/modules/targets/contract';
 
 export const defaultVersionCatalogUrl = 'https://encore.scoresaber.com/versions/beat-saber.json';
+const steamManifestIdSchema = z.string().regex(/^\d+$/);
 
 export const downloadVersionSchema = z.object({
    version: z.string(),
-   manifestId: z.string(),
+   manifestId: steamManifestIdSchema,
    oculusBinaryId: z.string().nullable().default(null),
    releaseUrl: z.string().nullable(),
    releaseDate: z.string().nullable(),
@@ -81,7 +82,7 @@ export const steamDownloadPreviewSchema = z.object({
    installRoot: z.string(),
    destinationPath: z.string(),
    warnings: z.array(downloadWarningSchema),
-   manifestId: z.string(),
+   manifestId: steamManifestIdSchema,
    steamPath: z.string(),
    depotPath: z.string()
 });
@@ -97,7 +98,7 @@ export const oculusDownloadPreviewSchema = z.object({
    binaryId: z.string()
 });
 
-export const downloadPreviewSchema = z.union([unavailableDownloadPreviewSchema, steamDownloadPreviewSchema, oculusDownloadPreviewSchema]);
+const downloadPreviewSchema = z.union([unavailableDownloadPreviewSchema, steamDownloadPreviewSchema, oculusDownloadPreviewSchema]);
 
 export const downloadRequestSchema = z.object({
    store: storeKindSchema.default('steam'),

@@ -27,29 +27,31 @@ export function useContentActions<OtherKind extends string, Problem, Preview, Se
    const { operations, cancelOperation } = useOperations(targetId);
    const [state, setState] = useState<ContentActionState<OtherKind, Problem, Preview, Selection>>({ status: 'idle' });
    const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
+   const { code: startErrorCode, message: startErrorMessage } = startError;
+   const { code: deleteErrorCode, message: deleteErrorMessage } = deleteError;
 
    const start = useCallback(
       async (kind: ContentActionKind<OtherKind>, run: () => Promise<IpcResult<OperationSnapshot>>) => {
          setState({ status: 'previewing', kind });
 
-         const started = await inlineIpcResult(run, startError);
+         const started = await inlineIpcResult(run, { code: startErrorCode, message: startErrorMessage });
          setState(
             started.ok ? { status: 'running', kind, operationId: started.value.id, preview: null } : { status: 'failed', kind, error: started.error }
          );
       },
-      [startError.code, startError.message]
+      [startErrorCode, startErrorMessage]
    );
 
    const startTarget = useCallback(
       async (kind: ContentActionKind<OtherKind>, run: () => Promise<TargetCallResult<IpcResult<OperationSnapshot>>>) => {
          setState({ status: 'previewing', kind });
 
-         const started = await inlineTargetIpcResult(run, startError);
+         const started = await inlineTargetIpcResult(run, { code: startErrorCode, message: startErrorMessage });
          setState(
             started.ok ? { status: 'running', kind, operationId: started.value.id, preview: null } : { status: 'failed', kind, error: started.error }
          );
       },
-      [startError.code, startError.message]
+      [startErrorCode, startErrorMessage]
    );
 
    const confirmTargetDelete = useCallback(
@@ -59,14 +61,14 @@ export function useContentActions<OtherKind extends string, Problem, Preview, Se
          const { preview, selection } = state;
          setState({ status: 'starting', kind: 'delete', preview, selection });
 
-         const started = await inlineTargetIpcResult(() => run(selection, preview), deleteError);
+         const started = await inlineTargetIpcResult(() => run(selection, preview), { code: deleteErrorCode, message: deleteErrorMessage });
          setState(
             started.ok
                ? { status: 'running', kind: 'delete', operationId: started.value.id, preview }
                : { status: 'failed', kind: 'delete', error: started.error }
          );
       },
-      [deleteError.code, deleteError.message, state]
+      [deleteErrorCode, deleteErrorMessage, state]
    );
 
    const cancel = useCallback(() => {

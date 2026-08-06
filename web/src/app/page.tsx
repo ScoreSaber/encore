@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 
 import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
@@ -62,13 +63,13 @@ export default function Home() {
                   </svg>
                   Open source
                 </a>
-                <a
+                <Link
                   className="inline-flex min-h-8 w-[18px] items-center justify-center bg-transparent p-0 text-[0.82rem] font-bold no-underline transition-colors [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] hover:text-[var(--foreground)] focus-visible:text-[var(--foreground)]"
                   href="/docs"
                   aria-label="Documentation"
                 >
                   ?
-                </a>
+                </Link>
               </div>
             </div>
           </div>

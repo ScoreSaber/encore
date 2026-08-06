@@ -21,12 +21,12 @@ const launchLinkParamsSchema = z.object({
    close: z.stringbool({ truthy: ['1'], falsy: ['0'] }).catch(false)
 });
 
-export const launchLinkIssueSchema = z.enum(['unknown-action', 'unknown-install', 'invalid-request', 'unsupported-link']);
+const launchLinkIssueSchema = z.enum(['unknown-action', 'unknown-install', 'invalid-request', 'unsupported-link']);
 
 export const shortcutKindSchema = z.enum(['desktop', 'steam']);
 export const shortcutKinds = shortcutKindSchema.options;
 
-export const shortcutIssueSchema = z.enum([
+const shortcutIssueSchema = z.enum([
    'install-not-found',
    'invalid-options',
    'steam-client-missing',
@@ -37,7 +37,7 @@ export const shortcutIssueSchema = z.enum([
    'write-failed'
 ]);
 
-export const shortcutWarningSchema = z.enum(['replaces-existing', 'steam-must-be-closed']);
+const shortcutWarningSchema = z.enum(['replaces-existing', 'steam-must-be-closed']);
 
 export const shortcutProtocolStateSchema = z.object({
    scheme: z.literal(encoreProtocol),
@@ -45,7 +45,7 @@ export const shortcutProtocolStateSchema = z.object({
    canUnregister: z.boolean()
 });
 
-export const shortcutStateSchema = z.object({
+const shortcutStateSchema = z.object({
    platform: launchPlatformSchema,
    kinds: z.array(shortcutKindSchema),
    protocol: shortcutProtocolStateSchema

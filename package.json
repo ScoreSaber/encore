@@ -65,7 +65,6 @@
       "zod": "4.4.3"
    },
    "devDependencies": {
-      "@electron-toolkit/preload": "3.0.2",
       "@electron-toolkit/utils": "4.0.0",
       "@tailwindcss/vite": "4.3.2",
       "@tanstack/router-plugin": "1.168.18",

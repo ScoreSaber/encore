@@ -65,6 +65,7 @@ export function ModRepositoriesFields({
    const queryKey = modRepositoryListQueryOptions.queryKey;
    const repositories = useQuery(modRepositoryListQueryOptions);
    const previewRepository = useMutation({ mutationFn: (address: string) => mods.previewRepository({ url: address }) });
+   const previewInitialRepository = previewRepository.mutate;
    const refreshRepositories = useSnapshotMutation({ queryKey, run: () => mods.refreshRepositories() });
    const addRepository = useSnapshotMutation({
       queryKey,
@@ -102,11 +103,11 @@ export function ModRepositoriesFields({
    useEffect(() => {
       if (!initialUrl) return;
 
-      previewRepository.mutate(initialUrl, {
+      previewInitialRepository(initialUrl, {
          onSuccess: (result) => setIssue(toIssue(result)),
          onError: () => setIssue({ issue: 'fetch-failed' })
       });
-   }, [initialUrl]);
+   }, [initialUrl, previewInitialRepository]);
 
    function resetDraft() {
       setUrl('');

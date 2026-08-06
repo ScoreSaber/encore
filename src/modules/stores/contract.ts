@@ -67,7 +67,7 @@ export const storeDetectionSnapshotSchema = z.object({
    diagnostics: z.array(storeDetectionDiagnosticSchema)
 });
 
-export const storeDetectionResultSchema = storeDetectionSnapshotSchema.omit({ targetId: true });
+const storeDetectionResultSchema = storeDetectionSnapshotSchema.omit({ targetId: true });
 
 export type StoreDetectionDiagnostic = z.infer<typeof storeDetectionDiagnosticSchema>;
 export type StoreLibrarySummary = z.infer<typeof storeLibrarySummarySchema>;

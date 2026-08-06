@@ -92,7 +92,7 @@ export const modelCollectionRequestSchema = z.object({
 export const modelSelectionRequestSchema = modelCollectionRequestSchema.extend({
    modelIds: z.array(z.string().min(1))
 });
-export const modelDetailRequestSchema = modelCollectionRequestSchema.extend({
+const modelDetailRequestSchema = modelCollectionRequestSchema.extend({
    modelId: z.string().min(1)
 });
 
@@ -209,7 +209,7 @@ export type ModelExportRequest = ModelSelectionRequest & {
 
 export const modelLinkScheme = 'modelsaber';
 
-export const modelLinkIssueSchema = z.enum(['invalid-id', 'unsupported-link']);
+const modelLinkIssueSchema = z.enum(['invalid-id', 'unsupported-link']);
 
 export type ModelLinkIssue = z.infer<typeof modelLinkIssueSchema>;
 

@@ -198,22 +198,23 @@ export function createModService(options: ModServiceOptions) {
       let bytes = 0;
 
       for (const [index, mod] of planned.entries()) {
+         const { entry } = mod;
          options.operations.update(operationId, {
-            progress: progressFor(index, planned.length, mod.entry.name, 0)
+            progress: progressFor(index, planned.length, entry.name, 0)
          });
 
          const installed = await installModVersion({
             ingestion: options.ingestion,
             installPath: install.path,
-            entry: mod.entry,
+            entry,
             signal,
             onProgress: (progress) => {
                options.operations.update(operationId, {
-                  progress: progressFor(index, planned.length, mod.entry.name, progress.percent ?? 0)
+                  progress: progressFor(index, planned.length, entry.name, progress.percent ?? 0)
                });
             }
          });
-         if (Result.isError(installed)) return failOperation(operationId, mod.entry.name, installed.error);
+         if (Result.isError(installed)) return failOperation(operationId, entry.name, installed.error);
 
          files += installed.value.files;
          bytes += installed.value.bytes;

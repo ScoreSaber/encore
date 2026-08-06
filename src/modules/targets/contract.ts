@@ -34,7 +34,7 @@ export const targetSchema = z.object({
    message: z.string().optional()
 });
 
-export const targetEventSchema = z.discriminatedUnion('type', [
+const targetEventSchema = z.discriminatedUnion('type', [
    z.object({
       type: z.literal('target-updated'),
       target: targetSchema

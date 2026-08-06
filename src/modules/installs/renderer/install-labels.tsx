@@ -20,14 +20,6 @@ export function InstallStatusBadge({ install }: { install: InstallSummary }) {
    return <Badge variant={install.status === 'missing' ? 'destructive' : 'secondary'}>{t(`status.${install.status}`)}</Badge>;
 }
 
-export function useInstallSecondaryLabel(install: InstallSummary) {
-   const targets = useTranslations('targets');
-
-   if (install.version && install.version !== install.name) return install.version;
-
-   return install.store ? targets(`store.${install.store}`) : null;
-}
-
 export function InstallProblemRow({ problem }: { problem: InstallProblem }) {
    const t = useTranslations('installs');
 

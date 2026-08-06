@@ -7,7 +7,7 @@ import type { SharedFolderId, SharedFolderLinkState } from '@/modules/shared-con
 import type { StoreKind } from '@/modules/stores/contract';
 import type { TargetId } from '@/modules/targets/contract';
 
-export const bsmanagerIssueSchema = z.enum([
+const bsmanagerIssueSchema = z.enum([
    'inspect-failed',
    'not-bsmanager',
    'not-found',

@@ -55,7 +55,7 @@ export function useMapActions(request: TargetMapCollectionRequest, onFinished?: 
                : { status: 'invalid', kind: 'delete', problem: previewed }
          );
       },
-      [maps, request]
+      [maps, request, setState]
    );
 
    const confirm = useCallback(() => confirmTargetDelete((mapIds) => maps.startDelete({ ...request, mapIds })), [confirmTargetDelete, maps, request]);
@@ -77,7 +77,7 @@ export function useMapActions(request: TargetMapCollectionRequest, onFinished?: 
       }
 
       await start('import', () => maps.importMaps({ ...request, paths: chosen.paths }));
-   }, [maps, request, start]);
+   }, [maps, request, setState, start]);
 
    const exportMaps = useCallback(
       async (mapIds: MapId[]) => {
@@ -98,7 +98,7 @@ export function useMapActions(request: TargetMapCollectionRequest, onFinished?: 
 
          await start('export', () => maps.exportMaps({ ...request, mapIds, destinationPath: chosen.path }));
       },
-      [maps, request, start]
+      [maps, request, setState, start]
    );
 
    const downloadMap = useCallback(

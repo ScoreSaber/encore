@@ -154,7 +154,7 @@ export type PlaylistExportRequest = PlaylistSelectionRequest & {
 export const playlistLinkScheme = 'bsplaylist';
 export const playlistFileExtension = '.bplist';
 
-export const playlistLinkIssueSchema = z.enum(['invalid-source', 'unsupported-link']);
+const playlistLinkIssueSchema = z.enum(['invalid-source', 'unsupported-link']);
 
 export type PlaylistLinkIssue = z.infer<typeof playlistLinkIssueSchema>;
 

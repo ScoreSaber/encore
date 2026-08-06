@@ -42,7 +42,7 @@ export const supportLinkUrls: Record<SupportLinkId, string> = {
    'scoresaber-wiki': 'https://wiki.scoresaber.com/'
 };
 
-export const supportLinkResultSchema = z.object({
+const supportLinkResultSchema = z.object({
    id: supportLinkIdSchema,
    status: z.enum(['opened', 'blocked']),
    reason: z.string().optional()
@@ -80,7 +80,7 @@ export const supportInstallLogGroupSchema = z.object({
 
 export const supportLogGroupSchema = z.discriminatedUnion('source', [supportAppLogGroupSchema, supportInstallLogGroupSchema]);
 
-export const supportLogsSnapshotSchema = z.object({
+const supportLogsSnapshotSchema = z.object({
    targetId: z.string(),
    scannedAt: z.string(),
    groups: z.array(supportLogGroupSchema)
@@ -115,7 +115,7 @@ export const supportLogExcerptSchema = z.discriminatedUnion('status', [
    })
 ]);
 
-export const supportDiagnosticsBundleSchema = z.object({
+const supportDiagnosticsBundleSchema = z.object({
    fileName: z.string(),
    text: z.string(),
    sizeBytes: z.int().nonnegative(),
@@ -127,14 +127,14 @@ export const supportDiagnosticsBundleSchema = z.object({
    )
 });
 
-export const supportExportResultSchema = z.discriminatedUnion('status', [
+const supportExportResultSchema = z.discriminatedUnion('status', [
    z.object({ status: z.literal('saved'), path: z.string() }),
    z.object({ status: z.literal('copied') }),
    z.object({ status: z.literal('cancelled') }),
    z.object({ status: z.literal('failed'), message: z.string() })
 ]);
 
-export const supportLogOpenResultSchema = z.discriminatedUnion('status', [
+const supportLogOpenResultSchema = z.discriminatedUnion('status', [
    z.object({ status: z.literal('opened') }),
    z.object({ status: z.literal('failed'), message: z.string() })
 ]);

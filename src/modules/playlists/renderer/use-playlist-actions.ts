@@ -44,7 +44,7 @@ export function usePlaylistActions(request: TargetPlaylistCollectionRequest, onF
                : { status: 'invalid', kind: 'delete', problem: previewed }
          );
       },
-      [playlists, request]
+      [playlists, request, setState]
    );
 
    const confirm = useCallback(
@@ -66,7 +66,7 @@ export function usePlaylistActions(request: TargetPlaylistCollectionRequest, onF
       }
 
       await start('import', () => playlists.importPlaylists({ ...request, paths: chosen.paths }));
-   }, [playlists, request, start]);
+   }, [playlists, request, setState, start]);
 
    const exportPlaylists = useCallback(
       async (playlistIds: PlaylistId[]) => {
@@ -84,7 +84,7 @@ export function usePlaylistActions(request: TargetPlaylistCollectionRequest, onF
 
          await start('export', () => playlists.exportPlaylists({ ...request, playlistIds, destinationPath: chosen.path }));
       },
-      [playlists, request, start]
+      [playlists, request, setState, start]
    );
 
    const downloadPlaylist = useCallback(

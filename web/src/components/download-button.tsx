@@ -25,11 +25,14 @@ function detectPlatform(): Platform {
   return "macOS";
 }
 
-async function fetchLatestRelease(): Promise<Release> {
+async function fetchLatestRelease(signal: AbortSignal): Promise<Release> {
   const cached = sessionStorage.getItem(RELEASE_CACHE_KEY);
   if (cached) return JSON.parse(cached);
 
-  const release = await fetch(RELEASE_API_URL).then((response) => response.json());
+  const response = await fetch(RELEASE_API_URL, { signal });
+  if (!response.ok) throw new Error(`GitHub release request failed with ${response.status}`);
+
+  const release: Release = await response.json();
   if (release.assets) sessionStorage.setItem(RELEASE_CACHE_KEY, JSON.stringify(release));
 
   return release;
@@ -75,15 +78,20 @@ export function DownloadButton() {
   const [downloadUrl, setDownloadUrl] = useState(RELEASES_URL);
 
   useEffect(() => {
+    const controller = new AbortController();
     const detectedPlatform = detectPlatform();
     setPlatform(detectedPlatform);
 
-    fetchLatestRelease()
+    fetchLatestRelease(controller.signal)
       .then((release) => {
         const assetUrl = pickAsset(release.assets ?? [], detectedPlatform);
         if (assetUrl) setDownloadUrl(assetUrl);
       })
-      .catch(() => setDownloadUrl(RELEASES_URL));
+      .catch(() => {
+        if (!controller.signal.aborted) setDownloadUrl(RELEASES_URL);
+      });
+
+    return () => controller.abort();
   }, []);
 
   return (

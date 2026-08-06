@@ -38,7 +38,7 @@ export const protonLaunchPlanSchema = z.object({
    logPath: z.string().nullable()
 });
 
-export const protonStateSchema = z.object({
+const protonStateSchema = z.object({
    supported: z.boolean(),
    path: z.string().nullable(),
    validation: protonValidationSchema.nullable(),
@@ -132,7 +132,7 @@ export const readyLaunchPreviewSchema = z.object({
    warnings: z.array(launchWarningSchema)
 });
 
-export const launchPreviewSchema = z.discriminatedUnion('status', [unavailableLaunchPreviewSchema, readyLaunchPreviewSchema]);
+const launchPreviewSchema = z.discriminatedUnion('status', [unavailableLaunchPreviewSchema, readyLaunchPreviewSchema]);
 
 export const launchRecordSchema = z.object({
    installId: z.string(),

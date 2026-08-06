@@ -88,6 +88,7 @@ export function ColorPicker({ disabled, inputLabel, label, value, onChange }: Co
                onChange={(event) => setDraft({ ...draft, input: event.currentTarget.value })}
                onKeyDown={(event) => {
                   if (event.key === 'Enter') {
+                     if (event.nativeEvent.isComposing) return;
                      commitHexInput();
                      event.currentTarget.blur();
                   } else if (event.key === 'Escape') {
