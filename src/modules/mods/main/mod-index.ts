@@ -6,7 +6,6 @@ import {
    beatModsHost,
    bsipaModName,
    isRequiredModCategory,
-   modCategories,
    officialModSourceId,
    officialModSourceName,
    type ModCatalogSource,
@@ -168,7 +167,7 @@ export function toModIndexEntries(entries: BeatModsEntry[]): ModIndexEntry[] {
             { kind: 'listing', url: beatModsModUrl(entry.mod.id) },
             { kind: 'source', url: entry.mod.gitUrl }
          ]),
-         category: modCategories.find((category) => category === entry.mod.category.trim().toLowerCase()) ?? 'other',
+         category: entry.mod.category,
          author: describeAuthor(entry),
          version: entry.version.modVersion,
          sizeBytes: entry.version.fileSize ?? null,

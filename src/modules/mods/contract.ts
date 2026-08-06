@@ -220,9 +220,10 @@ export const officialModSourceName = 'BeatMods';
 export const bsipaModName = 'bsipa';
 
 export const modPlatformSchema = z.enum(['steampc', 'oculuspc', 'universalpc']);
-export const modCategorySchema = z.enum([
+const knownModCategorySchema = z.enum([
    'core',
    'essential',
+   'leaderboards',
    'library',
    'cosmetic',
    'practice',
@@ -236,7 +237,17 @@ export const modCategorySchema = z.enum([
    'editor',
    'other'
 ]);
-export const modCategories = modCategorySchema.options;
+export const knownModCategories = knownModCategorySchema.options;
+const knownModCategoryByCompactName = new Map(knownModCategories.map((category) => [category.toLowerCase().replaceAll(/[^a-z0-9]/g, ''), category]));
+export const modCategorySchema = z
+   .string()
+   .trim()
+   .max(64)
+   .transform((category) => {
+      if (!category) return 'other';
+
+      return knownModCategoryByCompactName.get(category.toLowerCase().replaceAll(/[^a-z0-9]/g, '')) ?? category;
+   });
 
 export const modStateSchema = z.enum(['available', 'installed', 'update-available']);
 export const modCatalogSourceSchema = z.enum(['cache', 'remote']);

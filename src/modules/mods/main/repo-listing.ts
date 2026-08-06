@@ -7,7 +7,7 @@ import { causeMessage } from '@/lib/errors';
 import { fetchJsonDocument, type JsonDocumentFetch } from '@/lib/http/json';
 import { resolveHttpsUrl } from '@/lib/http/url';
 import { evaluateHttpsUrl } from '@/lib/security/external-url';
-import { modCategories, modPlatformSchema, officialModSourceId, type ModPlatform } from '@/modules/mods/contract';
+import { modCategorySchema, modPlatformSchema, officialModSourceId, type ModPlatform } from '@/modules/mods/contract';
 import { modRepositoryLimits, modRepositoryListingSchemaVersion, modRepositoryProblem, type ModRepositoryProblem } from '@/modules/mods/contract';
 import { modIndexKey, toModLinks, type ModIndexEntry, type ModIndexFileMatch } from '@/modules/mods/main/mod-index';
 import { modFolders } from '@/modules/mods/main/mod-paths';
@@ -57,7 +57,7 @@ const listingPackageSchema = z.object({
    summary: z.string().trim().max(512).default(''),
    description: z.string().max(20_000).catch('').default(''),
    iconUrl: z.string().trim().max(2048).nullish(),
-   category: z.string().trim().max(64).default('other'),
+   category: modCategorySchema.default('other'),
    author: z.string().trim().max(120).default(''),
    sourceUrl: z.string().trim().max(2048).nullish(),
    issuesUrl: z.string().trim().max(2048).nullish(),
@@ -218,7 +218,7 @@ export function selectRepositoryEntries(
             { kind: 'source', url: listed.sourceUrl },
             { kind: 'issues', url: listed.issuesUrl }
          ]),
-         category: modCategories.find((category) => category === listed.category.trim().toLowerCase()) ?? 'other',
+         category: listed.category,
          author: listed.author,
          version: version.version,
          sizeBytes: version.fileSizeBytes ?? null,

@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { fetchJsonResource, type JsonDocumentFetch, type JsonDocumentProblem } from '@/lib/http/json';
-import { beatModsOrigin, type ModPlatform } from '@/modules/mods/contract';
+import { beatModsOrigin, modCategorySchema, type ModPlatform } from '@/modules/mods/contract';
 
 const requestTimeoutMs = 15_000;
 const maxResponseBytes = 16 * 1024 * 1024;
@@ -47,7 +47,7 @@ export const beatModsModSchema = z.object({
    name: z.string().trim().min(1),
    summary: z.string().default(''),
    description: z.string().max(maxDescriptionChars).catch('').default(''),
-   category: z.string().default('other'),
+   category: modCategorySchema.default('other'),
    iconFileName: z.string().trim().default(''),
    gitUrl: z.string().trim().default(''),
    authors: z.array(beatModsUserSchema).default([])

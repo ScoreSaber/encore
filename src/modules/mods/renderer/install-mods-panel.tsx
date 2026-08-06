@@ -29,7 +29,7 @@ import { cn } from '@/components/utils';
 import { matchesQuery } from '@/app/renderer/collection/view';
 import { useFormatters } from '@/app/renderer/i18n/formatters';
 import type { InstallSummary } from '@/modules/installs/contract';
-import type { ExternalMod, ModSummary, ReadyModsSnapshot } from '@/modules/mods/contract';
+import { knownModCategories, type ExternalMod, type ModSummary, type ReadyModsSnapshot } from '@/modules/mods/contract';
 import type { ModSourceStatus } from '@/modules/mods/contract';
 import { groupMods, orderModGroups, type ModGroup } from '@/modules/mods/renderer/grouping';
 import { ManageModSourcesDialog } from '@/modules/mods/renderer/manage-mod-sources-dialog';
@@ -89,6 +89,7 @@ function ReadyMods({
    const sourcesChanged = useRef(false);
    const storedGroupSettings = settings.snapshot?.app.modGroups ?? emptyModGroupSettings;
    const groupSettings = pendingGroupSettings ?? storedGroupSettings;
+   const categoryLabels = useMemo(() => new Map<string, string>(knownModCategories.map((category) => [category, t(`category.${category}`)])), [t]);
    const busy = mods.state.status !== 'idle' || mods.status === 'loading';
    const ticked = new Set(mods.selected);
    const toInstall = snapshot.mods.filter((mod) => mod.state === 'available' && ticked.has(mod.modId)).map((mod) => mod.modId);
@@ -97,10 +98,13 @@ function ReadyMods({
    const nothingInstalled = snapshot.mods.every((mod) => mod.state === 'available') && snapshot.external.length === 0;
    const filterText = query.trim().toLowerCase();
    const visible = snapshot.mods.filter((mod) =>
-      matchesQuery(filterText, [mod.name, mod.summary, mod.author, mod.sourceName, t(`category.${mod.category}`)])
+      matchesQuery(filterText, [mod.name, mod.summary, mod.author, mod.sourceName, categoryLabels.get(mod.category) ?? mod.category])
    );
    const visibleExternal = snapshot.external.filter((file) => matchesQuery(filterText, [file.name, file.path, t('external.category')]));
-   const baseGroups = useMemo(() => groupMods(snapshot.mods, (category) => t(`category.${category}`)), [snapshot.mods, t]);
+   const baseGroups = useMemo(
+      () => groupMods(snapshot.mods, (category) => categoryLabels.get(category) ?? category),
+      [snapshot.mods, categoryLabels]
+   );
    const orderedGroups = orderModGroups(baseGroups, groupSettings.order);
    const visibleModIds = new Set(visible.map((mod) => mod.modId));
    const groups = orderedGroups

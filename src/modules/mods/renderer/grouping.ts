@@ -1,14 +1,13 @@
-import type { ModCategory, ModSummary } from '@/modules/mods/contract';
+import type { ModSummary } from '@/modules/mods/contract';
 
-export type ModGroupCategory = ModCategory | 'leaderboards';
 export type ModGroup = {
    id: string;
-   category: ModGroupCategory;
+   category: string;
    label: string;
    mods: ModSummary[];
 };
 
-const categoryOrder: ModGroupCategory[] = [
+const categoryOrder = [
    'core',
    'essential',
    'leaderboards',
@@ -24,13 +23,15 @@ const categoryOrder: ModGroupCategory[] = [
 ];
 const leaderboardNames = ['beatleader', 'scoresaber', 'localleaderboard'];
 
-function categoryRank(category: ModGroupCategory) {
+function categoryRank(category: string) {
    const rank = categoryOrder.indexOf(category);
 
    return rank === -1 ? categoryOrder.indexOf('other') - 0.5 : rank;
 }
 
 function groupCategory(mod: ModSummary) {
+   if (mod.category !== 'other') return mod.category;
+
    const compactName = compactModName(mod.name);
 
    if (compactName.includes('scoresabersharp')) return 'library';
@@ -59,13 +60,18 @@ function shuffleModFamilies(mods: ModSummary[]) {
    mods.splice(0, mods.length, ...shuffled.flat());
 }
 
-export function groupMods(mods: ModSummary[], label: (category: ModGroupCategory) => string) {
+export function groupMods(mods: ModSummary[], label: (category: string) => string) {
    const groups = new Map<string, ModGroup>();
 
    for (const mod of mods) {
       const category = groupCategory(mod);
-      const id = `category:${category}`;
-      const group = groups.get(id) ?? { id, category, label: label(category), mods: [] };
+      const id = `category:${category.toLowerCase()}`;
+      const group = groups.get(id) ?? {
+         id,
+         category,
+         label: label(category),
+         mods: []
+      };
 
       group.mods.push(mod);
       groups.set(id, group);
