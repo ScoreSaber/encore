@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { Check, ChevronDown, FolderOpen, FolderPlus, MoreHorizontal, Plus, Star, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
@@ -154,6 +154,14 @@ function LibraryActions({ root, manager, isLocal, busy }: { root: SharedRootOver
 }
 
 function AddRootDialog({ manager }: { manager: SharedRoots }) {
+   const { state } = manager;
+   const candidate = state.status === 'confirming' ? state.candidate : state.status === 'saving' ? state.candidate : null;
+   const open = state.status === 'entering' || candidate !== null;
+
+   return open ? <OpenAddRootDialog manager={manager} /> : null;
+}
+
+function OpenAddRootDialog({ manager }: { manager: SharedRoots }) {
    const t = useTranslations('sharedContent.roots');
    const shared = useTranslations('sharedContent');
    const common = useTranslations('common');
@@ -163,13 +171,6 @@ function AddRootDialog({ manager }: { manager: SharedRoots }) {
    const saving = state.status === 'saving';
    const entering = state.status === 'entering';
    const checking = state.status === 'entering' && state.checking === true;
-   const open = entering || candidate !== null;
-
-   useEffect(() => {
-      if (!open) setPath('');
-   }, [open]);
-
-   if (!open) return null;
 
    return (
       <Dialog

@@ -23,22 +23,20 @@ const issueKeys: Record<MapSearchIssue, MessageKey<'maps.search.issues'>> = {
 
 export function MapSearchDialog({
    request,
-   open,
    onOpenChange,
    onDownload
 }: {
    request: TargetMapCollectionRequest;
-   open: boolean;
    onOpenChange: (open: boolean) => void;
    onDownload: (key: string) => void;
 }) {
    const t = useTranslations('maps.search');
    const common = useTranslations('common');
-   const search = useMapSearch(request, open);
+   const search = useMapSearch(request);
    const { state } = search;
 
    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open onOpenChange={onOpenChange}>
          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
                <div className="flex items-baseline gap-3">

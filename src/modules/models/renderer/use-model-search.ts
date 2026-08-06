@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
 
@@ -7,7 +7,6 @@ import { isCatalogModelType, type ModelSaberModelSummary, type ModelSearchIssue,
 import { modelSearchQueryOptions } from '@/modules/models/renderer/model-queries';
 
 type ModelSearchState =
-   | { status: 'idle' }
    | { status: 'searching' }
    | { status: 'failed'; issue: ModelSearchIssue; detail?: string }
    | {
@@ -18,23 +17,17 @@ type ModelSearchState =
         hasMore: boolean;
      };
 
-export function useModelSearch(request: TargetModelCollectionRequest, type: ModelType, active: boolean) {
+export function useModelSearch(request: TargetModelCollectionRequest, type: ModelType) {
    const [submitted, setSubmitted] = useState({ query: '', page: 0 });
    const [query, setQuery] = useState('');
-   const searchable = active && isCatalogModelType(type);
+   const searchable = isCatalogModelType(type);
    const search = useQuery({
       ...modelSearchQueryOptions(request, type, submitted.query, submitted.page),
       enabled: searchable
    });
 
-   useEffect(() => {
-      if (!active) setSubmitted({ query: '', page: 0 });
-   }, [active]);
-
    let state: ModelSearchState;
-   if (!active) {
-      state = { status: 'idle' };
-   } else if (!searchable) {
+   if (!searchable) {
       state = { status: 'failed', issue: 'unsupported-type', detail: type };
    } else if (search.isError) {
       state = { status: 'failed', issue: 'fetch-failed' };

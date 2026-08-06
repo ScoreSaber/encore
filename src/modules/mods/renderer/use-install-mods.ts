@@ -42,7 +42,7 @@ export function useInstallMods(request: TargetModRequest) {
    const queryKey = modListQueryOptions(request).queryKey;
    const mods = useQuery(modListQueryOptions(request));
    const refreshMods = useSnapshotMutation({ queryKey, run: () => modsApi.refreshMods(request) });
-   const [selected, setSelected] = useState<string[]>([]);
+   const [selection, setSelection] = useState<{ key: string; ids: string[] } | null>(null);
    const [state, setState] = useState<ModActionState>({ status: 'idle' });
    const [linkBlocked, setLinkBlocked] = useState(false);
    const refreshedRequest = useRef<string | null>(null);
@@ -55,8 +55,10 @@ export function useInstallMods(request: TargetModRequest) {
       () => (snapshot?.status === 'ready' ? snapshot.mods.filter((mod) => mod.state !== 'available').map((mod) => mod.modId) : []),
       [snapshot]
    );
+   const selectionKey = JSON.stringify([request.targetId, request.installId, [...installedIds].sort()]);
+   const selected = selection?.key === selectionKey ? selection.ids : installedIds;
 
-   useEffect(() => setSelected(installedIds), [installedIds]);
+   if (selection && selection.key !== selectionKey) setSelection(null);
 
    useEffect(() => {
       if (!snapshot || refreshedRequest.current === refreshKey) return;
@@ -72,15 +74,30 @@ export function useInstallMods(request: TargetModRequest) {
 
    const reload = useCallback(() => void queryClient.invalidateQueries({ queryKey }), [queryClient, queryKey]);
 
-   const toggle = useCallback((modId: string) => {
-      setSelected((current) => (current.includes(modId) ? current.filter((candidate) => candidate !== modId) : [...current, modId]));
-   }, []);
+   const toggle = useCallback(
+      (modId: string) => {
+         setSelection((current) => {
+            const ids = current?.key === selectionKey ? current.ids : installedIds;
+            return {
+               key: selectionKey,
+               ids: ids.includes(modId) ? ids.filter((candidate) => candidate !== modId) : [...ids, modId]
+            };
+         });
+      },
+      [installedIds, selectionKey]
+   );
 
-   const resetSelection = useCallback(() => setSelected(installedIds), [installedIds]);
+   const resetSelection = useCallback(() => setSelection(null), []);
 
-   const select = useCallback((modIds: string[]) => {
-      setSelected((current) => [...new Set([...current, ...modIds])]);
-   }, []);
+   const select = useCallback(
+      (modIds: string[]) => {
+         setSelection((current) => {
+            const ids = current?.key === selectionKey ? current.ids : installedIds;
+            return { key: selectionKey, ids: [...new Set([...ids, ...modIds])] };
+         });
+      },
+      [installedIds, selectionKey]
+   );
 
    const openLink = useCallback(
       (url: string) => {

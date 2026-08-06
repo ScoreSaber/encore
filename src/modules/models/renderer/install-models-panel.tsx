@@ -250,16 +250,17 @@ export function InstallModelsPanel({
          {models.models.length > 0 && visible.length === 0 ? <EmptyPanel description={t('noMatches')} /> : null}
 
          <ModelActionDialog request={request} actions={actions} />
-         <ModelSearchDialog
-            request={request}
-            type={type}
-            open={searchOpen}
-            onOpenChange={setSearchOpen}
-            onDownload={(id) => {
-               setSearchOpen(false);
-               void actions.downloadModel({ kind: 'modelsaber', id });
-            }}
-         />
+         {searchOpen ? (
+            <ModelSearchDialog
+               request={request}
+               type={type}
+               onOpenChange={setSearchOpen}
+               onDownload={(id) => {
+                  setSearchOpen(false);
+                  void actions.downloadModel({ kind: 'modelsaber', id });
+               }}
+            />
+         ) : null}
       </div>
    );
 }

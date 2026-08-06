@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { AlertTriangle, KeyRound, Laptop, Pencil, PowerOff, ShieldCheck, Trash2, Unplug, Wifi } from 'lucide-react';
 import { useTranslations } from 'use-intl';
@@ -454,17 +454,20 @@ function PairedDeviceRow({
    const t = useTranslations('settings');
    const common = useTranslations('common');
    const format = useFormatters();
-   const [name, setName] = useState(device.name);
-   const [editing, setEditing] = useState(false);
+   const [draft, setDraft] = useState<{ source: string; value: string } | null>(null);
    const [confirmOpen, setConfirmOpen] = useState(false);
+   let activeDraft = draft;
+
+   if (draft && draft.source !== device.name) {
+      activeDraft = null;
+      setDraft(null);
+   }
+
+   const name = activeDraft?.value ?? device.name;
+   const editing = activeDraft !== null;
    const trimmedName = name.trim();
    const renameDisabled = disabled || !receiverDeviceNameSchema.safeParse(trimmedName).success || trimmedName === device.name;
    const seenAt = format.time(device.lastSeenAt ?? device.pairedAt);
-
-   useEffect(() => {
-      setName(device.name);
-      setEditing(false);
-   }, [device.name]);
 
    return (
       <div className="flex flex-col gap-2 py-3 text-sm">
@@ -475,7 +478,7 @@ function PairedDeviceRow({
                   value={name}
                   disabled={disabled}
                   aria-label={t('remote.receiver.deviceName')}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => setDraft({ source: device.name, value: event.target.value })}
                />
                <Button
                   type="button"
@@ -483,21 +486,12 @@ function PairedDeviceRow({
                   disabled={renameDisabled}
                   onClick={async () => {
                      await onRename(device.id, trimmedName);
-                     setEditing(false);
+                     setDraft(null);
                   }}
                >
                   {t('remote.receiver.rename')}
                </Button>
-               <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={disabled}
-                  onClick={() => {
-                     setName(device.name);
-                     setEditing(false);
-                  }}
-               >
+               <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => setDraft(null)}>
                   {common('cancel')}
                </Button>
             </ButtonGroup>
@@ -507,7 +501,13 @@ function PairedDeviceRow({
                   <div className="truncate font-medium">{device.name}</div>
                   <div className="text-muted-foreground mt-0.5 text-xs">{t('remote.receiver.deviceSeenAt', { time: seenAt })}</div>
                </div>
-               <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => setEditing(true)}>
+               <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => setDraft({ source: device.name, value: device.name })}
+               >
                   <Pencil data-icon="inline-start" />
                   {t('remote.receiver.rename')}
                </Button>

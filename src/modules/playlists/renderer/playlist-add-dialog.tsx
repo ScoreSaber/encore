@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { FolderOpen, Plus } from 'lucide-react';
 import { useTranslations } from 'use-intl';
@@ -8,12 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 
 export function PlaylistAddDialog({
-   open,
    onOpenChange,
    onBrowse,
    onDownload
 }: {
-   open: boolean;
    onOpenChange: (open: boolean) => void;
    onBrowse?: () => void;
    onDownload: (url: string) => void;
@@ -22,13 +20,6 @@ export function PlaylistAddDialog({
    const common = useTranslations('common');
    const [url, setUrl] = useState('');
    const [invalid, setInvalid] = useState(false);
-
-   useEffect(() => {
-      if (open) return;
-
-      setUrl('');
-      setInvalid(false);
-   }, [open]);
 
    const submit = () => {
       const trimmed = url.trim();
@@ -41,7 +32,7 @@ export function PlaylistAddDialog({
    };
 
    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open onOpenChange={onOpenChange}>
          <DialogContent>
             <DialogHeader>
                <DialogTitle>{t('title')}</DialogTitle>

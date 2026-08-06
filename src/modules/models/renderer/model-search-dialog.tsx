@@ -25,25 +25,23 @@ const issueKeys: Record<ModelSearchIssue, MessageKey<'models.search.issues'>> = 
 export function ModelSearchDialog({
    request,
    type,
-   open,
    onOpenChange,
    onDownload
 }: {
    request: TargetModelCollectionRequest;
    type: ModelType;
-   open: boolean;
    onOpenChange: (open: boolean) => void;
    onDownload: (id: string) => void;
 }) {
    const t = useTranslations('models.search');
    const tabs = useTranslations('models.tabs');
    const common = useTranslations('common');
-   const search = useModelSearch(request, type, open);
+   const search = useModelSearch(request, type);
    const { state } = search;
    const searchable = isCatalogModelType(type);
 
    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open onOpenChange={onOpenChange}>
          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
                <div className="flex items-baseline gap-3">

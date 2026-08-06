@@ -237,15 +237,16 @@ export function InstallMapsPanel({
          {snapshot.maps.length > 0 && visible.length === 0 ? <EmptyPanel description={t('noMatches')} /> : null}
 
          <MapActionDialog request={request} actions={actions} />
-         <MapSearchDialog
-            request={request}
-            open={searchOpen}
-            onOpenChange={setSearchOpen}
-            onDownload={(key) => {
-               setSearchOpen(false);
-               void actions.downloadMap({ kind: 'beatsaver', key });
-            }}
-         />
+         {searchOpen ? (
+            <MapSearchDialog
+               request={request}
+               onOpenChange={setSearchOpen}
+               onDownload={(key) => {
+                  setSearchOpen(false);
+                  void actions.downloadMap({ kind: 'beatsaver', key });
+               }}
+            />
+         ) : null}
       </div>
    );
 }

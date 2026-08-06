@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
 
@@ -7,7 +7,6 @@ import type { BeatSaverMapSummary, MapSearchIssue } from '@/modules/maps/contrac
 import { mapSearchQueryOptions } from '@/modules/maps/renderer/map-queries';
 
 type MapSearchState =
-   | { status: 'idle' }
    | { status: 'searching' }
    | { status: 'failed'; issue: MapSearchIssue; detail?: string }
    | {
@@ -18,22 +17,13 @@ type MapSearchState =
         hasMore: boolean;
      };
 
-export function useMapSearch(request: TargetMapCollectionRequest, active: boolean) {
+export function useMapSearch(request: TargetMapCollectionRequest) {
    const [submitted, setSubmitted] = useState({ query: '', page: 0 });
    const [query, setQuery] = useState('');
-   const search = useQuery({
-      ...mapSearchQueryOptions(request, submitted.query, submitted.page),
-      enabled: active
-   });
-
-   useEffect(() => {
-      if (!active) setSubmitted({ query: '', page: 0 });
-   }, [active]);
+   const search = useQuery(mapSearchQueryOptions(request, submitted.query, submitted.page));
 
    let state: MapSearchState;
-   if (!active) {
-      state = { status: 'idle' };
-   } else if (search.isError) {
+   if (search.isError) {
       state = { status: 'failed', issue: 'fetch-failed' };
    } else if (!search.data) {
       state = { status: 'searching' };

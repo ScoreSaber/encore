@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { HexColorPicker } from 'react-colorful';
 
@@ -24,24 +24,23 @@ function parseHexColor(value: string) {
 
 export function ColorPicker({ disabled, inputLabel, label, value, onChange }: ColorPickerProps) {
    const [open, setOpen] = useState(false);
-   const [draftColor, setDraftColor] = useState(value);
-   const [hexInput, setHexInput] = useState(value);
+   const [storedDraft, setDraft] = useState(() => ({ source: value, color: value, input: value }));
+   let draft = storedDraft;
 
-   useEffect(() => {
-      setDraftColor(value);
-      setHexInput(value);
-   }, [value]);
+   if (storedDraft.source !== value) {
+      draft = { source: value, color: value, input: value };
+      setDraft(draft);
+   }
 
    function commitColor(color: string) {
-      setDraftColor(color);
-      setHexInput(color);
+      setDraft({ ...draft, color, input: color });
       if (color !== value) onChange(color);
    }
 
    function commitHexInput() {
-      const color = parseHexColor(hexInput);
+      const color = parseHexColor(draft.input);
       if (color === undefined) {
-         setHexInput(draftColor);
+         setDraft({ ...draft, input: draft.color });
          return;
       }
       commitColor(color);
@@ -70,31 +69,29 @@ export function ColorPicker({ disabled, inputLabel, label, value, onChange }: Co
             <HexColorPicker
                aria-label={label}
                className="encore-color-picker"
-               color={draftColor}
+               color={draft.color}
                onChange={(color) => {
-                  setDraftColor(color);
-                  setHexInput(color);
+                  setDraft({ ...draft, color, input: color });
                }}
                onChangeEnd={commitColor}
             />
             <Input
                aria-label={inputLabel}
-               aria-invalid={parseHexColor(hexInput) === undefined}
+               aria-invalid={parseHexColor(draft.input) === undefined}
                autoCapitalize="none"
                autoComplete="off"
                maxLength={7}
                placeholder="#rrggbb"
                spellCheck={false}
-               value={hexInput}
+               value={draft.input}
                onBlur={commitHexInput}
-               onChange={(event) => setHexInput(event.currentTarget.value)}
+               onChange={(event) => setDraft({ ...draft, input: event.currentTarget.value })}
                onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                      commitHexInput();
                      event.currentTarget.blur();
                   } else if (event.key === 'Escape') {
-                     setDraftColor(value);
-                     setHexInput(value);
+                     setDraft({ source: value, color: value, input: value });
                      setOpen(false);
                   }
                }}

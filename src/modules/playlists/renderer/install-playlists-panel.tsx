@@ -239,22 +239,23 @@ export function InstallPlaylistsPanel({
          {snapshot.playlists.length > 0 && visible.length === 0 ? <EmptyPanel description={t('noMatches')} /> : null}
 
          <PlaylistActionDialog request={request} actions={actions} />
-         <PlaylistAddDialog
-            open={addOpen}
-            onOpenChange={setAddOpen}
-            onBrowse={
-               local
-                  ? () => {
-                       setAddOpen(false);
-                       void actions.importPlaylists();
-                    }
-                  : undefined
-            }
-            onDownload={(url) => {
-               setAddOpen(false);
-               void actions.downloadPlaylist(url);
-            }}
-         />
+         {addOpen ? (
+            <PlaylistAddDialog
+               onOpenChange={setAddOpen}
+               onBrowse={
+                  local
+                     ? () => {
+                          setAddOpen(false);
+                          void actions.importPlaylists();
+                       }
+                     : undefined
+               }
+               onDownload={(url) => {
+                  setAddOpen(false);
+                  void actions.downloadPlaylist(url);
+               }}
+            />
+         ) : null}
          <PlaylistDetailDialog
             request={request}
             playlistId={detailId}
