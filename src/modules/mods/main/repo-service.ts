@@ -42,6 +42,7 @@ import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import { join } from 'node:path';
 
 const cacheFileName = 'mod-repositories.json';
+const modRepositoryCacheVersion = 1;
 const listingTtlMs = 30 * 60 * 1000;
 
 const cachedListingSchema = z.object({
@@ -54,6 +55,7 @@ const cachedListingSchema = z.object({
 });
 
 const listingCacheFileSchema = z.object({
+   schemaVersion: z.literal(modRepositoryCacheVersion),
    repositories: z.array(cachedListingSchema.nullable().catch(null)).default([])
 });
 
@@ -441,7 +443,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
       cacheLoaded = true;
       const read = await readJsonFileOrDefault(cachePath, listingCacheFileSchema, {
-         defaultValue: { repositories: [] }
+         defaultValue: { schemaVersion: modRepositoryCacheVersion, repositories: [] }
       });
 
       for (const cached of read.repositories) {
@@ -452,7 +454,10 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
    async function saveCache() {
       const repositories = [...states.values()].map((state) => state.cached).filter((cached) => cached !== null);
 
-      await writeJsonFileAtomic(cachePath, { repositories }, listingCacheFileSchema, { root: options.dataPath, scope: 'settings' });
+      await writeJsonFileAtomic(cachePath, { schemaVersion: modRepositoryCacheVersion, repositories }, listingCacheFileSchema, {
+         root: options.dataPath,
+         scope: 'settings'
+      });
    }
 
    return { getSnapshot, refresh, preview, add, setEnabled, setSourceResolution, remove, sync, listEntries, isOfficialEnabled };
