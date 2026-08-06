@@ -74,7 +74,7 @@ import { detectLocalStores } from '@/modules/targets/main/local-target';
 import { createTargetsIpcModule } from '@/modules/targets/main/register-ipc';
 import { createTargetRegistry } from '@/modules/targets/main/target-registry';
 import { createUpdateIpcModule } from '@/modules/updates/main/register-ipc';
-import { initializeAutoUpdates } from '@/modules/updates/main/updater';
+import { initializeAutoUpdates, startDownloadedUpdateInstall } from '@/modules/updates/main/updater';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -314,7 +314,10 @@ function registerIpcHandlers() {
       remoteReceiver.dispose();
 
       const deadline = new Promise((resolve) => setTimeout(resolve, 3_000));
-      void Promise.race([Promise.allSettled([teardown, receiver.stop()]), deadline]).then(() => app.quit());
+      void Promise.race([Promise.allSettled([teardown, receiver.stop()]), deadline]).then(() => {
+         if (startDownloadedUpdateInstall()) return;
+         app.quit();
+      });
    });
 
    registerIpcModules([

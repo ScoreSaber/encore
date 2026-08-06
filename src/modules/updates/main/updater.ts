@@ -22,6 +22,7 @@ const packaging = createAppPackaging({ packaged: app.isPackaged, platform: proce
 let updateSnapshot = createInitialUpdateSnapshot();
 let loadedAutoUpdater: AppUpdater | null = null;
 let autoUpdaterLoad: Promise<AppUpdater> | null = null;
+let pendingUpdateInstaller: AppUpdater | null = null;
 let writingUpdateLog = false;
 const pendingUpdateLogLines: string[] = [];
 
@@ -62,13 +63,19 @@ export async function checkForUpdates() {
 }
 
 export function installDownloadedUpdate() {
-   const autoUpdater = loadedAutoUpdater;
-   if (updateSnapshot.status !== 'downloaded' || !autoUpdater) return updateSnapshot;
+   if (updateSnapshot.status !== 'downloaded' || !loadedAutoUpdater) return updateSnapshot;
+
+   pendingUpdateInstaller = loadedAutoUpdater;
+   app.quit();
+   return updateSnapshot;
+}
+
+export function startDownloadedUpdateInstall() {
+   const autoUpdater = pendingUpdateInstaller;
+   if (!autoUpdater) return false;
 
    const result = Result.try({
-      try: () => {
-         autoUpdater.quitAndInstall(false, true);
-      },
+      try: () => autoUpdater.quitAndInstall(true, true),
       catch: (cause) => causeFailure('failed to install update', cause)
    });
 
@@ -79,7 +86,12 @@ export function installDownloadedUpdate() {
       });
    }
 
-   return updateSnapshot;
+   const started = !Result.isError(result) && updateSnapshot.status === 'downloaded';
+   if (!started) {
+      pendingUpdateInstaller = null;
+      app.relaunch();
+   }
+   return started;
 }
 
 function loadAutoUpdater() {
@@ -94,7 +106,8 @@ function loadAutoUpdater() {
 
 function configureAutoUpdater(autoUpdater: AppUpdater) {
    autoUpdater.autoDownload = packaging.selfUpdates;
-   autoUpdater.autoInstallOnAppQuit = packaging.selfUpdates;
+   autoUpdater.autoInstallOnAppQuit = false;
+   autoUpdater.autoRunAppAfterInstall = true;
    autoUpdater.disableWebInstaller = true;
    autoUpdater.logger = createUpdateLogger();
 
