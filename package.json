@@ -103,7 +103,7 @@
       ],
       "icon": "assets/encore-icon.png",
       "asar": true,
-      "electronLanguages": "en",
+      "electronLanguages": "en-US",
       "npmRebuild": false,
       "fileAssociations": [
          {
