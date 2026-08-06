@@ -97,10 +97,12 @@
       },
       "files": [
          "out/**/*",
-         "package.json"
+         "package.json",
+         "!**/node_modules/**"
       ],
       "icon": "resources/icon.png",
       "asar": true,
+      "electronLanguages": "en",
       "npmRebuild": false,
       "fileAssociations": [
          {

@@ -40,6 +40,7 @@ export default defineConfig({
       customLogger: logger,
       resolve: commonResolve,
       build: {
+         externalizeDeps: false,
          rollupOptions: {
             external: ['electron'],
             input: {
