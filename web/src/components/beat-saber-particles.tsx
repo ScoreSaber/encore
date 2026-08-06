@@ -20,6 +20,7 @@ const ANIMATION_SPEED_SCALE = 1 / 100;
 const MOVE_SPEED_SCALE = 0.5;
 const SPREAD = Math.PI / 4;
 const FRAME_MS = 1000 / 60;
+const RENDER_INTERVAL_MS = 1000 / 15;
 const MAX_FRAME_STEP = 5;
 const TAU = Math.PI * 2;
 
@@ -134,13 +135,14 @@ export function BeatSaberParticles() {
     let width = 0;
     let height = 0;
     let frame = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let previousTime = 0;
 
     const measure = () => {
       width = wrapper.clientWidth;
       height = wrapper.clientHeight;
 
-      const ratio = window.devicePixelRatio || 1;
+      const ratio = 1;
       canvas.width = Math.round(width * ratio);
       canvas.height = Math.round(height * ratio);
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -153,7 +155,9 @@ export function BeatSaberParticles() {
       previousTime = time;
       updateParticles(particles, width, height, Math.min(elapsed / FRAME_MS, MAX_FRAME_STEP));
       drawParticles(context, particles, width, height);
-      frame = requestAnimationFrame(tick);
+      timer = setTimeout(() => {
+        frame = requestAnimationFrame(tick);
+      }, RENDER_INTERVAL_MS);
     };
 
     measure();
@@ -166,6 +170,7 @@ export function BeatSaberParticles() {
     return () => {
       cancelAnimationFrame(frame);
       cancelAnimationFrame(readyFrame);
+      if (timer !== undefined) clearTimeout(timer);
       observer.disconnect();
     };
   }, []);
