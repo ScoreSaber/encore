@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Navigate, useNavigate } from '@tanstack/react-router';
 import { useTranslations } from 'use-intl';
 import { z } from 'zod';
 
@@ -93,6 +93,8 @@ function InstallDetailRoute() {
       setActiveTab(tab);
       setLoadedTabs((current) => (current.has(tab) ? current : new Set([...current, tab])));
    };
+
+   if (actions.removed) return <Navigate to="/" replace />;
 
    if (!detail) {
       return (

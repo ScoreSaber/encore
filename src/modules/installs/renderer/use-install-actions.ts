@@ -33,6 +33,7 @@ export function useInstallActions(request: InstallActionRequest) {
    }, [request.installId, request.targetId]);
 
    const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
+   const removed = state.status === 'forgotten' || (state.status === 'running' && operation?.status === 'completed');
 
    const preview = useCallback(
       async (kind: InstallActionKind) => {
@@ -86,7 +87,7 @@ export function useInstallActions(request: InstallActionRequest) {
 
    const openFolder = useCallback(() => installs.openFolder(request), [installs, request]);
 
-   return { state, operation, preview, confirm, cancel, dismiss, openFolder };
+   return { state, operation, removed, preview, confirm, cancel, dismiss, openFolder };
 }
 
 async function previewAction(installs: EncoreApi['installs'], request: InstallActionRequest, kind: InstallActionKind): Promise<InstallActionState> {
