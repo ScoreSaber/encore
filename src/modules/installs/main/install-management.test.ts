@@ -78,6 +78,27 @@ describe('install management', () => {
       expect((await harness.registry.list()).installs.map((install) => install.id)).toEqual([store.id]);
       expect(await readdir(importedPath)).toContain('Beat Saber.exe');
    });
+
+   test('forgets an install when its folder was already deleted', async () => {
+      const harness = await createHarness();
+      const importedPath = await createInstallFolder(harness.dataPath, 'Beat Saber', '1.37.0');
+      const imported = await harness.register(importedPath);
+      await rm(importedPath, { recursive: true });
+
+      expect(await harness.management.previewDelete({ installId: imported.id })).toMatchObject({
+         status: 'ok',
+         path: importedPath,
+         sizeBytes: 0,
+         fileCount: 0
+      });
+
+      const started = await harness.management.delete({ installId: imported.id });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ kind: 'delete', status: 'completed' });
+      expect((await harness.registry.list()).installs).toEqual([]);
+   });
 });
 
 async function createHarness() {

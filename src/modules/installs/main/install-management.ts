@@ -70,7 +70,7 @@ export function createInstallManagementService(options: InstallManagementOptions
       if (install.source === 'store') return invalid(installId, 'store-owned');
 
       const size = await getDirectorySize(install.path);
-      if (Result.isError(size)) return invalid(installId, 'inspect-failed', size.error.detail);
+      if (Result.isError(size) && size.error.detail !== 'ENOENT') return invalid(installId, 'inspect-failed', size.error.detail);
 
       return {
          status: 'ok',
@@ -78,8 +78,8 @@ export function createInstallManagementService(options: InstallManagementOptions
          name: install.name,
          path: install.path,
          source: install.source,
-         sizeBytes: size.value.bytes,
-         fileCount: size.value.files
+         sizeBytes: Result.isOk(size) ? size.value.bytes : 0,
+         fileCount: Result.isOk(size) ? size.value.files : 0
       };
    }
 
@@ -133,7 +133,8 @@ export function createInstallManagementService(options: InstallManagementOptions
          scope: 'install',
          operationId,
          onProgress: (progress) => options.operations.update(operationId, { progress }),
-         signal
+         signal,
+         allowMissing: true
       });
 
       // cancellation can leave a partial delete, so rescan before deciding whether to forget it
@@ -142,7 +143,8 @@ export function createInstallManagementService(options: InstallManagementOptions
          return failOperation(operationId, deleted.error);
       }
 
-      await options.registry.forget(previewed.installId);
+      const forgotten = await options.registry.forget(previewed.installId);
+      if (Result.isError(forgotten)) return failOperation(operationId, forgotten.error);
 
       options.operations.complete(operationId, {
          installId: previewed.installId,
