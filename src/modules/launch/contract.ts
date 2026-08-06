@@ -12,16 +12,15 @@ export const protonIssueSchema = z.enum([
    'not-a-directory',
    'not-absolute',
    'not-found',
-   'proton-binary-missing',
-   'wine-binary-missing'
+   'proton-binary-not-executable',
+   'proton-binary-missing'
 ]);
 
 export const protonValidationSchema = z.discriminatedUnion('status', [
    z.object({
       status: z.literal('ok'),
       path: z.string(),
-      protonBinaryPath: z.string(),
-      wineBinaryPath: z.string()
+      protonBinaryPath: z.string()
    }),
    z.object({
       status: z.literal('invalid'),
@@ -35,6 +34,7 @@ export const protonLaunchPlanSchema = z.object({
    compatDataPath: z.string(),
    steamClientPath: z.string(),
    steamRunWrapper: z.boolean(),
+   flatpakHost: z.boolean(),
    logPath: z.string().nullable()
 });
 

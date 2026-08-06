@@ -9,7 +9,8 @@ import {
    LaunchFacets,
    LaunchNotices,
    LaunchOptions,
-   LaunchProgress
+   LaunchProgress,
+   LaunchProton
 } from '@/modules/launch/renderer/launch-controls';
 import type { InstallLaunch } from '@/modules/launch/renderer/use-install-launch';
 
@@ -55,6 +56,7 @@ export function InstallTopBar({
             <LaunchAdvanced launch={launch} />
          </Collapsible>
 
+         <LaunchProton launch={launch} />
          <LaunchNotices launch={launch} />
          {detail.problem ? <InstallProblemRow problem={detail.problem} /> : null}
 

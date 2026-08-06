@@ -2,6 +2,7 @@ import { Result } from 'better-result';
 
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import type { LaunchOptions } from '@/modules/launch/contract';
+import { buildProtonCommand } from '@/modules/launch/main/launch-options';
 import { quoteForPowerShell, type LaunchCommand, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
 import { createLaunchService } from '@/modules/launch/main/launch-service';
 import { ensureProtonCompatData, validateProtonFolder } from '@/modules/launch/main/proton';
@@ -11,7 +12,7 @@ import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -82,6 +83,24 @@ describe('launch service', () => {
       expect((await stat(join(harness.dataPath, 'compatdata'))).isDirectory()).toBe(true);
    });
 
+   test('plans host execution for Flatpak and keeps the NixOS runtime wrapper', async () => {
+      const harness = await createHarness('linux', { nixOs: true, flatpak: true });
+      const install = await harness.createInstall();
+      const protonPath = await createProtonFolder(harness.dataPath);
+      await harness.settingsStore.updateLibrarySettings({ protonPath });
+
+      const preview = await harness.launch.preview({ installId: install.id, options: { flags: [], args: [], runAsAdmin: false } });
+
+      expect(preview).toMatchObject({
+         status: 'ok',
+         proton: {
+            protonBinaryPath: join(protonPath, 'proton'),
+            steamRunWrapper: true,
+            flatpakHost: true
+         }
+      });
+   });
+
    test('rejects launch options that cannot be passed to a process', async () => {
       const harness = await createHarness();
       const install = await harness.createInstall();
@@ -102,7 +121,56 @@ describe('launch arguments', () => {
    });
 });
 
-async function createHarness(platform: NodeJS.Platform = 'win32') {
+describe('Proton command', () => {
+   const proton = {
+      protonBinaryPath: '/home/player/.steam/steam/steamapps/common/Proton 11.0/proton',
+      compatDataPath: '/home/player/.config/Encore/compatdata',
+      steamClientPath: '/home/player/.steam/steam',
+      steamRunWrapper: false,
+      flatpakHost: false,
+      logPath: null
+   };
+   const executablePath = '/home/player/Beat Saber/Beat Saber.exe';
+   const workingDirectory = '/home/player/Beat Saber';
+   const env = { STEAM_COMPAT_DATA_PATH: proton.compatDataPath, SteamAppId: '620980' };
+
+   test('runs Proton directly on a regular Linux host', () => {
+      expect(buildProtonCommand({ proton, executablePath, args: ['--no-yeet'], workingDirectory, env })).toEqual({
+         executablePath: proton.protonBinaryPath,
+         args: ['run', executablePath, '--no-yeet']
+      });
+   });
+
+   test('runs Proton on the host from a Flatpak install and forwards its launch context', () => {
+      expect(buildProtonCommand({ proton: { ...proton, flatpakHost: true }, executablePath, args: [], workingDirectory, env })).toEqual({
+         executablePath: 'flatpak-spawn',
+         args: [
+            '--host',
+            `--directory=${workingDirectory}`,
+            `--env=STEAM_COMPAT_DATA_PATH=${proton.compatDataPath}`,
+            '--env=SteamAppId=620980',
+            '--',
+            proton.protonBinaryPath,
+            'run',
+            executablePath
+         ]
+      });
+   });
+
+   test('keeps the NixOS runtime wrapper inside the Flatpak host command', () => {
+      const command = buildProtonCommand({
+         proton: { ...proton, steamRunWrapper: true, flatpakHost: true },
+         executablePath,
+         args: [],
+         workingDirectory,
+         env
+      });
+
+      expect(command.args.slice(-5)).toEqual(['--', 'steam-run', proton.protonBinaryPath, 'run', executablePath]);
+   });
+});
+
+async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { nixOs: false, flatpak: false }) {
    const dataPath = await mkdtemp(join(tmpdir(), 'encore-launch-'));
    const installRoot = join(dataPath, 'library');
    await mkdir(installRoot, { recursive: true });
@@ -125,7 +193,7 @@ async function createHarness(platform: NodeJS.Platform = 'win32') {
       platform,
       readSteamClient: () => Promise.resolve({ status: 'missing' }),
       readOculusClient: () => Promise.resolve({ status: 'missing' }),
-      readLinuxHost: () => Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: false, flatpak: false }),
+      readLinuxHost: () => Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: linuxHost.nixOs, flatpak: linuxHost.flatpak }),
       validateProtonFolder,
       prepareProtonCompatData: ensureProtonCompatData,
       startSteamClient: () => Promise.resolve(Result.ok({ pid: 1_212 })),
@@ -161,10 +229,10 @@ async function createHarness(platform: NodeJS.Platform = 'win32') {
 }
 
 async function createProtonFolder(parentPath: string) {
-   const protonPath = join(parentPath, 'Proton 9.0');
-   await mkdir(join(protonPath, 'files', 'bin'), { recursive: true });
+   const protonPath = join(parentPath, 'Proton');
+   await mkdir(protonPath, { recursive: true });
    await writeFile(join(protonPath, 'proton'), 'stub', 'utf8');
-   await writeFile(join(protonPath, 'files', 'bin', 'wine64'), 'stub', 'utf8');
+   await chmod(join(protonPath, 'proton'), 0o755);
 
    return protonPath;
 }

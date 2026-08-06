@@ -18,12 +18,11 @@ import {
    type LaunchResult,
    type LaunchState,
    type LaunchWarning,
+   type ProtonLaunchPlan,
    type ReadyLaunchPreview
 } from '@/modules/launch/contract';
-import type { ProtonLaunchPlan } from '@/modules/launch/contract';
-import { buildLaunchArgs, buildLaunchEnv, buildProtonCommand, protonLogPath } from '@/modules/launch/main/launch-options';
+import { buildLaunchArgs, buildLaunchEnv, buildProtonCommand } from '@/modules/launch/main/launch-options';
 import { createLaunchRuntime, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
-import { protonCompatDataPath } from '@/modules/launch/main/proton';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 import type { SettingsSnapshot } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
@@ -163,10 +162,11 @@ export function createLaunchService(options: LaunchServiceOptions) {
          status: 'ok',
          plan: {
             protonBinaryPath: validation.protonBinaryPath,
-            compatDataPath: protonCompatDataPath(settings.diagnostics.dataPath),
+            compatDataPath: join(settings.diagnostics.dataPath, 'compatdata'),
             steamClientPath: host.steamClientPath,
             steamRunWrapper: host.nixOs,
-            logPath: launchOptions.flags.includes('proton-logs') ? protonLogPath(install.path) : null
+            flatpakHost: host.flatpak,
+            logPath: launchOptions.flags.includes('proton-logs') ? join(install.path, 'Logs') : null
          }
       };
    }
@@ -220,14 +220,21 @@ export function createLaunchService(options: LaunchServiceOptions) {
 
       options.operations.update(operationId, { message: previewed.executablePath, progress: { phase: 'launching', percent: 75 } });
 
+      const env = buildLaunchEnv({ store: previewed.store, installPath: previewed.workingDirectory, proton: previewed.proton });
       const command = previewed.proton
-         ? buildProtonCommand({ proton: previewed.proton, executablePath: previewed.executablePath, args: previewed.args })
+         ? buildProtonCommand({
+              proton: previewed.proton,
+              executablePath: previewed.executablePath,
+              args: previewed.args,
+              workingDirectory: previewed.workingDirectory,
+              env
+           })
          : { executablePath: previewed.executablePath, args: previewed.args };
 
       const spawned = await runtime.spawn({
          ...command,
          workingDirectory: previewed.workingDirectory,
-         env: buildLaunchEnv({ store: previewed.store, installPath: previewed.workingDirectory, proton: previewed.proton }),
+         env,
          // elevation would discard the Proton environment
          runAsAdmin: previewed.options.runAsAdmin && !previewed.proton
       });

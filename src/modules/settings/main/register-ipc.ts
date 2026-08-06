@@ -9,6 +9,8 @@ import { readLinuxLaunchHost, validateProtonFolder } from '@/modules/launch/main
 import { settingsIpc } from '@/modules/settings/ipc';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 
+import { join } from 'node:path';
+
 export function createSettingsIpcModule(settingsStore: SettingsStore) {
    return defineIpcHandlers(settingsIpc, {
       getSnapshot: () => settingsStore.getSnapshot(),
@@ -16,7 +18,7 @@ export function createSettingsIpcModule(settingsStore: SettingsStore) {
       updateApp: (_event, request) => settingsStore.updateAppSettings(request),
       updateLibrary: (_event, request) => settingsStore.updateLibrarySettings(request),
       chooseInstallRoot: (event) => chooseInstallRoot(event, settingsStore),
-      chooseProtonFolder: chooseProtonFolder
+      chooseProtonFolder: (event) => chooseProtonFolder(event, settingsStore)
    });
 }
 
@@ -37,8 +39,15 @@ async function readProtonState(settingsStore: SettingsStore): Promise<ProtonStat
    };
 }
 
-async function chooseProtonFolder(event: IpcMainInvokeEvent): Promise<ProtonFolderChoice> {
-   const picked = await showOpenDialog(event, { properties: ['openDirectory'] });
+async function chooseProtonFolder(event: IpcMainInvokeEvent, settingsStore: SettingsStore): Promise<ProtonFolderChoice> {
+   const [settings, host] = await Promise.all([settingsStore.getSnapshot(), readLinuxLaunchHost()]);
+   const defaultPath = settings.library.protonPath ?? (host.steamClientPath ? join(host.steamClientPath, 'steamapps', 'common') : undefined);
+   const picked = await showOpenDialog(event, {
+      title: 'Choose a Proton build',
+      buttonLabel: 'Choose Proton',
+      properties: ['openDirectory'],
+      defaultPath
+   });
    if (picked.canceled || !picked.filePaths[0]) return { status: 'cancelled' };
 
    return { status: 'selected', selected: await validateProtonFolder(picked.filePaths[0]) };

@@ -1,10 +1,6 @@
 import { beatSaberSteamAppId } from '@/modules/downloads/main/steam-client';
-import { launchFlags, type LaunchFlag } from '@/modules/launch/contract';
-import type { ProtonLaunchPlan } from '@/modules/launch/contract';
-import { steamRunCommand } from '@/modules/launch/main/proton';
+import { launchFlags, type LaunchFlag, type ProtonLaunchPlan } from '@/modules/launch/contract';
 import type { StoreKind } from '@/modules/stores/contract';
-
-import { join } from 'node:path';
 
 const flagArguments: Record<LaunchFlag, readonly string[]> = {
    'oculus-mode': ['-vrmode', 'oculus'],
@@ -17,8 +13,9 @@ const flagArguments: Record<LaunchFlag, readonly string[]> = {
 
 const managedCopyArgument = '--no-yeet';
 
+const steamRunCommand = 'steam-run';
+const flatpakSpawnCommand = 'flatpak-spawn';
 const wineDllOverrides = 'winhttp=n,b';
-const protonLogDirectoryName = 'Logs';
 
 export function buildLaunchArgs(input: { flags: readonly LaunchFlag[]; args: readonly string[]; isStoreInstall: boolean }) {
    const args = input.isStoreInstall ? [] : [managedCopyArgument];
@@ -28,10 +25,6 @@ export function buildLaunchArgs(input: { flags: readonly LaunchFlag[]; args: rea
    }
 
    return [...args, ...input.args];
-}
-
-export function protonLogPath(installPath: string) {
-   return join(installPath, protonLogDirectoryName);
 }
 
 export function buildLaunchEnv(input: { store: StoreKind | null; installPath: string; proton: ProtonLaunchPlan | null }): Record<string, string> {
@@ -58,10 +51,29 @@ export function buildLaunchEnv(input: { store: StoreKind | null; installPath: st
    };
 }
 
-export function buildProtonCommand(input: { proton: ProtonLaunchPlan; executablePath: string; args: readonly string[] }) {
+export function buildProtonCommand(input: {
+   proton: ProtonLaunchPlan;
+   executablePath: string;
+   args: readonly string[];
+   workingDirectory: string;
+   env: Record<string, string>;
+}) {
    const protonArgs = [input.proton.protonBinaryPath, 'run', input.executablePath, ...input.args];
-
-   return input.proton.steamRunWrapper
+   const command = input.proton.steamRunWrapper
       ? { executablePath: steamRunCommand, args: protonArgs }
       : { executablePath: input.proton.protonBinaryPath, args: protonArgs.slice(1) };
+
+   if (!input.proton.flatpakHost) return command;
+
+   return {
+      executablePath: flatpakSpawnCommand,
+      args: [
+         '--host',
+         `--directory=${input.workingDirectory}`,
+         ...Object.entries(input.env).map(([name, value]) => `--env=${name}=${value}`),
+         '--',
+         command.executablePath,
+         ...command.args
+      ]
+   };
 }

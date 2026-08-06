@@ -929,7 +929,9 @@
          "compatData": "Compatibility data",
          "protonLogs": "Proton log folder",
          "wrapper": "Wrapper",
-         "steamRun": "steam-run, picked because NixOS was detected"
+         "steamRun": "steam-run, picked because NixOS was detected",
+         "flatpakHost": "flatpak-spawn, running Proton on the host",
+         "flatpakSteamRun": "flatpak-spawn -> steam-run, running Proton on the NixOS host"
       },
       "warnings": {
          "adminPrompt": "Windows shows an elevation prompt before the game starts",
@@ -947,8 +949,8 @@
          "storeClientMissing": "The store client this install needs is not installed on that device",
          "unsupportedPlatform": "Encore starts Beat Saber on Windows and Linux only for now",
          "unsupportedTarget": "This device cannot launch installs from Encore",
-         "protonNotSet": "No Proton build is set. Pick one above before starting Beat Saber on Linux",
-         "protonNotFound": "The Proton folder set above does not contain a usable Proton build"
+         "protonNotSet": "No Proton build is set. Choose one in Settings before starting Beat Saber on Linux",
+         "protonNotFound": "The Proton folder set in Settings does not contain a usable Proton build"
       },
       "result": {
          "starting": "Starting Beat Saber",
@@ -957,20 +959,21 @@
       },
       "proton": {
          "label": "Proton build",
+         "choose": "Choose",
          "change": "Change",
          "clear": "Clear",
          "notSet": "Not set. Encore needs a Proton build to start Beat Saber on Linux",
          "unavailable": "The Proton folder could not be checked",
          "nixOs": "NixOS detected, Encore runs Proton through steam-run",
-         "flatpak": "Flatpak detected, Proton needs access to the Steam folders on the host",
+         "flatpak": "Flatpak detected, Encore starts Proton outside the sandbox",
          "issue": {
             "empty": "Pick the folder of a Proton build",
             "inspect-failed": "That folder could not be inspected",
             "not-a-directory": "That path is not a folder",
             "not-absolute": "Pick a full folder path",
             "not-found": "That folder does not exist",
-            "proton-binary-missing": "That folder has no proton launch script, so it is not a Proton build",
-            "wine-binary-missing": "That Proton build has no wine64 binary Encore can run"
+            "proton-binary-not-executable": "The proton launch script in that folder is not executable",
+            "proton-binary-missing": "That folder has no proton launch script, so it is not a Proton build"
          }
       }
    },

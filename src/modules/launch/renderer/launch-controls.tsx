@@ -203,10 +203,14 @@ export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
          </div>
 
          {preview ? <LaunchCommand preview={preview} /> : null}
-
-         {launch.platform === 'linux' ? <ProtonFolderField disabled={starting} onChange={launch.recheck} /> : null}
       </CollapsibleContent>
    );
+}
+
+export function LaunchProton({ launch }: { launch: InstallLaunch }) {
+   if (launch.platform !== 'linux' || !launch.localTarget) return null;
+
+   return <ProtonFolderField disabled={isStarting(launch)} onChange={launch.recheck} />;
 }
 
 export function LaunchNotices({ launch }: { launch: InstallLaunch }) {
@@ -314,7 +318,16 @@ function LaunchCommand({ preview }: { preview: ReadyLaunchPreview }) {
                <CommandRow label={t('preview.proton')} value={preview.proton.protonBinaryPath} />
                <CommandRow label={t('preview.compatData')} value={preview.proton.compatDataPath} />
                {preview.proton.logPath ? <CommandRow label={t('preview.protonLogs')} value={preview.proton.logPath} /> : null}
-               {preview.proton.steamRunWrapper ? <CommandRow label={t('preview.wrapper')} value={t('preview.steamRun')} /> : null}
+               {preview.proton.flatpakHost || preview.proton.steamRunWrapper ? (
+                  <CommandRow
+                     label={t('preview.wrapper')}
+                     value={
+                        preview.proton.flatpakHost
+                           ? t(preview.proton.steamRunWrapper ? 'preview.flatpakSteamRun' : 'preview.flatpakHost')
+                           : t('preview.steamRun')
+                     }
+                  />
+               ) : null}
             </>
          ) : null}
       </dl>

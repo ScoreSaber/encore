@@ -12,7 +12,7 @@ import type { ProtonIssue } from '@/modules/launch/contract';
 import { useSettings } from '@/modules/settings/renderer/settings-provider';
 import { protonStateQueryOptions } from '@/modules/settings/renderer/settings-queries';
 
-export function ProtonFolderField({ disabled, onChange }: { disabled: boolean; onChange: () => void }) {
+export function ProtonFolderField({ disabled, onChange }: { disabled: boolean; onChange?: () => void }) {
    const t = useTranslations('launch.proton');
    const common = useTranslations('common');
    const settings = useSettings();
@@ -37,7 +37,7 @@ export function ProtonFolderField({ disabled, onChange }: { disabled: boolean; o
       if (!saved.ok) return;
 
       await reload();
-      onChange();
+      onChange?.();
    }
 
    async function clearFolder() {
@@ -46,13 +46,13 @@ export function ProtonFolderField({ disabled, onChange }: { disabled: boolean; o
       if (!saved.ok) return;
 
       await reload();
-      onChange();
+      onChange?.();
    }
 
    if (settings.snapshot?.diagnostics.platform !== 'linux') return null;
 
    return (
-      <Field orientation="horizontal" className="items-start gap-6 border-t px-4 py-2.5">
+      <Field orientation="horizontal" className="items-start gap-6 py-2.5">
          <FieldContent className="min-w-0">
             <FieldLabel>{t('label')}</FieldLabel>
             <FieldDescription className="break-all">{description()}</FieldDescription>
@@ -60,7 +60,7 @@ export function ProtonFolderField({ disabled, onChange }: { disabled: boolean; o
          <ButtonGroup className="shrink-0" aria-label={t('label')}>
             <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void pickFolder()}>
                <FolderOpen data-icon="inline-start" />
-               {t('change')}
+               {state?.path ? t('change') : t('choose')}
             </Button>
             {state?.path ? (
                <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void clearFolder()}>

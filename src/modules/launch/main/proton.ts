@@ -1,18 +1,15 @@
 import { Result } from 'better-result';
 
+import { causeCode } from '@/lib/errors';
 import { createFilesystemProblem, resolveFilesystemPath, pathExists } from '@/lib/filesystem/path';
 import { invalidProtonFolder, type ProtonValidation } from '@/modules/launch/contract';
 import { getSteamClientRoots } from '@/modules/stores/main/steam';
 
-import { lstat, mkdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { access, mkdir, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
 const protonBinaryName = 'proton';
-const wineBinaryPaths = [join('files', 'bin', 'wine64'), join('files', 'lib', 'wine', 'x86_64-unix', 'wine64')];
-
-export const steamRunCommand = 'steam-run';
-
-export const protonCompatDataDirectoryName = 'compatdata';
 
 export type LinuxLaunchHost = {
    steamClientPath: string | null;
@@ -27,26 +24,30 @@ export async function validateProtonFolder(input: string): Promise<ProtonValidat
 
    const path = resolveFilesystemPath(trimmed);
    const stats = await Result.tryPromise({
-      try: () => lstat(path),
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect the selected Proton folder', path, cause)
+      try: () => stat(path),
+      catch: causeCode
    });
 
-   if (Result.isError(stats)) return invalidProtonFolder(path, stats.error.detail === 'ENOENT' ? 'not-found' : 'inspect-failed');
+   if (Result.isError(stats)) return invalidProtonFolder(path, stats.error === 'ENOENT' ? 'not-found' : 'inspect-failed');
    if (!stats.value.isDirectory()) return invalidProtonFolder(path, 'not-a-directory');
 
    const protonBinaryPath = join(path, protonBinaryName);
-   const protonBinaryExists = await pathExists(protonBinaryPath);
-   if (Result.isError(protonBinaryExists)) return invalidProtonFolder(path, 'inspect-failed');
-   if (!protonBinaryExists.value) return invalidProtonFolder(path, 'proton-binary-missing');
+   const protonBinary = await Result.tryPromise({
+      try: () => stat(protonBinaryPath),
+      catch: causeCode
+   });
+   if (Result.isError(protonBinary)) {
+      return invalidProtonFolder(path, protonBinary.error === 'ENOENT' ? 'proton-binary-missing' : 'inspect-failed');
+   }
+   if (!protonBinary.value.isFile()) return invalidProtonFolder(path, 'proton-binary-missing');
 
-   const wineBinaryPath = await findWineBinary(path);
-   if (!wineBinaryPath) return invalidProtonFolder(path, 'wine-binary-missing');
+   const executable = await Result.tryPromise({
+      try: () => access(protonBinaryPath, constants.X_OK),
+      catch: causeCode
+   });
+   if (Result.isError(executable)) return invalidProtonFolder(path, 'proton-binary-not-executable');
 
-   return { status: 'ok', path, protonBinaryPath, wineBinaryPath };
-}
-
-export function protonCompatDataPath(dataPath: string) {
-   return join(dataPath, protonCompatDataDirectoryName);
+   return { status: 'ok', path, protonBinaryPath };
 }
 
 export function ensureProtonCompatData(compatDataPath: string) {
@@ -60,11 +61,8 @@ export function ensureProtonCompatData(compatDataPath: string) {
 }
 
 export async function readLinuxLaunchHost(): Promise<LinuxLaunchHost> {
-   return {
-      steamClientPath: await findSteamClientPath(),
-      nixOs: await isNixOs(),
-      flatpak: await isFlatpak()
-   };
+   const [steamClientPath, nixOs, flatpak] = await Promise.all([findSteamClientPath(), isNixOs(), isFlatpak()]);
+   return { steamClientPath, nixOs, flatpak };
 }
 
 async function findSteamClientPath() {
@@ -77,7 +75,7 @@ async function findSteamClientPath() {
 }
 
 async function isNixOs() {
-   for (const marker of ['/etc/NIXOS', '/run/current-system/nixos-version']) {
+   for (const marker of ['/etc/NIXOS', '/run/current-system/nixos-version', '/run/host/etc/NIXOS', '/run/host/run/current-system/nixos-version']) {
       const exists = await pathExists(marker);
       if (Result.isOk(exists) && exists.value) return true;
    }
@@ -90,14 +88,4 @@ async function isFlatpak() {
 
    const exists = await pathExists('/.flatpak-info');
    return Result.isOk(exists) && exists.value;
-}
-
-async function findWineBinary(protonFolder: string) {
-   for (const relativePath of wineBinaryPaths) {
-      const winePath = join(protonFolder, relativePath);
-      const exists = await pathExists(winePath);
-      if (Result.isOk(exists) && exists.value) return winePath;
-   }
-
-   return null;
 }

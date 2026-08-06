@@ -197,6 +197,7 @@
             "--filesystem=/media",
             "--filesystem=/run/media",
             "--filesystem=~/.var/app/com.valvesoftware.Steam",
+            "--talk-name=org.freedesktop.Flatpak",
             "--talk-name=org.freedesktop.Notifications"
          ]
       }

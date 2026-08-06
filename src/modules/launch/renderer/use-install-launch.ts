@@ -21,7 +21,7 @@ import {
 import type { OperationId } from '@/modules/operations/contract';
 import { isOperationFinished } from '@/modules/operations/renderer/operation-progress';
 import { useOperations } from '@/modules/operations/renderer/use-operations';
-import type { TargetId } from '@/modules/targets/contract';
+import { localTargetId, type TargetId } from '@/modules/targets/contract';
 
 const previewDelayMs = 250;
 const launchIpc = createTargetIpcDescriptor(launchContract);
@@ -148,6 +148,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
       state,
       operation,
       platform,
+      localTarget: request.targetId === localTargetId,
       options,
       flags,
       argsInput,
