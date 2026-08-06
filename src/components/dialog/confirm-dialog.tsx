@@ -39,7 +39,7 @@ export function ConfirmDialog({
                <DialogDescription>{description}</DialogDescription>
             </DialogHeader>
 
-            {children ? <div className="flex flex-col gap-3 text-sm">{children}</div> : null}
+            {children ? <div className="flex min-w-0 flex-col gap-3 text-sm">{children}</div> : null}
 
             <DialogFooter>
                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
