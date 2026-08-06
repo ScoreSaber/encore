@@ -93,7 +93,7 @@
       "appId": "com.scoresaber.encore",
       "productName": "Encore",
       "directories": {
-         "buildResources": "resources",
+         "buildResources": "assets",
          "output": "release"
       },
       "files": [
@@ -101,7 +101,7 @@
          "package.json",
          "!**/node_modules/**"
       ],
-      "icon": "resources/icon.png",
+      "icon": "assets/encore-icon.png",
       "asar": true,
       "electronLanguages": "en",
       "npmRebuild": false,

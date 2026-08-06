@@ -30,7 +30,7 @@
    font-style: normal;
    font-weight: 400;
    font-display: block;
-   src: url('/fonts/geist-latin-400-normal.woff2') format('woff2');
+   src: url('../../../../assets/fonts/geist-latin-400-normal.woff2') format('woff2');
 }
 
 @font-face {
@@ -38,7 +38,7 @@
    font-style: normal;
    font-weight: 500;
    font-display: block;
-   src: url('/fonts/geist-latin-500-normal.woff2') format('woff2');
+   src: url('../../../../assets/fonts/geist-latin-500-normal.woff2') format('woff2');
 }
 
 @font-face {
@@ -46,7 +46,7 @@
    font-style: normal;
    font-weight: 600;
    font-display: block;
-   src: url('/fonts/geist-latin-600-normal.woff2') format('woff2');
+   src: url('../../../../assets/fonts/geist-latin-600-normal.woff2') format('woff2');
 }
 
 @font-face {
@@ -54,7 +54,7 @@
    font-style: normal;
    font-weight: 700;
    font-display: block;
-   src: url('/fonts/geist-latin-700-normal.woff2') format('woff2');
+   src: url('../../../../assets/fonts/geist-latin-700-normal.woff2') format('woff2');
 }
 
 @font-face {
@@ -62,7 +62,7 @@
    font-style: normal;
    font-weight: 500;
    font-display: block;
-   src: url('/fonts/GeistPixel-Square.woff2') format('woff2');
+   src: url('../../../../assets/fonts/GeistPixel-Square.woff2') format('woff2');
 }
 
 :root {

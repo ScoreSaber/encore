@@ -68,7 +68,7 @@ export default defineConfig({
    renderer: {
       customLogger: logger,
       root: fileURLToPath(new URL('.', import.meta.url)),
-      publicDir: fileURLToPath(new URL('./public', import.meta.url)),
+      publicDir: false,
       envPrefix: ['VITE_', 'RENDERER_VITE_'],
       define: {
          __ENCORE_VERSION__: JSON.stringify(packageJson.version)

@@ -1,9 +1,11 @@
 import Image from "next/image";
 
+import encoreLogo from "../../../assets/encore-logo.svg";
+
 export function DocsBrand() {
   return (
     <span className="inline-flex min-w-0 items-center gap-2">
-      <Image className="shrink-0" src="/encore-logo.svg" width={24} height={24} alt="" priority />
+      <Image className="shrink-0" src={encoreLogo} width={24} height={24} alt="" priority />
       <span className="font-medium [font-family:var(--font-pixel),ui-monospace,monospace]">
         Encore
       </span>

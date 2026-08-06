@@ -1,10 +1,10 @@
 <p align="center">
    <a href="https://encore.scoresaber.com">
-      <img src=".github/assets/encore-lockup.png" width="720" alt="Encore — A modern desktop companion for Beat Saber" />
+      <img src="assets/encore-lockup.png" width="720" alt="Encore — A modern desktop companion for Beat Saber" />
    </a>
 </p>
 
-![Encore desktop app](web/public/images/encore-app.png)
+![Encore desktop app](assets/encore-app.png)
 
 ## Getting Started
 

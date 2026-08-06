@@ -2,6 +2,8 @@ import Image from "next/image";
 
 import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
+import encoreApp from "../../../assets/encore-app.png";
+import encoreLogo from "../../../assets/encore-logo.svg";
 
 export default function Home() {
   return (
@@ -13,7 +15,7 @@ export default function Home() {
           <div className="relative flex min-w-0 translate-y-[6px] items-center justify-start gap-[clamp(2px,0.35vw,6px)] max-[540px]:flex-col">
             <Image
               className="aspect-square h-auto w-[clamp(96px,9vw,128px)] -translate-y-[7px] shrink-0 shadow-none [filter:none] max-[540px]:w-[76px]"
-              src="/encore-logo.svg"
+              src={encoreLogo}
               width={168}
               height={168}
               alt=""
@@ -75,7 +77,7 @@ export default function Home() {
         <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-6 scale-[1.015] max-[876px]:hidden">
           <Image
             className="block h-auto w-full [box-shadow:0_28px_64px_-28px_rgba(0,0,0,0.75)]"
-            src="/images/encore-app.png"
+            src={encoreApp}
             width={1549}
             height={971}
             sizes="(max-width: 876px) 0px, min(1280px, calc(100vw - 10vw))"

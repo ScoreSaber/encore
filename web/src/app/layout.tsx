@@ -6,23 +6,24 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
 import { Provider } from "@/components/provider";
+import encoreLogo from "../../../assets/encore-logo.svg";
 
 const geist = localFont({
   src: [
     {
-      path: "../../../public/fonts/geist-latin-400-normal.woff2",
+      path: "../../../assets/fonts/geist-latin-400-normal.woff2",
       weight: "400",
     },
     {
-      path: "../../../public/fonts/geist-latin-500-normal.woff2",
+      path: "../../../assets/fonts/geist-latin-500-normal.woff2",
       weight: "500",
     },
     {
-      path: "../../../public/fonts/geist-latin-600-normal.woff2",
+      path: "../../../assets/fonts/geist-latin-600-normal.woff2",
       weight: "600",
     },
     {
-      path: "../../../public/fonts/geist-latin-700-normal.woff2",
+      path: "../../../assets/fonts/geist-latin-700-normal.woff2",
       weight: "700",
     },
   ],
@@ -30,7 +31,7 @@ const geist = localFont({
 });
 
 const geistPixel = localFont({
-  src: "../../../public/fonts/GeistPixel-Square.woff2",
+  src: "../../../assets/fonts/GeistPixel-Square.woff2",
   weight: "500",
   variable: "--font-pixel",
 });
@@ -39,7 +40,7 @@ export const metadata: Metadata = {
   title: "Encore",
   description: "A modern desktop companion for Beat Saber",
   icons: {
-    icon: "/encore-logo.svg",
+    icon: encoreLogo.src,
   },
 };
 
