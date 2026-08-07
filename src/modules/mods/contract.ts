@@ -396,6 +396,16 @@ export const readyModUninstallPreviewSchema = z.object({
 
 export const modUninstallPreviewSchema = z.discriminatedUnion('status', [modActionProblemSchema, readyModUninstallPreviewSchema]);
 
+export const readyModChangesPreviewSchema = z.object({
+   status: z.literal('ok'),
+   installId: z.string(),
+   install: readyModInstallPreviewSchema,
+   uninstall: readyModUninstallPreviewSchema,
+   warnings: z.array(modWarningSchema)
+});
+
+export const modChangesPreviewSchema = z.discriminatedUnion('status', [modActionProblemSchema, readyModChangesPreviewSchema]);
+
 export const readyModImportPreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
@@ -436,6 +446,8 @@ export type ModInstallPreview = z.infer<typeof modInstallPreviewSchema>;
 export type ModRemoval = z.infer<typeof modRemovalSchema>;
 export type ReadyModUninstallPreview = z.infer<typeof readyModUninstallPreviewSchema>;
 export type ModUninstallPreview = z.infer<typeof modUninstallPreviewSchema>;
+export type ReadyModChangesPreview = z.infer<typeof readyModChangesPreviewSchema>;
+export type ModChangesPreview = z.infer<typeof modChangesPreviewSchema>;
 export type ReadyModImportPreview = z.infer<typeof readyModImportPreviewSchema>;
 export type ModImportPreview = z.infer<typeof modImportPreviewSchema>;
 export type ModImportUploadRequest = z.infer<typeof modImportUploadRequestSchema>;
@@ -456,6 +468,11 @@ export type ModUninstallRequest = ModRequest & {
    modIds: string[];
 };
 
+export type ModChangesRequest = ModRequest & {
+   installModIds: string[];
+   removeModIds: string[];
+};
+
 export type ModImportRequest = ModRequest & {
    sourcePath: string;
    sourceName?: string;
@@ -474,25 +491,6 @@ export type ModLinkResult = {
 export type ModFundingResult = { status: 'available'; url: string } | { status: 'unavailable' };
 
 export type ModImportChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; preview: ModImportPreview };
-
-export type ModInstallOutcome = {
-   installId: InstallId;
-   mods: number;
-   files: number;
-   bytes: number;
-};
-
-export type ModUninstallOutcome = {
-   installId: InstallId;
-   mods: number;
-   files: number;
-};
-
-export type ModImportOutcome = {
-   installId: InstallId;
-   name: string;
-   files: number;
-};
 
 export function invalidModAction(request: Pick<ModRequest, 'installId'>, issue: ModIssue, detail?: string): ModActionProblem {
    return {

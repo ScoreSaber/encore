@@ -114,6 +114,7 @@ function InstallDetailRoute() {
             <InstallTopBar
                detail={detail}
                launch={launch}
+               onEdit={supportsManagement ? () => editor.open(detail) : undefined}
                actions={
                   <InstallActionsMenu
                      detail={detail}

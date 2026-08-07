@@ -1,18 +1,22 @@
 import { useRef, type ComponentProps, type KeyboardEvent } from 'react';
 
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/components/utils';
 
 function MasterDetail({ className, ...props }: ComponentProps<'div'>) {
    return (
       <div
          data-slot="master-detail"
-         className={cn('grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(14rem,2fr)_minmax(18rem,3fr)] grid-rows-[minmax(0,1fr)] gap-4', className)}
+         className={cn(
+            'grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(18rem,0.92fr)_minmax(20rem,1.08fr)] grid-rows-[minmax(0,1fr)] overflow-hidden rounded-lg border',
+            className
+         )}
          {...props}
       />
    );
 }
 
-type MasterDetailListProps = Omit<ComponentProps<'div'>, 'onSelect'> & {
+type MasterDetailListProps = Omit<ComponentProps<typeof ScrollArea>, 'onSelect'> & {
    itemIds: string[];
    selectedId: string | null;
    onSelect: (id: string) => void;
@@ -34,13 +38,16 @@ function MasterDetailList({ className, itemIds, selectedId, onSelect, children, 
    };
 
    return (
-      <div
+      <ScrollArea
          ref={listRef}
          data-slot="master-detail-list"
          role="listbox"
          tabIndex={0}
          aria-activedescendant={selectedId === null ? undefined : `master-detail-row-${selectedId}`}
-         className={cn('min-h-0 min-w-0 overflow-y-auto rounded-md border outline-none', className)}
+         className={cn(
+            'min-h-0 min-w-0 border-r outline-none [&>[data-slot=scroll-area-scrollbar]]:z-20 [&>[data-slot=scroll-area-scrollbar]]:w-2 [&>[data-slot=scroll-area-scrollbar]]:border-l-0 [&>[data-slot=scroll-area-scrollbar]]:bg-transparent [&>[data-slot=scroll-area-scrollbar]]:p-0.5',
+            className
+         )}
          onKeyDown={(event) => {
             if (event.key === 'ArrowDown') move(event, 1);
             if (event.key === 'ArrowUp') move(event, -1);
@@ -48,7 +55,7 @@ function MasterDetailList({ className, itemIds, selectedId, onSelect, children, 
          {...props}
       >
          {children}
-      </div>
+      </ScrollArea>
    );
 }
 
@@ -61,7 +68,7 @@ function MasterDetailRow({ id, className, 'aria-selected': selected, ...props }:
          role="option"
          aria-selected={selected}
          className={cn(
-            'flex min-w-0 items-center gap-2 px-3 py-1.5 text-sm',
+            'flex min-h-10 min-w-0 items-center gap-3 border-b px-3 py-2 text-sm',
             'aria-selected:bg-accent aria-selected:text-accent-foreground hover:bg-accent/50 cursor-default',
             className
          )}
@@ -72,7 +79,15 @@ function MasterDetailRow({ id, className, 'aria-selected': selected, ...props }:
 
 function MasterDetailPane({ className, ...props }: ComponentProps<'div'>) {
    return (
-      <div data-slot="master-detail-pane" className={cn('flex min-h-0 min-w-0 flex-col overflow-y-auto rounded-md border', className)} {...props} />
+      <ScrollArea
+         data-slot="master-detail-pane"
+         className={cn(
+            'bg-card min-h-0 min-w-0 [&>[data-slot=scroll-area-viewport]>div]:h-full [&>[data-slot=scroll-area-scrollbar]]:w-2 [&>[data-slot=scroll-area-scrollbar]]:border-l-0 [&>[data-slot=scroll-area-scrollbar]]:bg-transparent [&>[data-slot=scroll-area-scrollbar]]:p-0.5',
+            className
+         )}
+      >
+         <div className="flex h-full min-w-0 flex-col" {...props} />
+      </ScrollArea>
    );
 }
 

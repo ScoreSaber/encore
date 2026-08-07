@@ -20,7 +20,8 @@ export function sharedContentListQueryOptions(request: TargetSharedContentReques
 export function sharedContentOverviewQueryOptions(targetId: TargetId) {
    return queryOptions({
       queryKey: ipcQueryKey(sharedContentTargetIpc.getOverview, targetId),
-      queryFn: () => window.encore.sharedContent.getOverview({ targetId })
+      queryFn: () => window.encore.sharedContent.getOverview({ targetId }),
+      refetchOnMount: 'always'
    });
 }
 

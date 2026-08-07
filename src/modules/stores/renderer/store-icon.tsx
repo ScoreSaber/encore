@@ -2,7 +2,7 @@ import type { SVGAttributes } from 'react';
 
 import type { StoreKind } from '@/modules/stores/contract';
 
-export function DownloadStoreIcon({ store, ...props }: SVGAttributes<SVGElement> & { store: StoreKind }) {
+export function StoreIcon({ store, ...props }: SVGAttributes<SVGElement> & { store: StoreKind }) {
    return store === 'steam' ? <SteamIcon {...props} /> : <MetaIcon {...props} />;
 }
 

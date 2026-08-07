@@ -11,12 +11,12 @@ import { Separator } from '@/components/ui/separator';
 import { useFormatters } from '@/app/renderer/i18n/formatters';
 import type { MessageKey } from '@/app/renderer/i18n/keys';
 import { versionSupportsStore, type DownloadIssue, type DownloadVersion } from '@/modules/downloads/contract';
-import { DownloadStoreIcon } from '@/modules/downloads/renderer/download-store-icon';
 import { LibraryRootField } from '@/modules/downloads/renderer/library-root-field';
 import type { VersionDownloader } from '@/modules/downloads/renderer/use-version-download';
 import type { OperationSnapshot } from '@/modules/operations/contract';
 import { isOperationFinished } from '@/modules/operations/renderer/operation-progress';
 import { storeKinds, type StoreKind } from '@/modules/stores/contract';
+import { StoreIcon } from '@/modules/stores/renderer/store-icon';
 import { localTargetId } from '@/modules/targets/contract';
 
 const issueKeys: Record<DownloadIssue, MessageKey<'downloads.issues'>> = {
@@ -202,7 +202,7 @@ function StoreButton({ store, onSelect }: { store: StoreKind; onSelect: () => vo
          className="border-border/70 bg-background/78 text-muted-foreground hover:bg-accent/70 hover:text-foreground size-16 cursor-pointer rounded-md border backdrop-blur-xl transition-[background-color,color,scale] active:scale-[0.96]"
          onClick={onSelect}
       >
-         <DownloadStoreIcon store={store} className="size-7" aria-hidden />
+         <StoreIcon store={store} className="size-7" aria-hidden />
       </Button>
    );
 }

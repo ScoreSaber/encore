@@ -53,6 +53,10 @@ export const modGroupSettingsSchema = z.object({
    collapsed: z.array(z.string().trim().min(1))
 });
 
+export function createDefaultModGroupSettings() {
+   return { order: [], collapsed: ['category:library'] };
+}
+
 export const appSettingsSchema = z.object({
    theme: themeSchema,
    accentColor: accentColorSchema,
@@ -64,7 +68,7 @@ export const appSettingsSchema = z.object({
    modSourceResolution: modSourceResolutionSettingsSchema.default(defaultModSourceResolutionSettings),
    alphaWarningAccepted: z.boolean().default(false),
    bsmanagerPromptDismissed: z.boolean().default(false),
-   modGroups: modGroupSettingsSchema.default({ order: [], collapsed: [] })
+   modGroups: modGroupSettingsSchema.default(createDefaultModGroupSettings())
 });
 
 export const librarySettingsSchema = z.object({
@@ -153,10 +157,7 @@ export function createDefaultAppSettings(): AppSettings {
       modSourceResolution: defaultModSourceResolutionSettings,
       alphaWarningAccepted: false,
       bsmanagerPromptDismissed: false,
-      modGroups: {
-         order: [],
-         collapsed: []
-      }
+      modGroups: createDefaultModGroupSettings()
    };
 }
 

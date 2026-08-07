@@ -128,33 +128,6 @@ export function LaunchProgress({ launch }: { launch: InstallLaunch }) {
    );
 }
 
-export function LaunchFacets({ launch, name }: { launch: InstallLaunch; name: string }) {
-   const targets = useTranslations('targets');
-   const preview =
-      launch.state.status === 'ready' || launch.state.status === 'starting' || launch.state.status === 'running' ? launch.state.preview : null;
-   const version = preview?.version;
-   const facets: string[] = [];
-
-   if (version && !name.includes(version)) facets.push(version);
-   if (preview?.store) facets.push(targets(`store.${preview.store}`));
-
-   return (
-      <div className="text-muted-foreground flex min-h-4 min-w-0 items-center gap-x-2 text-xs">
-         {facets.length > 0
-            ? facets.map((facet, index) =>
-                 index === 0 ? (
-                    <span key={facet} className="truncate">
-                       {facet}
-                    </span>
-                 ) : (
-                    <Facet key={facet}>{facet}</Facet>
-                 )
-              )
-            : null}
-      </div>
-   );
-}
-
 export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
    const starting = isStarting(launch);
    const supportedFlags = launchFlagsFor(launch.platform);
@@ -289,15 +262,6 @@ function Notice({ tone, children }: { tone?: 'bad'; children: React.ReactNode })
          <AlertTriangle className={cn('mt-0.5 size-3.5 shrink-0', tone === 'bad' ? undefined : 'text-status-warning')} />
          <span className="min-w-0 break-words">{children}</span>
       </li>
-   );
-}
-
-function Facet({ children }: { children: React.ReactNode }) {
-   return (
-      <span className="text-muted-foreground flex items-center gap-2 truncate">
-         <span aria-hidden className="bg-muted-foreground/40 size-1 rounded-full" />
-         {children}
-      </span>
    );
 }
 

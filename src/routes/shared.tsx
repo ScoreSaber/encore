@@ -5,10 +5,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { CircleHelp } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { RefreshButton } from '@/components/refresh-button';
 import { EmptyPanel, ErrorPanel, LoadingPanel, WarningLine } from '@/components/state/state-panel';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 import { PageBody } from '@/app/renderer/shell/page-body';
@@ -32,7 +30,6 @@ export const Route = createFileRoute('/shared')({
 function SharedRoute() {
    const t = useTranslations('sharedContent.page');
    const shared = useTranslations('sharedContent');
-   const common = useTranslations('common');
    const cleanupLabels = useTranslations('bsmanager.cleanup');
    const targetLabels = useTranslations('targets');
    const targetList = useSelectedTarget();
@@ -79,18 +76,15 @@ function SharedRoute() {
                   <p className="text-muted-foreground mt-1 text-xs">{t('readOnly')}</p>
                ) : null}
             </div>
-            <ButtonGroup className="shrink-0" aria-label={t('title')}>
-               <TargetPicker
-                  id="shared-target"
-                  className="w-44"
-                  label={targetLabels('picker')}
-                  targets={targets}
-                  status={targetList.status}
-                  value={targetId}
-                  onChange={targetList.selectTarget}
-               />
-               <RefreshButton label={common('rescan')} busy={overviewStatus === 'loading'} onClick={() => void overviewQuery.refetch()} />
-            </ButtonGroup>
+            <TargetPicker
+               id="shared-target"
+               className="w-44 shrink-0"
+               label={targetLabels('picker')}
+               targets={targets}
+               status={targetList.status}
+               value={targetId}
+               onChange={targetList.selectTarget}
+            />
          </div>
 
          {overviewStatus === 'loading' ? <LoadingPanel rows={2} /> : null}

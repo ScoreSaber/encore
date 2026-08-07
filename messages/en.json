@@ -191,6 +191,9 @@
             "name": "Name",
             "namePlaceholder": "Install name",
             "color": "Colour",
+            "changeColor": "Change colour",
+            "customColor": "Custom colour",
+            "colorInputLabel": "Install colour hex value",
             "noColor": "No colour",
             "save": "Save",
             "failed": "The install could not be saved"
@@ -1051,8 +1054,8 @@
       },
       "pending": {
          "hint": "Tick a mod to install it, untick to remove it",
-         "install": "Install",
-         "remove": "Remove",
+         "install": "Ready to Install",
+         "remove": "Will be removed",
          "reset": "Reset"
       },
       "filter": "Filter mods",
@@ -1102,10 +1105,9 @@
             "description": "Encore did not install this mod and cannot match it to a BeatMods release"
          },
          "error": "The mod details could not be read",
-         "meta": "by {author}, <accent>{sourceLabel}</accent> {source}, {size}",
-         "source": {
-            "official": "From",
-            "unofficial": "From Custom Repository"
+         "metadata": {
+            "author": "by {author}",
+            "source": "from {source}"
          },
          "version": "Version {version}",
          "versionPair": "Installed {installed}, latest {latest}",
@@ -1184,6 +1186,21 @@
             "completed": "The mods were removed and the list is up to date",
             "cancelled": "The removal was cancelled, so some files are still on disk",
             "failed": "The removal failed"
+         }
+      },
+      "changes": {
+         "action": "Apply changes",
+         "title": "Apply changes",
+         "description": "Review the mods Encore will install and remove",
+         "install": "Install",
+         "remove": "Remove",
+         "confirm": "Apply changes",
+         "preparing": "Preparing the changes",
+         "progress": "Applied {copied} of {total}",
+         "result": {
+            "completed": "The changes are applied and the list is up to date",
+            "cancelled": "The changes were cancelled, so some may still have been applied",
+            "failed": "The changes failed"
          }
       },
       "import": {

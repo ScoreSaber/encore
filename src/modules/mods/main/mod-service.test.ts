@@ -87,6 +87,41 @@ describe('mod service', () => {
       expect(await readdir(harness.installPath)).not.toContain('IPA');
    });
 
+   test('applies removals and installs as one operation', async () => {
+      const harness = await createHarness();
+      await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:2'] }));
+
+      const request = { ...harness.request, installModIds: ['beatmods:3'], removeModIds: ['beatmods:2'] };
+      expect(await harness.mods.previewChanges(request)).toMatchObject({
+         status: 'ok',
+         install: {
+            mods: [
+               { modId: 'beatmods:2', reason: 'dependency' },
+               { modId: 'beatmods:3', reason: 'selected' }
+            ]
+         },
+         uninstall: { mods: [{ modId: 'beatmods:2' }] }
+      });
+      expect(await harness.run(await harness.mods.applyChanges(request))).toMatchObject({
+         status: 'completed',
+         result: { installedMods: 2, removedMods: 1 }
+      });
+      expect(await readFile(join(harness.installPath, 'IPA', 'Pending', 'Plugins', 'BSML.dll'), 'utf8')).toBe('bsml');
+      expect(await readFile(join(harness.installPath, 'IPA', 'Pending', 'Plugins', 'Counters.dll'), 'utf8')).toBe('counters');
+   });
+
+   test('reports a failed install after applying the removals in a mixed change', async () => {
+      const harness = await createHarness();
+      await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:2'] }));
+
+      const finished = await harness.run(
+         await harness.mods.applyChanges({ ...harness.request, installModIds: ['beatmods:4'], removeModIds: ['beatmods:2'] })
+      );
+
+      expect(finished).toMatchObject({ status: 'failed', error: { code: 'content.extract.checksum-mismatch' } });
+      expect(await readdir(join(harness.installPath, 'IPA', 'Pending', 'Plugins'))).not.toContain('BSML.dll');
+   });
+
    test('uninstall all reverts BSIPA and clears the mod folders', async () => {
       const harness = await createHarness();
       await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:3'] }));

@@ -2,11 +2,12 @@ import { Check } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
+import { ColorPicker } from '@/components/ui/color-picker';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/components/utils';
 
-import { installColors } from '@/modules/installs/contract';
+import { defaultInstallColor, installColors } from '@/modules/installs/contract';
 import type { InstallEditor } from '@/modules/installs/renderer/use-install-editor';
 
 export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
@@ -78,6 +79,21 @@ export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
                               onClick={() => editor.edit({ color })}
                            />
                         ))}
+
+                        <div className="ml-1 flex items-center gap-1.5">
+                           <ColorPicker
+                              className={cn(
+                                 'size-7 rounded-full p-0',
+                                 state.color !== null && !installColors.includes(state.color) && 'ring-ring ring-2 ring-offset-2'
+                              )}
+                              disabled={saving}
+                              label={t('customColor')}
+                              inputLabel={t('colorInputLabel')}
+                              value={state.color ?? defaultInstallColor}
+                              onChange={(color) => editor.edit({ color })}
+                           />
+                           <span className="text-muted-foreground text-xs">{t('customColor')}</span>
+                        </div>
                      </div>
                   </div>
 

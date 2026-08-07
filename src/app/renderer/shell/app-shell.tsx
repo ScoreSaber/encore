@@ -1,6 +1,6 @@
 import { queryOptions, useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { Box, FolderPlus, FolderSymlink, Home, Monitor, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { FolderPlus, FolderSymlink, Home, Monitor, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { RefreshButton } from '@/components/refresh-button';
@@ -14,11 +14,11 @@ import { cn } from '@/components/utils';
 import { ipcQueryKey } from '@/app/renderer/query/utils';
 import { appIpc } from '@/modules/app/ipc';
 import { AlphaWarningDialog } from '@/modules/app/renderer/alpha-warning-dialog';
-import { DownloadStoreIcon } from '@/modules/downloads/renderer/download-store-icon';
 import { DownloadVersionDialog } from '@/modules/downloads/renderer/download-version-dialog';
 import { useVersionDownload } from '@/modules/downloads/renderer/use-version-download';
 import type { InstallSummary } from '@/modules/installs/contract';
 import { ImportInstallDialog } from '@/modules/installs/renderer/import-install-dialog';
+import { InstallColorSwatch, InstallPlatformIcon } from '@/modules/installs/renderer/install-identity';
 import { useInstallImport } from '@/modules/installs/renderer/use-install-import';
 import { useInstalls } from '@/modules/installs/renderer/use-installs';
 import { MapLinkDialog } from '@/modules/maps/renderer/map-link-dialog';
@@ -302,16 +302,8 @@ function SidebarInstallLink({ install, targetId }: { install: InstallSummary; ta
          activeProps={{ className: activeSidebarItemClassName }}
          aria-label={install.name}
       >
-         {install.store ? (
-            <DownloadStoreIcon
-               store={install.store}
-               className="size-4 shrink-0 [&_path]:fill-current"
-               style={{ color: install.color ?? undefined }}
-               aria-hidden
-            />
-         ) : (
-            <Box className="size-4 shrink-0" style={{ color: install.color ?? undefined }} />
-         )}
+         <InstallColorSwatch color={install.color} />
+         <InstallPlatformIcon store={install.store} />
          <span className="hidden min-w-0 flex-1 truncate sm:block">{install.name}</span>
       </Link>
    );

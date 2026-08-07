@@ -53,19 +53,7 @@ function SettingsRoute() {
    }
 
    return (
-      <SettingsPageShell
-         title={t('pageTitle')}
-         action={
-            <RefreshButton
-               label={common('refresh')}
-               disabled={controlsDisabled}
-               onClick={() => {
-                  void settings.reload();
-                  targetList.reload();
-               }}
-            />
-         }
-      >
+      <SettingsPageShell title={t('pageTitle')}>
          {snapshot.problem ? (
             <Alert variant="warning">
                <AlertTriangle />

@@ -15,10 +15,10 @@ import {
    modPlatformForStore,
    readyModsSnapshotSchema,
    unavailableModsSnapshot,
-   type ModImportOutcome,
+   type ModChangesPreview,
+   type ModChangesRequest,
    type ModImportPreview,
    type ModImportRequest,
-   type ModInstallOutcome,
    type ModInstallPreview,
    type ModIssue,
    type ModOperationResult,
@@ -27,11 +27,11 @@ import {
    type ModRequest,
    type ModSelectionRequest,
    type ModsSnapshot,
-   type ModUninstallOutcome,
    type ModUninstallPreview,
    type ModUninstallRequest,
    type ModWarning,
    type ReadyModsSnapshot,
+   type ReadyModChangesPreview,
    type ReadyModImportPreview,
    type ReadyModUninstallPreview
 } from '@/modules/mods/contract';
@@ -137,7 +137,17 @@ export function createModService(options: ModServiceOptions) {
 
       const scan = await scanMods(context.value);
       const plan = buildInstallPlan(context.value.index, scan, request.modIds);
-      if (plan.mods.length === 0) return invalid(request, { issue: 'not-found', detail: request.modIds.join(', ') });
+      return buildInstallPreview(request, context.value, scan, plan, request.modIds);
+   }
+
+   function buildInstallPreview(
+      request: ModRequest,
+      context: ModContext,
+      scan: ModScan,
+      plan: ReturnType<typeof buildInstallPlan>,
+      selectedIds: string[]
+   ): ModInstallPreview {
+      if (plan.mods.length === 0) return invalid(request, { issue: 'not-found', detail: selectedIds.join(', ') });
 
       const warnings: ModWarning[] = [];
       if (plan.mods.some((planned) => planned.entry.isBsipa)) {
@@ -152,13 +162,64 @@ export function createModService(options: ModServiceOptions) {
       return {
          status: 'ok',
          installId: request.installId,
-         installPath: context.value.install.path,
-         pendingPath: join(context.value.install.path, modFolders.pending),
+         installPath: context.install.path,
+         pendingPath: join(context.install.path, modFolders.pending),
          downloadHosts: [...new Set(plan.mods.map((planned) => planned.entry.downloadHost))],
          mods: plan.mods.map(toPlanEntry),
          downloadBytes: plan.mods.reduce((total, planned) => total + (planned.entry.sizeBytes ?? 0), 0),
          warnings
       };
+   }
+
+   async function previewChanges(request: ModChangesRequest): Promise<ModChangesPreview> {
+      const context = await loadContext(request.installId, false);
+      if (Result.isError(context)) return invalid(request, context.error);
+      if (request.installModIds.length === 0 || request.removeModIds.length === 0) return invalid(request, { issue: 'nothing-selected' });
+
+      const scan = await scanMods(context.value);
+      const uninstall = await buildUninstallPreview({ ...request, scope: 'selection', modIds: request.removeModIds }, context.value, scan);
+      if (uninstall.status === 'invalid') return uninstall;
+
+      const plannedScan = scanWithoutMods(scan, request.removeModIds);
+      const plan = buildInstallPlan(context.value.index, plannedScan, request.installModIds);
+      const install = buildInstallPreview(request, context.value, scan, plan, request.installModIds);
+      if (install.status === 'invalid') return install;
+
+      return {
+         status: 'ok',
+         installId: request.installId,
+         install,
+         uninstall,
+         warnings: [...new Set([...install.warnings, ...uninstall.warnings])]
+      };
+   }
+
+   async function applyChanges(request: ModChangesRequest): Promise<ModOperationResult> {
+      const previewed = await previewChanges(request);
+      if (previewed.status === 'invalid') return failure(request, previewed);
+
+      const context = await loadContext(request.installId, false);
+      if (Result.isError(context)) return failure(request, context.error);
+
+      const scan = await scanMods(context.value);
+      const plan = buildInstallPlan(context.value.index, scanWithoutMods(scan, request.removeModIds), request.installModIds);
+      const controller = new AbortController();
+      const operation = options.operations.create({
+         kind: 'download',
+         title: 'Apply mod changes',
+         message: context.value.install.name,
+         progress: { phase: 'preparing', current: 0, total: 2, percent: 0, unit: 'steps' },
+         metadata: {
+            installId: request.installId,
+            install: previewed.install.mods.map((entry) => entry.name),
+            remove: previewed.uninstall.mods.map((entry) => entry.name)
+         },
+         cancel: () => controller.abort()
+      });
+
+      void runChanges(operation.id, context.value.install, previewed, plan.mods, controller.signal);
+
+      return { ok: true, value: operation };
    }
 
    async function installMods(request: ModSelectionRequest): Promise<ModOperationResult> {
@@ -187,7 +248,42 @@ export function createModService(options: ModServiceOptions) {
 
    async function runInstall(operationId: string, install: InstallDetail, planned: PlannedMod[], signal: AbortSignal) {
       try {
-         await writeInstall(operationId, install, planned, signal);
+         const installed = await writeInstall(operationId, install, planned, signal);
+         if (Result.isError(installed)) options.operations.fail(operationId, installed.error);
+         else options.operations.complete(operationId, installed.value);
+      } finally {
+         forgetScan(install.id);
+      }
+   }
+
+   async function runChanges(
+      operationId: string,
+      install: InstallDetail,
+      previewed: ReadyModChangesPreview,
+      planned: PlannedMod[],
+      signal: AbortSignal
+   ) {
+      try {
+         const uninstalled = await writeUninstall(operationId, install, previewed.uninstall, signal);
+         if (Result.isError(uninstalled)) {
+            options.operations.fail(operationId, uninstalled.error);
+            return;
+         }
+
+         const installed = await writeInstall(operationId, install, planned, signal);
+         if (Result.isError(installed)) {
+            options.operations.fail(operationId, installed.error);
+            return;
+         }
+
+         const outcome = {
+            installId: install.id,
+            installedMods: installed.value.mods,
+            removedMods: uninstalled.value.mods,
+            files: installed.value.files + uninstalled.value.files,
+            bytes: installed.value.bytes
+         };
+         options.operations.complete(operationId, outcome);
       } finally {
          forgetScan(install.id);
       }
@@ -214,7 +310,7 @@ export function createModService(options: ModServiceOptions) {
                });
             }
          });
-         if (Result.isError(installed)) return failOperation(operationId, entry.name, installed.error);
+         if (Result.isError(installed)) return Result.err(operationError(entry.name, installed.error));
 
          files += installed.value.files;
          bytes += installed.value.bytes;
@@ -224,16 +320,16 @@ export function createModService(options: ModServiceOptions) {
          if (!patcher.supported || (await patcher.isPatched(install.path))) continue;
 
          const patched = await patcher.patch(install.path);
-         if (Result.isError(patched)) return options.operations.fail(operationId, patched.error);
+         if (Result.isError(patched)) return Result.err(patched.error);
       }
 
-      const outcome: ModInstallOutcome = {
+      const outcome = {
          installId: install.id,
          mods: planned.length,
          files,
          bytes
       };
-      options.operations.complete(operationId, outcome);
+      return Result.ok(outcome);
    }
 
    async function previewUninstall(request: ModUninstallRequest): Promise<ModUninstallPreview> {
@@ -241,22 +337,26 @@ export function createModService(options: ModServiceOptions) {
       if (Result.isError(context)) return invalid(request, context.error);
 
       const scan = await scanMods(context.value);
+      return buildUninstallPreview(request, context.value, scan);
+   }
+
+   async function buildUninstallPreview(request: ModUninstallRequest, context: ModContext, scan: ModScan): Promise<ModUninstallPreview> {
       const selection = request.scope === 'all' ? [...scan.installed.keys()] : request.modIds;
       if (selection.length === 0 && request.scope === 'selection') return invalid(request, { issue: 'nothing-selected' });
 
-      const mods = await Promise.all(selection.map((modId) => describeRemoval(context.value, scan, modId)));
+      const mods = await Promise.all(selection.map((modId) => describeRemoval(context, scan, modId)));
       const removals = mods.filter((removal) => removal !== null);
       const external = request.scope === 'all' ? scan.external : [];
-      const folders = request.scope === 'all' ? modRemovableFolders.map((folder) => join(context.value.install.path, folder)) : [];
+      const folders = request.scope === 'all' ? modRemovableFolders.map((folder) => join(context.install.path, folder)) : [];
 
       const warnings: ModWarning[] = [];
       if (external.length > 0) warnings.push('removes-external');
-      if (removals.some((removal) => context.value.index.byModId.get(removal.modId)?.isBsipa) && patcher.supported) warnings.push('patcher-runs');
+      if (removals.some((removal) => context.index.byModId.get(removal.modId)?.isBsipa) && patcher.supported) warnings.push('patcher-runs');
 
       return {
          status: 'ok',
          installId: request.installId,
-         installPath: context.value.install.path,
+         installPath: context.install.path,
          scope: request.scope,
          mods: removals,
          external,
@@ -293,7 +393,9 @@ export function createModService(options: ModServiceOptions) {
 
    async function runUninstall(operationId: string, install: InstallDetail, previewed: ReadyModUninstallPreview, signal: AbortSignal) {
       try {
-         await writeUninstall(operationId, install, previewed, signal);
+         const uninstalled = await writeUninstall(operationId, install, previewed, signal);
+         if (Result.isError(uninstalled)) options.operations.fail(operationId, uninstalled.error);
+         else options.operations.complete(operationId, uninstalled.value);
       } finally {
          forgetScan(install.id);
       }
@@ -303,7 +405,7 @@ export function createModService(options: ModServiceOptions) {
       const removesBsipa = previewed.mods.some((removal) => removal.name.trim().toLowerCase() === bsipaModName);
       if (removesBsipa && patcher.supported && (await patcher.hasPatcher(install.path))) {
          const reverted = await patcher.revert(install.path);
-         if (Result.isError(reverted)) return options.operations.fail(operationId, reverted.error);
+         if (Result.isError(reverted)) return Result.err(reverted.error);
       }
 
       const paths = [
@@ -322,7 +424,7 @@ export function createModService(options: ModServiceOptions) {
             signal
          });
          if (Result.isError(deleted)) {
-            return options.operations.fail(operationId, {
+            return Result.err({
                code: deleted.error.code,
                message: deleted.error.message,
                details: { path: deleted.error.path }
@@ -335,12 +437,12 @@ export function createModService(options: ModServiceOptions) {
          });
       }
 
-      const outcome: ModUninstallOutcome = {
+      const outcome = {
          installId: install.id,
          mods: previewed.mods.length,
          files
       };
-      options.operations.complete(operationId, outcome);
+      return Result.ok(outcome);
    }
 
    async function previewImport(request: ModImportRequest): Promise<ModImportPreview> {
@@ -431,9 +533,9 @@ export function createModService(options: ModServiceOptions) {
               })
             : await importModFile(install.path, previewed, signal);
 
-      if (Result.isError(imported)) return failOperation(operationId, previewed.name, imported.error);
+      if (Result.isError(imported)) return options.operations.fail(operationId, operationError(previewed.name, imported.error));
 
-      const outcome: ModImportOutcome = {
+      const outcome = {
          installId: install.id,
          name: previewed.name,
          files: imported.value.files
@@ -528,13 +630,19 @@ export function createModService(options: ModServiceOptions) {
       };
    }
 
-   function failOperation(operationId: string, name: string, problem: ContentProblem) {
-      const error: OperationError = {
+   function scanWithoutMods(scan: ModScan, modIds: string[]): ModScan {
+      const installed = new Map(scan.installed);
+      for (const modId of modIds) installed.delete(modId);
+
+      return { ...scan, installed };
+   }
+
+   function operationError(name: string, problem: ContentProblem): OperationError {
+      return {
          code: problem.code,
          message: `${name}: ${problem.message}`,
          details: { entry: problem.entry, path: problem.path, detail: problem.detail }
       };
-      options.operations.fail(operationId, error);
    }
 
    function invalid(request: ModRequest, problem: ModProblem) {
@@ -545,5 +653,16 @@ export function createModService(options: ModServiceOptions) {
       return modFailure(request.installId, problem.issue, problem.detail);
    }
 
-   return { getMods, refreshMods, previewInstall, installMods, previewUninstall, uninstallMods, previewImport, importMod };
+   return {
+      getMods,
+      refreshMods,
+      previewInstall,
+      installMods,
+      previewChanges,
+      applyChanges,
+      previewUninstall,
+      uninstallMods,
+      previewImport,
+      importMod
+   };
 }

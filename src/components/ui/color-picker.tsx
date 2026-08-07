@@ -5,8 +5,10 @@ import { HexColorPicker } from 'react-colorful';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/components/utils';
 
 type ColorPickerProps = {
+   className?: string;
    disabled?: boolean;
    inputLabel: string;
    label: string;
@@ -22,15 +24,9 @@ function parseHexColor(value: string) {
    return /^[0-9a-f]{6}$/i.test(hex) ? `#${hex.toLowerCase()}` : undefined;
 }
 
-export function ColorPicker({ disabled, inputLabel, label, value, onChange }: ColorPickerProps) {
+export function ColorPicker({ className, disabled, inputLabel, label, value, onChange }: ColorPickerProps) {
    const [open, setOpen] = useState(false);
-   const [storedDraft, setDraft] = useState(() => ({ source: value, color: value, input: value }));
-   let draft = storedDraft;
-
-   if (storedDraft.source !== value) {
-      draft = { source: value, color: value, input: value };
-      setDraft(draft);
-   }
+   const [draft, setDraft] = useState(() => ({ color: value, input: value }));
 
    function commitColor(color: string) {
       setDraft({ ...draft, color, input: color });
@@ -50,7 +46,8 @@ export function ColorPicker({ disabled, inputLabel, label, value, onChange }: Co
       <Popover
          open={open}
          onOpenChange={(nextOpen) => {
-            if (!nextOpen) commitHexInput();
+            if (nextOpen) setDraft({ color: value, input: value });
+            else commitHexInput();
             setOpen(nextOpen);
          }}
       >
@@ -59,7 +56,7 @@ export function ColorPicker({ disabled, inputLabel, label, value, onChange }: Co
                type="button"
                variant="ghost"
                size="icon-sm"
-               className="border shadow-xs"
+               className={cn('border shadow-xs', className)}
                disabled={disabled}
                aria-label={label}
                style={{ backgroundColor: value }}
@@ -92,7 +89,7 @@ export function ColorPicker({ disabled, inputLabel, label, value, onChange }: Co
                      commitHexInput();
                      event.currentTarget.blur();
                   } else if (event.key === 'Escape') {
-                     setDraft({ source: value, color: value, input: value });
+                     setDraft({ color: value, input: value });
                      setOpen(false);
                   }
                }}

@@ -1,6 +1,7 @@
 import { Moon, Sun, SunMoon } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
+import { ColorPicker } from '@/components/ui/color-picker';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
@@ -8,7 +9,6 @@ import { localeNames, locales } from '@/app/renderer/i18n/config';
 import { useLocale } from '@/app/renderer/i18n/locale-provider';
 import { useTheme } from '@/app/renderer/theme/theme-provider';
 import { themes } from '@/modules/settings/contract';
-import { ColorPicker } from '@/modules/settings/renderer/color-picker';
 import { SettingsRow, SettingsSection } from '@/modules/settings/renderer/settings-layout';
 
 export function AppearanceSection({ disabled }: { disabled: boolean }) {

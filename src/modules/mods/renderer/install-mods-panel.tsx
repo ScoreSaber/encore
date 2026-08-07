@@ -30,18 +30,17 @@ import { matchesQuery } from '@/app/renderer/collection/view';
 import { useFormatters } from '@/app/renderer/i18n/formatters';
 import type { InstallSummary } from '@/modules/installs/contract';
 import { knownModCategories, type ExternalMod, type ModSummary, type ReadyModsSnapshot } from '@/modules/mods/contract';
-import type { ModSourceStatus } from '@/modules/mods/contract';
 import { groupMods, orderModGroups, type ModGroup } from '@/modules/mods/renderer/grouping';
 import { ManageModSourcesDialog } from '@/modules/mods/renderer/manage-mod-sources-dialog';
 import { ModDetailPanel } from '@/modules/mods/renderer/mod-detail-panel';
-import { modIssueKeys, modRepositoryIssueKeys } from '@/modules/mods/renderer/mod-issue-keys';
+import { modIssueKeys } from '@/modules/mods/renderer/mod-issue-keys';
 import { SelectInstallModsDialog } from '@/modules/mods/renderer/select-install-mods-dialog';
 import type { InstallMods } from '@/modules/mods/renderer/use-install-mods';
-import type { ModGroupSettings } from '@/modules/settings/contract';
+import { createDefaultModGroupSettings, type ModGroupSettings } from '@/modules/settings/contract';
 import { useSettings } from '@/modules/settings/renderer/settings-provider';
 import type { TargetId } from '@/modules/targets/contract';
 
-const emptyModGroupSettings: ModGroupSettings = { order: [], collapsed: [] };
+const defaultModGroupSettings = createDefaultModGroupSettings();
 
 export function InstallModsPanel({ mods, targetId, otherInstalls }: { mods: InstallMods; targetId: TargetId; otherInstalls: InstallSummary[] }) {
    const t = useTranslations('mods');
@@ -87,7 +86,7 @@ function ReadyMods({
    const [pendingGroupSettings, setPendingGroupSettings] = useState<ModGroupSettings | null>(null);
    const groupSettingsWrite = useRef(0);
    const sourcesChanged = useRef(false);
-   const storedGroupSettings = settings.snapshot?.app.modGroups ?? emptyModGroupSettings;
+   const storedGroupSettings = settings.snapshot?.app.modGroups ?? defaultModGroupSettings;
    const groupSettings = pendingGroupSettings ?? storedGroupSettings;
    const categoryLabels = useMemo(() => new Map<string, string>(knownModCategories.map((category) => [category, t(`category.${category}`)])), [t]);
    const busy = mods.state.status !== 'idle' || mods.status === 'loading';
@@ -95,6 +94,7 @@ function ReadyMods({
    const toInstall = snapshot.mods.filter((mod) => mod.state === 'available' && ticked.has(mod.modId)).map((mod) => mod.modId);
    const toUpdate = snapshot.mods.filter((mod) => mod.state === 'update-available' && ticked.has(mod.modId)).map((mod) => mod.modId);
    const toRemove = snapshot.mods.filter((mod) => mod.state !== 'available' && !ticked.has(mod.modId)).map((mod) => mod.modId);
+   const applyingChanges = toInstall.length > 0 && toRemove.length > 0;
    const nothingInstalled = snapshot.mods.every((mod) => mod.state === 'available') && snapshot.external.length === 0;
    const filterText = query.trim().toLowerCase();
    const visible = snapshot.mods.filter((mod) =>
@@ -158,7 +158,7 @@ function ReadyMods({
       <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {snapshot.mods.length + snapshot.external.length > 0 ? (
-               <InputGroup className="h-8 w-56">
+               <InputGroup className="h-8 min-w-40 flex-1">
                   <InputGroupInput
                      value={query}
                      aria-label={t('filter')}
@@ -180,7 +180,13 @@ function ReadyMods({
                            {t('install.updateAction', { count: toUpdate.length })}
                         </Button>
                      ) : null}
-                     {toRemove.length > 0 ? (
+                     {applyingChanges ? (
+                        <Button type="button" size="sm" disabled={busy} onClick={() => void mods.previewChanges(toInstall, toRemove)}>
+                           <ListChecks data-icon="inline-start" />
+                           {t('changes.action')}
+                        </Button>
+                     ) : null}
+                     {!applyingChanges && toRemove.length > 0 ? (
                         <Button
                            type="button"
                            variant="outline"
@@ -192,7 +198,7 @@ function ReadyMods({
                            {t('uninstall.action', { count: toRemove.length })}
                         </Button>
                      ) : null}
-                     {toInstall.length > 0 ? (
+                     {!applyingChanges && toInstall.length > 0 ? (
                         <Button type="button" size="sm" disabled={busy} onClick={() => void mods.previewInstall(toInstall)}>
                            <Download data-icon="inline-start" />
                            {t('install.action', { count: toInstall.length })}
@@ -266,8 +272,6 @@ function ReadyMods({
          />
 
          {!snapshot.bsipaInstalled ? <WarningLine>{t('bsipaMissing')}</WarningLine> : null}
-
-         <ModSources sources={snapshot.sources} />
 
          {snapshot.mods.length + snapshot.external.length === 0 ? (
             <EmptyPanel title={t('empty.title')} description={t('empty.description', { version: snapshot.gameVersion })} />
@@ -350,7 +354,7 @@ function ExternalFiles({
                   aria-label={t(open ? 'groups.collapse' : 'groups.expand', { name: t('external.category') })}
                >
                   <ChevronRight className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                  <span className="truncate font-medium tracking-wide uppercase">{t('external.category')}</span>
+                  <span className="truncate font-medium">{t('external.category')}</span>
                   <span className="shrink-0">{t('groups.count', { count: files.length })}</span>
                </button>
             </CollapsibleTrigger>
@@ -370,28 +374,6 @@ function ExternalFiles({
             })}
          </CollapsibleContent>
       </Collapsible>
-   );
-}
-
-function ModSources({ sources }: { sources: ModSourceStatus[] }) {
-   const t = useTranslations('mods');
-   const shown = sources.length > 1 ? sources : sources.filter((source) => source.state !== 'ready');
-
-   if (shown.length === 0) return null;
-
-   return (
-      <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-         {shown.map((source) => (
-            <span key={source.id} className={source.state === 'ready' ? undefined : 'text-destructive'}>
-               {source.state === 'ready'
-                  ? t('sources.ready', { name: source.name, count: source.modCount })
-                  : t('sources.unavailable', {
-                       name: source.name,
-                       reason: t(`repositories.issues.${modRepositoryIssueKeys[source.issue ?? 'fetch-failed']}`)
-                    })}
-            </span>
-         ))}
-      </div>
    );
 }
 
@@ -477,8 +459,8 @@ function ModGroupSection({
                   aria-label={t(open ? 'groups.collapse' : 'groups.expand', { name: group.label })}
                >
                   <ChevronRight className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                  <span className="font-medium tracking-wide uppercase">{group.label}</span>
-                  <span>{t('groups.count', { count: group.mods.length })}</span>
+                  <span className="text-foreground min-w-0 truncate font-medium">{group.label}</span>
+                  <span className="shrink-0">{t('groups.count', { count: group.mods.length })}</span>
                </button>
             </CollapsibleTrigger>
          </SectionHeader>
@@ -502,7 +484,7 @@ function ModGroupSection({
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
    return (
-      <div className="bg-background/95 text-muted-foreground sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-1 text-xs backdrop-blur">
+      <div className="bg-muted/20 text-muted-foreground sticky top-0 z-10 flex min-h-10 items-center gap-2 border-b px-2 py-2 text-xs backdrop-blur">
          {children}
       </div>
    );
@@ -536,9 +518,11 @@ function ModRow({
             onClick={(event) => event.stopPropagation()}
             onCheckedChange={onToggle}
          />
-         <span className="min-w-0 flex-1 truncate">{mod.name}</span>
+         <span className="min-w-0 flex-1 truncate font-medium">{mod.name}</span>
          {pending ? (
-            <span className={cn('shrink-0 text-xs', pending === 'install' ? 'text-primary' : 'text-destructive')}>{t(`pending.${pending}`)}</span>
+            <span className={cn('shrink-0 whitespace-nowrap text-xs', pending === 'install' ? 'text-primary' : 'text-destructive')}>
+               {t(`pending.${pending}`)}
+            </span>
          ) : null}
          {mod.state === 'update-available' ? (
             <ArrowUp className="text-status-warning size-3.5 shrink-0" aria-label={t('states.updateAvailable')} />

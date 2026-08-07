@@ -7,7 +7,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 import { useFormatters } from '@/app/renderer/i18n/formatters';
 import type { InstallActionRequest } from '@/modules/installs/contract';
-import type { ModWarning, ReadyModImportPreview, ReadyModInstallPreview, ReadyModUninstallPreview } from '@/modules/mods/contract';
+import type {
+   ModWarning,
+   ReadyModChangesPreview,
+   ReadyModImportPreview,
+   ReadyModInstallPreview,
+   ReadyModUninstallPreview
+} from '@/modules/mods/contract';
 import { modIssueKeys, modWarningKeys } from '@/modules/mods/renderer/mod-issue-keys';
 import type { InstallMods } from '@/modules/mods/renderer/use-install-mods';
 import { isOperationFinished, OperationOutcome, OperationProgress, PreviewList, PreviewRow } from '@/modules/operations/renderer/operation-progress';
@@ -61,11 +67,12 @@ export function ModActionDialog({ request, mods }: { request: InstallActionReque
                      <ActionScopeRows
                         request={request}
                         showPath={state.kind !== 'uninstall'}
-                        compact={state.kind === 'install' || state.kind === 'uninstall'}
+                        compact={state.kind === 'install' || state.kind === 'uninstall' || state.kind === 'changes'}
                      />
 
                      {state.kind === 'install' ? <InstallPreview preview={state.preview} /> : null}
                      {state.kind === 'uninstall' ? <UninstallPreview preview={state.preview} /> : null}
+                     {state.kind === 'changes' ? <ChangesPreview preview={state.preview} /> : null}
                      {state.kind === 'import' ? <ImportPreview preview={state.preview} /> : null}
                      <Warnings warnings={state.preview.warnings} />
                   </>
@@ -119,6 +126,19 @@ export function ModActionDialog({ request, mods }: { request: InstallActionReque
             </DialogFooter>
          </DialogContent>
       </Dialog>
+   );
+}
+
+function ChangesPreview({ preview }: { preview: ReadyModChangesPreview }) {
+   const t = useTranslations('mods');
+
+   return (
+      <>
+         <p className="font-medium">{t('changes.install')}</p>
+         <InstallPreview preview={preview.install} />
+         <p className="font-medium">{t('changes.remove')}</p>
+         <UninstallPreview preview={preview.uninstall} />
+      </>
    );
 }
 

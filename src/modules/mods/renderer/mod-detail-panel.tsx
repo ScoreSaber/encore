@@ -12,7 +12,6 @@ import { RemoteImage } from '@/components/ui/remote-image';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 
-import { useFormatters } from '@/app/renderer/i18n/formatters';
 import type { ExternalMod, ModSummary } from '@/modules/mods/contract';
 import { githubRepositoryFromUrl } from '@/modules/mods/contract';
 import { modFundingQueryOptions } from '@/modules/mods/renderer/mod-queries';
@@ -66,7 +65,6 @@ export function ModDetailPanel({ mods, mod, external }: { mods: InstallMods; mod
 
 function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
    const t = useTranslations('mods');
-   const format = useFormatters();
    const busy = mods.state.status !== 'idle';
    const sourceLink = mod.links.find((link) => link.kind === 'source');
    const githubSource = sourceLink ? githubRepositoryFromUrl(sourceLink.url) : null;
@@ -75,9 +73,20 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
       enabled: githubSource !== null
    });
    const fundingUrl = funding.data?.status === 'available' ? funding.data.url : null;
+   const version =
+      mod.state === 'update-available' && mod.installedVersion
+         ? t('detail.versionPair', { installed: mod.installedVersion, latest: mod.latestVersion })
+         : t('detail.version', { version: mod.installedVersion ?? mod.latestVersion });
+   const metadata = [
+      mod.author === 'BeatMods Import' ? null : t('detail.metadata.author', { author: mod.author || t('unknownAuthor') }),
+      mod.sourceKind === 'official' ? null : t('detail.metadata.source', { source: mod.sourceName }),
+      version
+   ]
+      .filter((item) => item !== null)
+      .join(' · ');
 
    return (
-      <div className="flex min-w-0 flex-col gap-4 p-4">
+      <div className="flex min-w-0 flex-col gap-4 p-5 pr-7">
          <div className="flex min-w-0 items-start gap-3">
             {mod.iconUrl ? (
                <RemoteImage
@@ -90,23 +99,8 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
                />
             ) : null}
             <div className="min-w-0 flex-1">
-               <h3 className="flex min-w-0 items-baseline gap-2 text-base font-medium">
-                  <span className="truncate">{mod.name}</span>
-                  <span className="text-muted-foreground shrink-0 text-xs font-normal">
-                     {mod.state === 'update-available' && mod.installedVersion
-                        ? t('detail.versionPair', { installed: mod.installedVersion, latest: mod.latestVersion })
-                        : t('detail.version', { version: mod.installedVersion ?? mod.latestVersion })}
-                  </span>
-               </h3>
-               <p className="text-muted-foreground text-xs">
-                  {t.rich('detail.meta', {
-                     author: mod.author || t('unknownAuthor'),
-                     sourceLabel: t(`detail.source.${mod.sourceKind}`),
-                     source: mod.sourceName,
-                     size: mod.sizeBytes === null ? t('unknownSize') : format.bytes(mod.sizeBytes),
-                     accent: (chunks) => <span className={mod.sourceKind === 'unofficial' ? 'text-primary' : undefined}>{chunks}</span>
-                  })}
-               </p>
+               <h3 className="truncate text-base font-medium">{mod.name}</h3>
+               <p className="text-muted-foreground mt-0.5 truncate text-xs">{metadata}</p>
             </div>
          </div>
 
@@ -123,6 +117,12 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
                   {t('detail.update')}
                </Button>
             ) : null}
+            {mod.state === 'available' ? null : (
+               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void mods.previewUninstall('selection', [mod.modId])}>
+                  <Trash2 data-icon="inline-start" />
+                  {t('detail.uninstall')}
+               </Button>
+            )}
             {fundingUrl ? (
                <CopyPathContextMenu pathType="url" value={fundingUrl}>
                   <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={() => mods.openLink(fundingUrl)}>
@@ -131,12 +131,6 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
                   </Button>
                </CopyPathContextMenu>
             ) : null}
-            {mod.state === 'available' ? null : (
-               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void mods.previewUninstall('selection', [mod.modId])}>
-                  <Trash2 data-icon="inline-start" />
-                  {t('detail.uninstall')}
-               </Button>
-            )}
             {mod.links.map((link) => {
                const githubLink = link.kind === 'source' && githubRepositoryFromUrl(link.url) !== null;
 

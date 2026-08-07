@@ -10,6 +10,7 @@ import type { TargetModRequest } from '@/modules/mods/api';
 import type {
    ModActionProblem,
    ModUninstallScope,
+   ReadyModChangesPreview,
    ReadyModImportPreview,
    ReadyModInstallPreview,
    ReadyModUninstallPreview
@@ -21,6 +22,7 @@ import { useOperations } from '@/modules/operations/renderer/use-operations';
 type ReadyAction =
    | { kind: 'install'; preview: ReadyModInstallPreview }
    | { kind: 'uninstall'; preview: ReadyModUninstallPreview }
+   | { kind: 'changes'; preview: ReadyModChangesPreview; installModIds: string[]; removeModIds: string[] }
    | { kind: 'import'; preview: ReadyModImportPreview };
 
 type ModActionKind = ReadyAction['kind'];
@@ -149,6 +151,29 @@ export function useInstallMods(request: TargetModRequest) {
       [modsApi, request]
    );
 
+   const previewChanges = useCallback(
+      async (installModIds: string[], removeModIds: string[]) => {
+         setState({ status: 'previewing', kind: 'changes' });
+
+         const response = await Result.tryPromise({
+            try: () => modsApi.previewChanges({ ...request, installModIds, removeModIds }),
+            catch: (cause) => cause
+         });
+         if (Result.isError(response) || response.value.status !== 'ok') {
+            setState({ status: 'failed', kind: 'changes', error: { code: 'mods.preview-failed', message: 'the mods could not be read' } });
+            return;
+         }
+
+         const previewed = response.value.value;
+         setState(
+            previewed.status === 'ok'
+               ? { status: 'ready', kind: 'changes', preview: previewed, installModIds, removeModIds }
+               : { status: 'invalid', kind: 'changes', problem: previewed }
+         );
+      },
+      [modsApi, request]
+   );
+
    const chooseImport = useCallback(async () => {
       setState({ status: 'previewing', kind: 'import' });
 
@@ -191,13 +216,23 @@ export function useInstallMods(request: TargetModRequest) {
                  () => modsApi.import({ ...request, sourcePath: state.preview.sourcePath, uploadId: state.preview.uploadId }),
                  fallback
               )
-            : await inlineTargetIpcResult(
-                 () =>
-                    state.kind === 'install'
-                       ? modsApi.installMods({ ...request, modIds: state.preview.mods.map((mod) => mod.modId) })
-                       : modsApi.uninstallMods({ ...request, scope: state.preview.scope, modIds: state.preview.mods.map((mod) => mod.modId) }),
-                 fallback
-              );
+            : state.kind === 'changes'
+              ? await inlineTargetIpcResult(
+                   () =>
+                      modsApi.applyChanges({
+                         ...request,
+                         installModIds: state.installModIds,
+                         removeModIds: state.removeModIds
+                      }),
+                   fallback
+                )
+              : await inlineTargetIpcResult(
+                   () =>
+                      state.kind === 'install'
+                         ? modsApi.installMods({ ...request, modIds: state.preview.mods.map((mod) => mod.modId) })
+                         : modsApi.uninstallMods({ ...request, scope: state.preview.scope, modIds: state.preview.mods.map((mod) => mod.modId) }),
+                   fallback
+                );
 
       setState(
          started.ok ? { ...pending, status: 'running', operationId: started.value.id } : { status: 'failed', kind: state.kind, error: started.error }
@@ -237,6 +272,7 @@ export function useInstallMods(request: TargetModRequest) {
       openLink,
       previewInstall,
       previewUninstall,
+      previewChanges,
       chooseImport,
       confirm,
       cancel,

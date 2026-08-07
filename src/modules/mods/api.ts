@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { defineDomainApi, targetProcedure, targetUpload, type TargetCall } from '@/lib/api';
 import {
+   modChangesPreviewSchema,
    modInstallPreviewSchema,
    modImportPreviewSchema,
    modImportUploadIdSchema,
@@ -17,6 +18,7 @@ import { operationResultSchema } from '@/modules/operations/contract';
 
 const install = z.object({ installId: z.string().min(1) });
 const selection = install.extend({ modIds: z.array(z.string().min(1)) });
+const changes = install.extend({ installModIds: z.array(z.string().min(1)), removeModIds: z.array(z.string().min(1)) });
 
 export const modsApi = defineDomainApi(
    'mods',
@@ -34,6 +36,8 @@ export const modsApi = defineDomainApi(
       }),
       previewInstall: targetProcedure({ capability: 'manage-mods', input: selection, output: modInstallPreviewSchema }),
       installMods: targetProcedure({ capability: 'manage-mods', input: selection, output: operationResultSchema }),
+      previewChanges: targetProcedure({ capability: 'manage-mods', input: changes, output: modChangesPreviewSchema }),
+      applyChanges: targetProcedure({ capability: 'manage-mods', input: changes, output: operationResultSchema }),
       previewUninstall: targetProcedure({
          capability: 'manage-mods',
          input: selection.extend({ scope: modUninstallScopeSchema }),

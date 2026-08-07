@@ -69,6 +69,7 @@ export type InstallDetailRequest = InstallActionRequest;
 export const installNameSchema = z.string().trim().min(1).max(60);
 export const installColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 
+export const defaultInstallColor = '#a1f6d4';
 export const installColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];
 
 export const installUpdateRequestSchema = z.object({
