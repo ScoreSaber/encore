@@ -1,9 +1,6 @@
-import Image from "next/image";
-import Link from "next/link";
-
 import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
-import encoreApp from "../../../assets/encore-app.png";
+import encoreApp from "../../../assets/encore-app.webp";
 import encoreLogo from "../../../assets/encore-logo.svg";
 
 export default function Home() {
@@ -17,13 +14,13 @@ export default function Home() {
       >
         <div className="flex w-full translate-y-1.5 items-end justify-between pr-4 pl-[clamp(20px,1.875vw,30px)] max-[876px]:flex-col max-[876px]:items-center max-[876px]:px-0 min-[877px]:pl-7.5">
           <div className="relative flex min-w-0 translate-y-1.5 items-center justify-start gap-[clamp(2px,0.35vw,6px)] max-[540px]:flex-col min-[877px]:gap-1.5">
-            <Image
+            <img
               className="aspect-square h-auto w-[clamp(96px,9vw,128px)] -translate-y-1.75 shrink-0 shadow-none [filter:none] max-[540px]:w-[76px] min-[877px]:w-32"
-              src={encoreLogo}
+              src={encoreLogo.src}
               width={168}
               height={168}
               alt=""
-              priority
+              fetchPriority="high"
             />
             <div className="min-w-0 max-[540px]:text-center">
               <div className="relative inline-block">
@@ -66,27 +63,26 @@ export default function Home() {
                   </svg>
                   Open source
                 </a>
-                <Link
+                <a
                   className="inline-flex min-h-8 w-4.5 items-center justify-center bg-transparent p-0 font-bold no-underline transition-colors [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] hover:text-[var(--foreground)] focus-visible:text-[var(--foreground)]"
                   href="/docs"
                   aria-label="Documentation"
                 >
                   ?
-                </Link>
+                </a>
               </div>
             </div>
           </div>
         </div>
 
         <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-6 scale-[1.015] max-[876px]:hidden min-[877px]:mt-6">
-          <Image
+          <img
             className="block h-auto w-full [box-shadow:0_28px_64px_-28px_rgba(0,0,0,0.75)]"
-            src={encoreApp}
+            src={encoreApp.src}
             width={1549}
             height={971}
-            sizes="(max-width: 876px) 0px, min(74.32vw, 123.34svh)"
             alt="Encore desktop app"
-            priority
+            fetchPriority="high"
           />
         </div>
       </section>

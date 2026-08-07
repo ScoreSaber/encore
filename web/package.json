@@ -12,7 +12,7 @@
     "format:check": "oxfmt --check .",
     "postinstall": "fumadocs-mdx",
     "pages:preview": "wrangler pages dev out",
-    "pages:deploy": "wrangler pages deploy"
+    "pages:deploy": "wrangler pages deploy --branch main"
   },
   "dependencies": {
     "@orama/orama": "3.1.18",

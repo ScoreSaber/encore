@@ -5,7 +5,6 @@ import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
-import { Provider } from "@/components/provider";
 import encoreLogo from "../../../assets/encore-logo.svg";
 
 const geist = localFont({
@@ -56,7 +55,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       className={`dark min-h-full min-w-[320px] bg-[var(--background)] ${geist.variable} ${geistPixel.variable}`}
     >
       <body className="min-h-screen bg-[var(--background)] text-[var(--foreground)] [font-family:var(--font-sans)]">
-        <Provider>{children}</Provider>
+        {children}
       </body>
     </html>
   );

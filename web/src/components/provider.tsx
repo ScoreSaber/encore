@@ -1,13 +1,13 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { lazy, type ReactNode } from "react";
 import { RootProvider } from "fumadocs-ui/provider/next";
 
-import SearchDialog from "@/components/search";
+const SearchDialog = lazy(() => import("@/components/search"));
 
 export function Provider({ children }: { children: ReactNode }) {
   return (
-    <RootProvider search={{ SearchDialog }} theme={{ enabled: false }}>
+    <RootProvider search={{ SearchDialog, preload: false }} theme={{ enabled: false }}>
       {children}
     </RootProvider>
   );

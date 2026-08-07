@@ -20,6 +20,7 @@
       "build:watchdog": "bun run scripts/build-watchdog.ts",
       "build:all": "turbo run build",
       "build:web": "turbo run build --filter=@encore/web",
+      "deploy:web": "bun run build:web && bun run --cwd web pages:deploy",
       "start": "electron-vite preview",
       "prestart": "install-electron",
       "typecheck": "tsc --noEmit",
