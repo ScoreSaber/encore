@@ -101,15 +101,12 @@ export function useInstallMods(request: TargetModRequest) {
       [installedIds, selectionKey]
    );
 
-   const openLink = useCallback(
-      (url: string) => {
-         void modsApi
-            .openLink({ url })
-            .then((result) => setLinkBlocked(result.status === 'blocked'))
-            .catch(() => setLinkBlocked(true));
-      },
-      [modsApi]
-   );
+   const openLink = useCallback((url: string) => {
+      void window.encore.app.openLink({ url }).then(
+         (result) => setLinkBlocked(result.status === 'blocked'),
+         () => setLinkBlocked(true)
+      );
+   }, []);
 
    const previewInstall = useCallback(
       async (modIds: string[]) => {

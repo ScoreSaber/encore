@@ -2,8 +2,8 @@ import { defineDomainApi, targetProcedure, type TargetCall } from '@/lib/api';
 import {
    mapCollectionRequestSchema,
    mapCollectionSnapshotSchema,
-   mapCoverResultSchema,
-   mapDetailRequestSchema,
+   mapCoversRequestSchema,
+   mapCoversResultSchema,
    mapDeletePreviewSchema,
    mapDownloadRequestSchema,
    mapSearchRequestSchema,
@@ -25,10 +25,10 @@ export const mapsApi = defineDomainApi(
          input: mapCollectionRequestSchema,
          output: mapCollectionSnapshotSchema
       }),
-      getCover: targetProcedure({
+      getCovers: targetProcedure({
          capability: 'manage-maps',
-         input: mapDetailRequestSchema,
-         output: mapCoverResultSchema
+         input: mapCoversRequestSchema,
+         output: mapCoversResultSchema
       }),
       previewDelete: targetProcedure({
          capability: 'manage-maps',
@@ -55,7 +55,7 @@ export const mapsApi = defineDomainApi(
 );
 
 export type TargetMapCollectionRequest = TargetCall<typeof mapsApi.procedures.list>;
-export type TargetMapDetailRequest = TargetCall<typeof mapsApi.procedures.getCover>;
+export type TargetMapCoversRequest = TargetCall<typeof mapsApi.procedures.getCovers>;
 export type TargetMapSelectionRequest = TargetCall<typeof mapsApi.procedures.previewDelete>;
 export type TargetMapDownloadRequest = TargetCall<typeof mapsApi.procedures.startDownload>;
 export type TargetMapSearchRequest = TargetCall<typeof mapsApi.procedures.search>;

@@ -2,10 +2,11 @@ import { shell, type IpcMainInvokeEvent } from 'electron';
 
 import { showOpenDialog, showSaveDialog } from '@/app/ipc/dialogs';
 import { broadcastIpcEvent, defineIpcHandlers } from '@/app/ipc/main';
-import type { TargetMapCollectionRequest, TargetMapDetailRequest, TargetMapSelectionRequest } from '@/modules/maps/api';
+import type { TargetMapCollectionRequest, TargetMapSelectionRequest } from '@/modules/maps/api';
 import {
    mapLinkSchemes,
    parseMapLink,
+   type MapDetailRequest,
    type MapExportChoice,
    type MapImportChoice,
    type MapLinkEvent,
@@ -16,7 +17,7 @@ import {
 import { mapsIpc } from '@/modules/maps/ipc';
 import type { MapService } from '@/modules/maps/main/map-service';
 import { canUnregisterProtocol, isProtocolRegistered, onDeepLink, setProtocolRegistered } from '@/modules/shortcuts/main/deep-link';
-import { localTargetId } from '@/modules/targets/contract';
+import { localTargetId, type TargetRequest } from '@/modules/targets/contract';
 import { unsupportedTarget } from '@/modules/targets/main/target-errors';
 
 export function createMapsIpcModule(service: MapService) {
@@ -26,6 +27,7 @@ export function createMapsIpcModule(service: MapService) {
 
    return defineIpcHandlers(mapsIpc, {
       getMapLinkState: () => readLinkState(),
+      getMetadata: (_event, request) => service.getMetadata(request),
       openMapFolder: (_event, request) => openMapFolder(service, request),
       chooseMapImport,
       importMaps: (_event, request) =>
@@ -37,7 +39,7 @@ export function createMapsIpcModule(service: MapService) {
    });
 }
 
-async function openMapFolder(service: MapService, request: TargetMapDetailRequest): Promise<MapOpenFolderResult> {
+async function openMapFolder(service: MapService, request: TargetRequest<MapDetailRequest>): Promise<MapOpenFolderResult> {
    if (request.targetId !== localTargetId) return { status: 'unsupported' };
 
    const mapPath = await service.getMapPath(request);

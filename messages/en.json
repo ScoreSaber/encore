@@ -261,15 +261,40 @@
       "loadError": "The map library is unavailable right now",
       "scanning": "Reading maps {scanned} of {total}",
       "selectAll": "Select every map",
+      "selectCount": "{count, plural, one {Select # map} other {Select # maps}}",
       "noMatches": "No maps match that search",
       "deleteSelected": "{count, plural, =0 {Delete} one {Delete # map} other {Delete # maps}}",
       "duplicate": "Duplicate",
       "unreadable": "Unreadable",
-      "columns": {
-         "title": "Map",
+      "sort": {
+         "label": "Sort maps",
+         "title": "Title",
          "mapper": "Mapper",
          "size": "Size",
-         "date": "Date"
+         "date": "Modified",
+         "bpm": "BPM",
+         "duration": "Duration",
+         "ascending": "Ascending",
+         "descending": "Descending"
+      },
+      "detail": {
+         "empty": {
+            "title": "Choose a map",
+            "description": "Map details, cover art and online listings appear here"
+         },
+         "unknownArtist": "Unknown artist",
+         "unknownMapper": "Unknown mapper",
+         "byArtist": "by {artist}",
+         "mappedBy": "Mapped by {mappers}",
+         "actions": "Map actions",
+         "delete": "Delete map",
+         "linkBlocked": "Encore could not open that link",
+         "beatSaver": {
+            "open": "BeatSaver"
+         },
+         "scoreSaber": {
+            "open": "ScoreSaber"
+         }
       },
       "issues": {
          "alreadyInstalled": "This map is already in the install",

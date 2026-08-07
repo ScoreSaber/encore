@@ -37,7 +37,7 @@ export function SupportLogsCard({ support, showInstallLogs = true }: { support: 
             <div className="flex flex-col gap-4 text-sm">
                {support.loadStatus === 'error' ? <ErrorPanel message={t('loadError')} /> : null}
 
-               {support.loadStatus === 'loading' ? <LoadingPanel rows={2} /> : null}
+               {support.loadStatus === 'loading' ? <LoadingPanel /> : null}
 
                {support.loadStatus === 'ready'
                   ? groups.map((group) => <LogGroup key={group.source} group={group} onSelect={support.selectLog} />)

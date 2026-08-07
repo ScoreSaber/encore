@@ -1,19 +1,17 @@
 import { Result } from 'better-result';
-import { shell, type IpcMainInvokeEvent } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 
 import { showOpenDialog } from '@/app/ipc/dialogs';
 import { defineIpcHandlers } from '@/app/ipc/main';
 import type { ApiModule } from '@/lib/api';
 import { hashFile } from '@/lib/content/content-hash';
 import { readPathInfo } from '@/lib/filesystem/path';
-import { openHttpsUrl } from '@/lib/security/external-url';
 import { modsApi, type TargetModRequest } from '@/modules/mods/api';
 import {
    invalidModAction,
    type ModImportChoice,
    type ModImportPreview,
    type ModImportRequest,
-   type ModLinkResult,
    type ModOperationResult
 } from '@/modules/mods/contract';
 import { modsIpc } from '@/modules/mods/ipc';
@@ -43,7 +41,6 @@ export function createModsIpcModule(service: ModService, repositories: ModReposi
          request.targetId === localTargetId
             ? service.importMod({ installId: request.installId, sourcePath: request.sourcePath })
             : importRemoteMod(request, remoteImports),
-      openLink: (_event, request) => openModLink(request.url),
       takePendingRepositoryLink: () => takePendingRepositoryLink(),
       refreshRepositories: () => repositories.refresh(),
       previewRepository: (_event, request) => repositories.preview(request),
@@ -52,14 +49,6 @@ export function createModsIpcModule(service: ModService, repositories: ModReposi
       setModSourceResolution: (_event, request) => repositories.setSourceResolution(request),
       removeRepository: (_event, request) => repositories.remove(request)
    });
-}
-
-async function openModLink(url: string): Promise<ModLinkResult> {
-   const decision = await openHttpsUrl(url, async (allowed) => {
-      await shell.openExternal(allowed);
-   });
-
-   return decision.allowed ? { status: 'opened' } : { status: 'blocked', reason: decision.reason };
 }
 
 async function chooseImportSource(

@@ -483,11 +483,6 @@ export type ModLinkRequest = {
    url: string;
 };
 
-export type ModLinkResult = {
-   status: 'opened' | 'blocked';
-   reason?: string;
-};
-
 export type ModFundingResult = { status: 'available'; url: string } | { status: 'unavailable' };
 
 export type ModImportChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; preview: ModImportPreview };

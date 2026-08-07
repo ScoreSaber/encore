@@ -87,7 +87,7 @@ function SharedRoute() {
             />
          </div>
 
-         {overviewStatus === 'loading' ? <LoadingPanel rows={2} /> : null}
+         {overviewStatus === 'loading' ? <LoadingPanel /> : null}
          {overviewStatus === 'error' ? <ErrorPanel message={shared('loadError')} onRetry={() => void overviewQuery.refetch()} /> : null}
          {unsupported ? <EmptyPanel description={shared('unsupportedTarget')} /> : null}
 

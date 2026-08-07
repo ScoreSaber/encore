@@ -20,19 +20,22 @@ import {
    createEmptyMapCollectionSnapshot,
    invalidMapAction,
    localMapSummarySchema,
+   maxMapCoversPerRequest,
    mapCollectionSnapshotSchema,
    type BeatSaverMapSummary,
    type LocalMapSummary,
    type MapActionIssue,
    type MapCollectionRequest,
    type MapCollectionSnapshot,
-   type MapCoverResult,
+   type MapCoversRequest,
    type MapDeletePreview,
    type MapDetailRequest,
    type MapDownloadRequest,
    type MapExportRequest,
    type MapHash,
    type MapImportRequest,
+   type MapMetadataRequest,
+   type MapMetadataResult,
    type MapOperationResult,
    type MapProblem,
    type MapSearchRequest,
@@ -44,6 +47,7 @@ import { createMapArchiveValidator, exportMapsToZip, readStagedMap } from '@/mod
 import { customLevelsPath } from '@/modules/maps/main/map-paths';
 import { createMapProblem } from '@/modules/maps/main/map-problem';
 import { scanCustomLevels, withMapDuplicateFlags, type MapScanCacheEntry } from '@/modules/maps/main/map-scanner';
+import { createScoreSaberCatalog, type ScoreSaberCatalog } from '@/modules/maps/main/scoresaber/scoresaber-catalog';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 import { createBytesProgress, createInstallProgress } from '@/modules/operations/main/progress';
 
@@ -79,6 +83,7 @@ const coverMimeTypes: Record<string, string> = {
 };
 
 const maxCoverBytes = 4 * 1024 * 1024;
+const maxCoverResponseCharacters = 6 * 1024 * 1024;
 const mapScanCacheEntrySchema = z.object({
    fingerprint: z.string(),
    map: localMapSummarySchema
@@ -91,6 +96,7 @@ type MapServiceOptions = {
    ingestion?: ContentIngestionService;
    staging?: ContentStaging;
    catalog?: BeatSaverCatalog;
+   scoreSaber?: ScoreSaberCatalog;
 };
 
 type MapScanState = ContentScanState<MapCollectionSnapshot, MapScanCacheEntry, null>;
@@ -141,6 +147,7 @@ export function createMapService(options: MapServiceOptions) {
          staging: options.staging
       });
    const catalog = options.catalog ?? createBeatSaverCatalog();
+   const scoreSaber = options.scoreSaber ?? createScoreSaberCatalog();
    const events = createContentEvents<MapCollectionSnapshot>();
    const invalid = (installId: InstallId, issue: MapActionIssue, detail?: string) => invalidMapAction({ installId }, issue, detail);
    const failure = createContentFailure<MapActionIssue>('maps', actionIssueMessages);
@@ -215,25 +222,60 @@ export function createMapService(options: MapServiceOptions) {
       return state.snapshot;
    }
 
-   async function getCover(request: MapDetailRequest): Promise<MapCoverResult> {
-      const located = await locateMap(request.installId, request.mapId);
-      if (!located) return { status: 'unavailable' };
+   async function getCovers(request: MapCoversRequest) {
+      const snapshot = await list({ installId: request.installId });
+      const mapsPath = snapshot.mapsPath;
+      if (!mapsPath) return { covers: [], deferredMapIds: [] };
 
-      if (!located.map.coverFileName || !isSafeFileName(located.map.coverFileName)) return { status: 'unavailable' };
+      const maps = new Map(snapshot.maps.map((map) => [map.id, map]));
+      const read = await scanInBatches(request.mapIds, { batchSize: maxMapCoversPerRequest }, async (mapId) => {
+         const map = maps.get(mapId);
+         if (!map || !(await isManagedPath(mapsPath, map.path))) return null;
 
-      const coverPath = join(located.map.path, located.map.coverFileName);
+         const dataUrl = await readCover(map);
+         return dataUrl ? { mapId, dataUrl } : null;
+      });
+      const covers = [];
+      const deferredMapIds = [];
+      let responseCharacters = 0;
+
+      for (const cover of read) {
+         if (!cover) continue;
+         if (responseCharacters + cover.dataUrl.length > maxCoverResponseCharacters) {
+            deferredMapIds.push(cover.mapId);
+            continue;
+         }
+
+         covers.push(cover);
+         responseCharacters += cover.dataUrl.length;
+      }
+
+      return { covers, deferredMapIds };
+   }
+
+   async function readCover(map: LocalMapSummary) {
+      if (!map.coverFileName || !isSafeFileName(map.coverFileName)) return null;
+
+      const coverPath = join(map.path, map.coverFileName);
       const mimeType = coverMimeTypes[extname(coverPath).toLowerCase()];
-      if (!mimeType) return { status: 'unavailable' };
+      if (!mimeType) return null;
 
       const bytes = await Result.tryPromise({
          try: () => readFile(coverPath),
          catch: (cause) => cause
       });
-      if (Result.isError(bytes) || bytes.value.byteLength > maxCoverBytes) return { status: 'unavailable' };
+      if (Result.isError(bytes) || bytes.value.byteLength > maxCoverBytes) return null;
+
+      return `data:${mimeType};base64,${bytes.value.toString('base64')}`;
+   }
+
+   async function getMetadata({ hash }: MapMetadataRequest): Promise<MapMetadataResult> {
+      const [beatSaverResult, scoreSaberResult] = await Promise.all([catalog.getByHashes([hash]), scoreSaber.getByHash(hash)]);
+      const beatSaverRecord = Result.isOk(beatSaverResult) ? beatSaverResult.value.get(hash) : null;
 
       return {
-         status: 'ok',
-         dataUrl: `data:${mimeType};base64,${bytes.value.toString('base64')}`
+         beatSaver: beatSaverRecord?.listing ?? null,
+         scoreSaberUrl: Result.isOk(scoreSaberResult) ? scoreSaberResult.value : null
       };
    }
 
@@ -372,9 +414,9 @@ export function createMapService(options: MapServiceOptions) {
 
    async function findMapsByHash(installId: InstallId, hashes: Iterable<MapHash>) {
       const snapshot = await list({ installId });
-      const wanted = new Set([...hashes].map((hash) => hash.toLowerCase()));
+      const wanted = new Set(hashes);
 
-      return snapshot.maps.filter((map) => map.hash && wanted.has(map.hash.toLowerCase()));
+      return snapshot.maps.filter((map) => map.hash && wanted.has(map.hash));
    }
 
    async function search(request: MapSearchRequest): Promise<MapSearchResult> {
@@ -459,7 +501,7 @@ export function createMapService(options: MapServiceOptions) {
       if (!mapsPath) return failure(input.installId, 'install-not-found');
 
       const installed = await installedHashes(input.installId);
-      const wanted = input.hashes.filter((hash) => !installed.has(hash.toLowerCase()));
+      const wanted = input.hashes.filter((hash) => !installed.has(hash));
       if (wanted.length === 0) return failure(input.installId, 'already-installed');
 
       const records = await catalog.getByHashes(wanted);
@@ -760,7 +802,8 @@ export function createMapService(options: MapServiceOptions) {
    return {
       list,
       rescan,
-      getCover,
+      getCovers,
+      getMetadata,
       getMapPath,
       previewDelete,
       startDelete,

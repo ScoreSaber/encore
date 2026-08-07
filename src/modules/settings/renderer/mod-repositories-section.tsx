@@ -311,7 +311,7 @@ export function ModRepositoriesFields({
                </div>
 
                <div className="flex w-full flex-col gap-2">
-                  {!snapshot && !loadFailed ? <LoadingPanel rows={1} /> : null}
+                  {!snapshot && !loadFailed ? <LoadingPanel /> : null}
                   {loadFailed ? (
                      <ErrorPanel message={t('unavailable')} onRetry={() => refreshRepositories.mutate(undefined, { onSuccess: onChanged })} />
                   ) : null}
@@ -367,7 +367,7 @@ function RepositoryRow({
                      size="icon-xs"
                      className="shrink-0"
                      aria-label={t('list.open', { name: repository.name })}
-                     onClick={() => void window.encore.mods.openLink({ url: linkUrl })}
+                     onClick={() => void window.encore.app.openLink({ url: linkUrl })}
                   >
                      <ExternalLink />
                   </Button>

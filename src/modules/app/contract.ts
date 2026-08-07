@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export type EncoreReleaseInfo = {
    channel: 'alpha';
    version: string;
@@ -28,3 +30,8 @@ export type AppInfo = {
    chrome: string;
    node: string;
 };
+
+export const externalLinkRequestSchema = z.object({ url: z.string().min(1) });
+
+export type ExternalLinkRequest = z.infer<typeof externalLinkRequestSchema>;
+export type ExternalLinkResult = { status: 'opened' | 'blocked' };

@@ -11,6 +11,9 @@ import {
    type MapLinkEvent,
    type MapLinkProtocolResult,
    type MapLinkProtocolState,
+   mapMetadataRequestSchema,
+   type MapMetadataRequest,
+   type MapMetadataResult,
    type MapOpenFolderResult,
    type MapOperationResult,
    type MapSelectionRequest
@@ -40,6 +43,7 @@ const mapLinkRegistrationSchema = z.object({
 
 export const mapsIpc = defineIpcDescriptor({
    getMapLinkState: defineIpcQuery<MapLinkProtocolState>('maps:link-state'),
+   getMetadata: defineIpcQuery<MapMetadataResult, MapMetadataRequest>('maps:metadata', mapMetadataRequestSchema),
    openMapFolder: defineIpcCommand<MapOpenFolderResult, TargetRequest<MapDetailRequest>>('maps:open-folder', mapDetailRequestSchema),
    chooseMapImport: defineIpcCommand<MapImportChoice, TargetRequest<MapCollectionRequest>>('maps:choose-import', targetInstallRequestSchema),
    importMaps: defineIpcCommand<MapOperationResult, TargetRequest<MapImportRequest>>('maps:import', mapImportRequestSchema),

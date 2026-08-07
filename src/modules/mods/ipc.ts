@@ -7,7 +7,6 @@ import {
    type ModImportChoice,
    type ModFundingResult,
    type ModLinkRequest,
-   type ModLinkResult,
    type ModOperationResult
 } from '@/modules/mods/contract';
 import type {
@@ -48,7 +47,6 @@ const modRepositoryToggleRequestSchema = modRepositoryIdRequestSchema.extend({
 export const modsIpc = defineIpcDescriptor({
    chooseImportSource: defineIpcCommand<ModImportChoice, TargetModRequest>('mods:choose-import-source', targetInstallRequestSchema),
    import: defineIpcCommand<ModOperationResult, TargetRequest<ModImportRequest>>('mods:import', modImportRequestSchema),
-   openLink: defineIpcCommand<ModLinkResult, ModLinkRequest>('mods:open-link', modUrlRequestSchema),
    getFunding: defineIpcQuery<ModFundingResult, ModLinkRequest>('mods:funding', modUrlRequestSchema),
 
    getRepositories: defineIpcQuery<ModRepositoriesSnapshot>('mods:repositories'),

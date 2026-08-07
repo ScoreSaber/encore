@@ -23,8 +23,8 @@ export const streamIdleTimeoutMs = 45_000;
 
 const minReconnectDelayMs = 1_000;
 const maxReconnectDelayMs = 30_000;
-const maxResponseBytes = 4 * 1_024 * 1_024;
-const maxStreamBufferCharacters = maxResponseBytes;
+const maxResponseBytes = 8 * 1_024 * 1_024;
+const maxStreamBufferCharacters = 4 * 1_024 * 1_024;
 const uploadTimeoutMs = 5 * 60 * 1_000;
 
 export type ReceiverEndpoint = {

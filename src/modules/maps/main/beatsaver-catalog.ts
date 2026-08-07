@@ -2,14 +2,13 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { fetchJsonResource, type JsonDocumentFetch, type JsonDocumentProblem } from '@/lib/http/json';
-import type { BeatSaverMapSummary, MapHash, MapSearchIssue } from '@/modules/maps/contract';
+import { mapHashSchema, type BeatSaverListing, type BeatSaverMapSummary, type MapHash, type MapSearchIssue } from '@/modules/maps/contract';
 
 const beatSaverApiOrigin = 'https://api.beatsaver.com';
 const fetchTimeoutMs = 15_000;
 const searchPageSize = 20;
 
 const hashLookupChunkSize = 50;
-const mapHashSchema = z.hash('sha1');
 const positiveNumberSchema = z.number().transform((value) => (value > 0 ? value : undefined));
 
 export const beatSaverDownloadHosts = ['cdn.beatsaver.com', 'r2cdn.beatsaver.com', 'na.cdn.beatsaver.com', 'eu.cdn.beatsaver.com'];
@@ -17,6 +16,7 @@ export const beatSaverDownloadHosts = ['cdn.beatsaver.com', 'r2cdn.beatsaver.com
 export type BeatSaverMapRecord = {
    summary: BeatSaverMapSummary;
    downloadUrl: string;
+   listing: BeatSaverListing;
 };
 
 export type BeatSaverProblem = {
@@ -27,7 +27,7 @@ export type BeatSaverProblem = {
 export type BeatSaverCatalog = ReturnType<typeof createBeatSaverCatalog>;
 
 const versionSchema = z.object({
-   hash: z.string().trim().pipe(mapHashSchema),
+   hash: mapHashSchema,
    downloadURL: z.string().trim().min(1),
    coverURL: z.string().trim().min(1).optional(),
    createdAt: z.string().trim().min(1).optional(),
@@ -37,6 +37,7 @@ const versionSchema = z.object({
 const documentSchema = z.object({
    id: z.string().trim().min(1),
    name: z.string().optional(),
+   description: z.string().optional(),
    uploader: z.object({ name: z.string().optional() }).optional(),
    metadata: z
       .object({
@@ -50,7 +51,7 @@ const documentSchema = z.object({
       .optional(),
    stats: z.object({ upvotes: z.number().optional(), downvotes: z.number().optional() }).optional(),
    ranked: z.boolean().optional(),
-   curated: z.string().optional(),
+   curated: z.union([z.boolean(), z.string()]).nullable().optional(),
    automapper: z.boolean().optional(),
    uploaded: z.string().optional(),
    versions: z.array(versionSchema.nullable().catch(null)).optional()
@@ -103,7 +104,14 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
    }
 
    async function getByHashes(hashes: readonly string[], signal?: AbortSignal) {
-      const wanted = [...new Set(hashes.map((hash) => hash.trim().toLowerCase()))].filter((hash) => mapHashSchema.safeParse(hash).success);
+      const wanted = [
+         ...new Set(
+            hashes.flatMap((hash) => {
+               const parsed = mapHashSchema.safeParse(hash);
+               return parsed.success ? [parsed.data] : [];
+            })
+         )
+      ];
       const records = new Map<MapHash, BeatSaverMapRecord>();
 
       for (let index = 0; index < wanted.length; index += hashLookupChunkSize) {
@@ -112,8 +120,10 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
          if (Result.isError(fetched)) return Result.err<Map<MapHash, BeatSaverMapRecord>, BeatSaverProblem>(fetched.error);
 
          for (const document of fetched.value) {
-            const record = toRecord(document);
-            if (record) records.set(record.summary.hash, record);
+            for (const hash of chunk) {
+               const record = toRecord(document, hash);
+               if (record) records.set(record.summary.hash, record);
+            }
          }
       }
 
@@ -126,11 +136,14 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
 function toBeatSaverProblem(problem: JsonDocumentProblem): BeatSaverProblem {
    const failed = problem.code === 'json.unreachable' || problem.code === 'json.fetch-failed' || problem.code === 'json.not-found';
 
-   return { issue: failed ? 'fetch-failed' : 'invalid-response', ...(problem.detail ? { detail: problem.detail } : {}) };
+   return {
+      issue: failed ? 'fetch-failed' : 'invalid-response',
+      ...(problem.detail ? { detail: problem.detail } : {})
+   };
 }
 
-function toRecord(document: BeatSaverDocument): BeatSaverMapRecord | null {
-   const version = document.versions?.find((entry) => entry !== null);
+function toRecord(document: BeatSaverDocument, hash?: string): BeatSaverMapRecord | null {
+   const version = document.versions?.find((entry) => entry !== null && (!hash || entry.hash === hash));
    if (!version) return null;
 
    const metadata = document.metadata;
@@ -140,7 +153,7 @@ function toRecord(document: BeatSaverDocument): BeatSaverMapRecord | null {
 
    const summary: BeatSaverMapSummary = {
       key: document.id,
-      hash: version.hash.toLowerCase(),
+      hash: version.hash,
       title: metadata?.songName?.trim() || document.name?.trim() || document.id,
       subTitle: metadata?.songSubName?.trim() ?? '',
       artist: metadata?.songAuthorName?.trim() ?? '',
@@ -158,5 +171,12 @@ function toRecord(document: BeatSaverDocument): BeatSaverMapRecord | null {
       installed: false
    };
 
-   return { summary, downloadUrl: version.downloadURL };
+   return {
+      summary,
+      downloadUrl: version.downloadURL,
+      listing: {
+         url: `https://beatsaver.com/maps/${encodeURIComponent(document.id)}`,
+         description: document.description?.trim() ?? ''
+      }
+   };
 }

@@ -1,8 +1,7 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { RefreshButton } from '@/components/refresh-button';
-import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/components/utils';
 
 export function EmptyPanel({
@@ -69,12 +68,16 @@ export function WarningLine({ className, children }: { className?: string; child
    );
 }
 
-export function LoadingPanel({ rows = 3, className }: { rows?: number; className?: string }) {
+export function LoadingPanel({ className }: { className?: string }) {
+   const common = useTranslations('common');
+
    return (
-      <div className={cn('animate-in fade-in-0 fill-mode-backwards flex flex-col gap-2 delay-150 duration-150', className)}>
-         {Array.from({ length: rows }, (_, index) => (
-            <Skeleton key={index} className="h-12 w-full rounded-md" />
-         ))}
+      <div
+         role="status"
+         aria-label={common('loading')}
+         className={cn('animate-in fade-in-0 flex min-h-32 flex-1 items-center justify-center duration-150', className)}
+      >
+         <Loader2 className="text-muted-foreground size-6 animate-spin" />
       </div>
    );
 }

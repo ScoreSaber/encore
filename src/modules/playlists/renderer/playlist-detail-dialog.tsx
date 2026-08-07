@@ -56,7 +56,7 @@ function OpenPlaylistDetailDialog({
             </DialogHeader>
 
             <div className="flex max-h-96 min-h-0 flex-col gap-2">
-               {status === 'loading' ? <LoadingPanel rows={2} /> : null}
+               {status === 'loading' ? <LoadingPanel /> : null}
                {status === 'error' ? <ErrorPanel message={t('loadError')} onRetry={() => void detailQuery.refetch()} /> : null}
 
                {detail ? (

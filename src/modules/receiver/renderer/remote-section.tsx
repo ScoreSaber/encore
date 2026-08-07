@@ -292,7 +292,7 @@ function ControlledComputersSection({
             <h3 className="font-medium">{t('remote.remotes.title')}</h3>
          </div>
          <div className="ml-12 pt-3 pr-1">
-            {status === 'loading' ? <LoadingPanel rows={1} className="w-full" /> : null}
+            {status === 'loading' ? <LoadingPanel className="w-full" /> : null}
 
             {status === 'error' ? <ErrorPanel className="w-full" message={t('remote.remotes.loadError')} onRetry={onReloadTargets} /> : null}
 

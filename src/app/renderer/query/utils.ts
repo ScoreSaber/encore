@@ -3,7 +3,7 @@ import { CancelledError, type QueryClient, type QueryKey } from '@tanstack/react
 // keep inactive snapshots warm for quick tab changes without retaining every visited install
 export const snapshotQueryGcTime = 2 * 60 * 1000;
 
-export function ipcQueryKey(definition: { channel: string }, ...scope: readonly (string | number)[]) {
+export function ipcQueryKey(definition: { channel: string }, ...scope: readonly (string | number | null)[]) {
    return [definition.channel, ...scope];
 }
 

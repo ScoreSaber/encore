@@ -4,9 +4,16 @@ import type { IpcResult } from '@/app/ipc/core';
 import { installIdSchema } from '@/modules/installs/contract';
 import type { OperationSnapshot } from '@/modules/operations/contract';
 
-export type MapHash = string;
+export const mapHashSchema = z
+   .string()
+   .trim()
+   .pipe(z.hash('sha1'))
+   .transform((hash) => hash.toLowerCase());
+export const mapIdSchema = z.string().min(1);
+export const maxMapCoversPerRequest = 8;
 
-export type MapId = string;
+export type MapHash = z.infer<typeof mapHashSchema>;
+export type MapId = z.infer<typeof mapIdSchema>;
 
 export const mapProblemCodeSchema = z.enum([
    'maps.export.cancelled',
@@ -39,10 +46,10 @@ export const mapDifficultySummarySchema = z.object({
 });
 
 export const localMapSummarySchema = z.object({
-   id: z.string(),
+   id: mapIdSchema,
    folderName: z.string(),
    path: z.string(),
-   hash: z.string().nullable(),
+   hash: mapHashSchema.nullable(),
    title: z.string(),
    subTitle: z.string(),
    artist: z.string(),
@@ -75,23 +82,40 @@ export const mapCollectionRequestSchema = z.object({
    installId: installIdSchema
 });
 export const mapSelectionRequestSchema = mapCollectionRequestSchema.extend({
-   mapIds: z.array(z.string().min(1))
+   mapIds: z.array(mapIdSchema)
 });
 export const mapDetailRequestSchema = mapCollectionRequestSchema.extend({
-   mapId: z.string().min(1)
+   mapId: mapIdSchema
+});
+export const mapCoversRequestSchema = mapCollectionRequestSchema.extend({
+   mapIds: z.array(mapIdSchema).min(1).max(maxMapCoversPerRequest)
 });
 
 export type MapCollectionRequest = z.infer<typeof mapCollectionRequestSchema>;
 export type MapSelectionRequest = z.infer<typeof mapSelectionRequestSchema>;
 export type MapDetailRequest = z.infer<typeof mapDetailRequestSchema>;
+export type MapCoversRequest = z.infer<typeof mapCoversRequestSchema>;
 
-export const mapCoverResultSchema = z.discriminatedUnion('status', [
-   z.object({ status: z.literal('ok'), dataUrl: z.string() }),
-   z.object({ status: z.literal('unavailable') }),
-   z.object({ status: z.literal('unsupported') })
-]);
+export const mapCoverSchema = z.object({ mapId: mapIdSchema, dataUrl: z.string() });
+export const mapCoversResultSchema = z.object({
+   covers: z.array(mapCoverSchema),
+   deferredMapIds: z.array(mapIdSchema)
+});
 
-export type MapCoverResult = z.infer<typeof mapCoverResultSchema>;
+export const beatSaverListingSchema = z.object({
+   url: z.string(),
+   description: z.string()
+});
+
+export const mapMetadataResultSchema = z.object({
+   beatSaver: beatSaverListingSchema.nullable(),
+   scoreSaberUrl: z.string().nullable()
+});
+export const mapMetadataRequestSchema = z.object({ hash: mapHashSchema });
+
+export type BeatSaverListing = z.infer<typeof beatSaverListingSchema>;
+export type MapMetadataResult = z.infer<typeof mapMetadataResultSchema>;
+export type MapMetadataRequest = z.infer<typeof mapMetadataRequestSchema>;
 
 export type MapOpenFolderResult = { status: 'opened' } | { status: 'unsupported' } | { status: 'failed'; message: string };
 
@@ -147,7 +171,7 @@ export type MapSearchIssue = z.infer<typeof mapSearchIssueSchema>;
 
 export const beatSaverMapSummarySchema = z.object({
    key: z.string(),
-   hash: z.string(),
+   hash: mapHashSchema,
    title: z.string(),
    subTitle: z.string(),
    artist: z.string(),

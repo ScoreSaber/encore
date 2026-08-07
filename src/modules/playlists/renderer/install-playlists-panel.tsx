@@ -143,6 +143,7 @@ export function InstallPlaylistsPanel({ request, playlists }: { request: TargetP
       }
    ];
 
+   if (status === 'loading' && snapshot.playlists.length === 0) return <LoadingPanel />;
    if (snapshot.status === 'unsupported') return <EmptyPanel description={t('unsupportedTarget')} />;
 
    return (
@@ -199,8 +200,6 @@ export function InstallPlaylistsPanel({ request, playlists }: { request: TargetP
          {folderResult ? <p className="text-muted-foreground text-xs">{common(`openFolder.${folderResult}`)}</p> : null}
 
          {status === 'error' ? <ErrorPanel message={t('loadError')} onRetry={playlists.rescan} /> : null}
-
-         {busy && snapshot.playlists.length === 0 ? <LoadingPanel /> : null}
 
          {snapshot.status === 'missing' ? <EmptyPanel description={t('missing')} /> : null}
 

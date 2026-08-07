@@ -144,6 +144,7 @@ export function InstallModelsPanel({ request, models }: { request: TargetModelCo
       }
    ];
 
+   if (status === 'loading' && models.models.length === 0) return <LoadingPanel />;
    if (snapshot.status === 'unsupported') return <EmptyPanel description={t('unsupportedTarget')} />;
 
    return (
@@ -218,8 +219,6 @@ export function InstallModelsPanel({ request, models }: { request: TargetModelCo
          {folderResult ? <p className="text-muted-foreground text-xs">{common(`openFolder.${folderResult}`)}</p> : null}
 
          {status === 'error' ? <ErrorPanel message={t('loadError')} onRetry={models.rescan} /> : null}
-
-         {busy && models.models.length === 0 ? <LoadingPanel /> : null}
 
          {snapshot.status === 'missing' ? <EmptyPanel description={t('missing')} /> : null}
 

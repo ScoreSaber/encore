@@ -4,6 +4,7 @@ import { RefreshButton } from '@/components/refresh-button';
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 
 export function CollectionToolbar({
+   leading,
    filter,
    note,
    rescan,
@@ -11,6 +12,7 @@ export function CollectionToolbar({
    action,
    children
 }: {
+   leading?: React.ReactNode;
    filter: { value: string; label: string; onChange: (value: string) => void };
    note?: string | null;
    rescan: { label: string; busy: boolean; disabled?: boolean; onClick: () => void };
@@ -20,6 +22,8 @@ export function CollectionToolbar({
 }) {
    return (
       <div className="flex shrink-0 flex-wrap items-center gap-2">
+         {leading}
+
          <InputGroup className="h-8 min-w-40 flex-1">
             <InputGroupInput
                value={filter.value}

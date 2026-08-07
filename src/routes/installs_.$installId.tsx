@@ -113,7 +113,7 @@ function InstallDetailRoute() {
    if (!detail) {
       return (
          <PageBody className="gap-5">
-            {status === 'loading' ? <LoadingPanel rows={2} /> : null}
+            {status === 'loading' ? <LoadingPanel /> : null}
 
             {status === 'error' ? <ErrorPanel message={t('detail.loadError')} onRetry={reload} /> : null}
 

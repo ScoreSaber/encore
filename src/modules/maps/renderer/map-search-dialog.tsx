@@ -77,7 +77,7 @@ export function MapSearchDialog({
             </form>
 
             <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
-               {state.status === 'searching' ? <LoadingPanel rows={2} /> : null}
+               {state.status === 'searching' ? <LoadingPanel /> : null}
 
                {state.status === 'failed' ? (
                   <ErrorPanel message={t(`issues.${issueKeys[state.issue]}`)} detail={state.detail} onRetry={search.submit} />

@@ -28,6 +28,48 @@ afterEach(async () => {
 });
 
 describe('map service', () => {
+   test('returns requested map covers without leaking missing entries', async () => {
+      const harness = await createHarness();
+      const install = await harness.firstInstall();
+      const mapPath = join(customLevelsPath(install.path), 'Reality Check');
+      await mkdir(mapPath, { recursive: true });
+      await writeFile(join(mapPath, 'Info.dat'), rawMapInfo('Reality Check', 'cover.png'));
+      await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
+      await writeFile(join(mapPath, 'song.egg'), 'song');
+      await writeFile(join(mapPath, 'cover.png'), 'cover');
+
+      const snapshot = await harness.maps.list({ installId: install.id });
+      const mapId = snapshot.maps[0]!.id;
+
+      expect(await harness.maps.getCovers({ installId: install.id, mapIds: [mapId, 'missing'] })).toEqual({
+         covers: [{ mapId, dataUrl: 'data:image/png;base64,Y292ZXI=' }],
+         deferredMapIds: []
+      });
+   });
+
+   test('defers cover art that would overflow one remote response', async () => {
+      const harness = await createHarness();
+      const install = await harness.firstInstall();
+      const cover = new Uint8Array((5 * 1024 * 1024) / 2);
+
+      for (const title of ['First', 'Second']) {
+         const mapPath = join(customLevelsPath(install.path), title);
+         await mkdir(mapPath, { recursive: true });
+         await writeFile(join(mapPath, 'Info.dat'), rawMapInfo(title, 'cover.png'));
+         await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
+         await writeFile(join(mapPath, 'song.egg'), 'song');
+         await writeFile(join(mapPath, 'cover.png'), cover);
+      }
+
+      const snapshot = await harness.maps.list({ installId: install.id });
+      const mapIds = snapshot.maps.map((map) => map.id);
+      const result = await harness.maps.getCovers({ installId: install.id, mapIds });
+
+      expect(result.covers).toHaveLength(1);
+      expect(result.deferredMapIds).toHaveLength(1);
+      expect(new Set([...result.covers.map((entry) => entry.mapId), ...result.deferredMapIds])).toEqual(new Set(mapIds));
+   });
+
    test('reuses an indexed map folder shared by another install', async () => {
       const harness = await createHarness();
       const first = await harness.firstInstall();
@@ -198,7 +240,11 @@ function catalogRecord(hash: string) {
          coverUrl: null,
          installed: false
       },
-      downloadUrl: 'https://cdn.beatsaver.com/a1b2c3.zip'
+      downloadUrl: 'https://cdn.beatsaver.com/a1b2c3.zip',
+      listing: {
+         url: 'https://beatsaver.com/maps/2a1b',
+         description: ''
+      }
    };
 }
 
@@ -228,7 +274,7 @@ function mapArchiveHash(title: string) {
    return createHash('sha1').update(rawMapInfo(title)).update(difficultyData).digest('hex');
 }
 
-function rawMapInfo(title: string) {
+function rawMapInfo(title: string, coverFileName?: string) {
    return JSON.stringify({
       _version: '2.0.0',
       _songName: title,
@@ -236,6 +282,7 @@ function rawMapInfo(title: string) {
       _levelAuthorName: 'Mapper',
       _beatsPerMinute: 160,
       _songFilename: 'song.egg',
+      ...(coverFileName ? { _coverImageFilename: coverFileName } : {}),
       _difficultyBeatmapSets: [
          { _beatmapCharacteristicName: 'Standard', _difficultyBeatmaps: [{ _difficulty: 'Expert', _beatmapFilename: 'Expert.dat' }] }
       ]
