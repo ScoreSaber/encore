@@ -1,4 +1,4 @@
-import { EyeOff, FolderOpen, FolderSymlink, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { EyeOff, FolderOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
@@ -18,8 +18,7 @@ export function InstallActionsMenu({
    editor,
    actions,
    shortcuts,
-   onOpenFolder,
-   onManageSharedContent
+   onOpenFolder
 }: {
    detail: InstallDetail;
    targetId: TargetId;
@@ -28,10 +27,8 @@ export function InstallActionsMenu({
    actions: InstallActions;
    shortcuts: InstallShortcuts;
    onOpenFolder: () => void;
-   onManageSharedContent: () => void;
 }) {
    const t = useTranslations('installs');
-   const sharing = useTranslations('sharedContent');
    const common = useTranslations('common');
    const busy = actions.state.status !== 'idle' || editor.state.status !== 'closed';
    const local = targetId === localTargetId;
@@ -51,7 +48,6 @@ export function InstallActionsMenu({
                ) : null}
                {local ? <ActionItem icon={FolderOpen} label={common('openFolder.action')} onSelect={onOpenFolder} /> : null}
                <CreateShortcutSubmenu shortcuts={shortcuts} />
-               <ActionItem icon={FolderSymlink} label={sharing('page.title')} onSelect={onManageSharedContent} />
 
                {canManageFiles ? (
                   <>

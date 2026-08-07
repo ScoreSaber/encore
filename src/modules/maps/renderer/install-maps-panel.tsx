@@ -23,18 +23,10 @@ import { MapActionDialog } from '@/modules/maps/renderer/map-action-dialog';
 import { MapSearchDialog } from '@/modules/maps/renderer/map-search-dialog';
 import type { InstallMaps } from '@/modules/maps/renderer/use-install-maps';
 import { useMapActions } from '@/modules/maps/renderer/use-map-actions';
-import { SharedFolderMenuItems, SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
+import { SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
 import { localTargetId } from '@/modules/targets/contract';
 
-export function InstallMapsPanel({
-   request,
-   maps,
-   onManageSharedContent
-}: {
-   request: TargetMapCollectionRequest;
-   maps: InstallMaps;
-   onManageSharedContent: () => void;
-}) {
+export function InstallMapsPanel({ request, maps }: { request: TargetMapCollectionRequest; maps: InstallMaps }) {
    const t = useTranslations('maps');
    const common = useTranslations('common');
    const format = useFormatters();
@@ -54,16 +46,7 @@ export function InstallMapsPanel({
    const visibleIds = visible.map((map) => map.id);
    const selectedVisible = visibleIds.filter((mapId) => selected.has(mapId)).length;
    const scanning = snapshot.status === 'scanning' ? snapshot.progress : null;
-   const note = scanning
-      ? t('scanning', { scanned: scanning.scanned, total: scanning.total })
-      : snapshot.maps.length === 0
-        ? null
-        : visible.length === snapshot.maps.length
-          ? t('count', { count: snapshot.maps.length })
-          : t('countFiltered', {
-               visible: visible.length,
-               total: snapshot.maps.length
-            });
+   const note = scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null;
 
    const openFolder = async (mapId: string) => {
       const opened = await actions.openFolder(mapId).catch(() => null);
@@ -161,28 +144,31 @@ export function InstallMapsPanel({
    return (
       <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
          <CollectionToolbar
-            label={t('title')}
-            filter={snapshot.maps.length > 0 ? { value: query, label: t('filter'), onChange: setQuery } : null}
+            filter={{ value: query, label: common('search'), onChange: setQuery }}
             note={note}
             rescan={{ label: common('rescan'), busy, onClick: maps.rescan }}
             menu={
-               <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                     <Button type="button" variant="outline" size="icon-sm" aria-label={common('more')}>
-                        <MoreHorizontal />
-                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                     {local ? (
+               local ? (
+                  <DropdownMenu>
+                     <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label={common('more')}>
+                           <MoreHorizontal />
+                        </Button>
+                     </DropdownMenuTrigger>
+                     <DropdownMenuContent align="end">
                         <DropdownMenuItem disabled={busy} onSelect={() => void actions.importMaps()}>
                            <Upload />
                            {common('import')}
                         </DropdownMenuItem>
-                     ) : null}
-
-                     <SharedFolderMenuItems separated={local} onManage={onManageSharedContent} />
-                  </DropdownMenuContent>
-               </DropdownMenu>
+                     </DropdownMenuContent>
+                  </DropdownMenu>
+               ) : undefined
+            }
+            action={
+               <Button type="button" variant="outline" size="sm" onClick={() => setSearchOpen(true)}>
+                  <Search data-icon="inline-start" />
+                  {t('findMore')}
+               </Button>
             }
          >
             {selected.size > 0 ? (
@@ -199,11 +185,6 @@ export function InstallMapsPanel({
                   </Button>
                </ButtonGroup>
             ) : null}
-
-            <Button type="button" variant="outline" size="sm" onClick={() => setSearchOpen(true)}>
-               <Search data-icon="inline-start" />
-               {t('find')}
-            </Button>
          </CollectionToolbar>
 
          <SharedFolderNotice shared={shared} />

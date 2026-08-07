@@ -1,8 +1,6 @@
-import { FolderSymlink } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { WarningLine } from '@/components/state/state-panel';
-import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 
 import type { MessageKey } from '@/app/renderer/i18n/keys';
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
@@ -25,22 +23,6 @@ export function useSharedFolder(request: TargetSharedContentRequest, folderId: S
    const folder = folderId ? (sharedContent.snapshot.folders.find((entry) => entry.id === folderId) ?? null) : null;
 
    return { folder, failed: sharedContent.status === 'error' };
-}
-
-// links are managed on the shared content page, so the tabs only point there
-export function SharedFolderMenuItems({ separated, onManage }: { separated?: boolean; onManage: () => void }) {
-   const t = useTranslations('sharedContent.page');
-
-   return (
-      <>
-         {separated ? <DropdownMenuSeparator /> : null}
-
-         <DropdownMenuItem onSelect={onManage}>
-            <FolderSymlink />
-            {t('title')}
-         </DropdownMenuItem>
-      </>
-   );
 }
 
 export function SharedFolderNotice({ shared }: { shared: SharedFolder }) {

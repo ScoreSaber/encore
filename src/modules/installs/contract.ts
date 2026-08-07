@@ -7,7 +7,7 @@ import type { TargetId } from '@/modules/targets/contract';
 
 export const installIdSchema = z.string().min(1);
 
-export type InstallId = string;
+export type InstallId = z.infer<typeof installIdSchema>;
 
 export const installSourceSchema = z.enum(['bsmanager', 'imported', 'library', 'store']);
 export const installStatusSchema = z.enum(['incomplete', 'missing', 'ready']);
@@ -17,14 +17,15 @@ export const installProblemCodeSchema = z.enum(['install.path.unreadable', 'inst
 export const installProblemSchema = z.object({
    code: installProblemCodeSchema,
    message: z.string(),
-   installId: z.string().optional(),
+   installId: installIdSchema.optional(),
    path: z.string().optional(),
    detail: z.string().optional()
 });
 
 export const installSummarySchema = z.object({
-   id: z.string(),
+   id: installIdSchema,
    name: z.string(),
+   pinned: z.boolean(),
    version: z.string().nullable(),
    store: storeKindSchema.nullable(),
    source: installSourceSchema,
@@ -73,13 +74,25 @@ export const defaultInstallColor = '#a1f6d4';
 export const installColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#a855f7', '#ec4899'];
 
 export const installUpdateRequestSchema = z.object({
-   installId: z.string().min(1),
+   installId: installIdSchema,
    name: installNameSchema.optional(),
    color: installColorSchema.nullable().optional()
 });
 
+export const installPinRequestSchema = z.object({
+   installId: installIdSchema,
+   pinned: z.boolean()
+});
+
+export const installReorderRequestSchema = z.object({
+   installIds: z
+      .array(installIdSchema)
+      .min(1)
+      .refine((installIds) => new Set(installIds).size === installIds.length)
+});
+
 export const installActionRequestSchema = z.object({
-   installId: z.string().min(1)
+   installId: installIdSchema
 });
 
 export const installActionIssueSchema = z.enum([
@@ -94,7 +107,7 @@ export const installActionIssueSchema = z.enum([
 
 export const installActionProblemSchema = z.object({
    status: z.literal('invalid'),
-   installId: z.string(),
+   installId: installIdSchema,
    issue: installActionIssueSchema,
    detail: z.string().optional()
 });
@@ -103,7 +116,7 @@ export const installDeletePreviewSchema = z.discriminatedUnion('status', [
    installActionProblemSchema,
    z.object({
       status: z.literal('ok'),
-      installId: z.string(),
+      installId: installIdSchema,
       name: z.string(),
       path: z.string(),
       source: installSourceSchema,
@@ -116,7 +129,7 @@ export const installForgetPreviewSchema = z.discriminatedUnion('status', [
    installActionProblemSchema,
    z.object({
       status: z.literal('ok'),
-      installId: z.string(),
+      installId: installIdSchema,
       name: z.string(),
       path: z.string(),
       source: installSourceSchema
@@ -129,7 +142,7 @@ export const installDetailResultSchema = z.union([
 ]);
 
 export const installForgetOutcomeSchema = z.object({
-   installId: z.string(),
+   installId: installIdSchema,
    name: z.string(),
    path: z.string()
 });
@@ -141,6 +154,11 @@ export const installForgetResultSchema = z.union([
 
 export const installOperationResultSchema = operationResultSchema;
 
+export const installRegistryResultSchema = z.union([
+   z.object({ ok: z.literal(true), value: installRegistrySnapshotSchema }),
+   z.object({ ok: z.literal(false), error: operationErrorSchema })
+]);
+
 export type InstallActionIssue = z.infer<typeof installActionIssueSchema>;
 export type InstallActionProblem = z.infer<typeof installActionProblemSchema>;
 export type InstallDeletePreview = z.infer<typeof installDeletePreviewSchema>;
@@ -148,6 +166,7 @@ export type InstallForgetPreview = z.infer<typeof installForgetPreviewSchema>;
 export type InstallForgetOutcome = z.infer<typeof installForgetOutcomeSchema>;
 export type InstallForgetResult = IpcResult<InstallForgetOutcome>;
 export type InstallUpdateResult = IpcResult<InstallDetail>;
+export type InstallRegistryResult = IpcResult<InstallRegistrySnapshot>;
 export type InstallOperationResult = IpcResult<OperationSnapshot>;
 
 export type InstallUpdateRequest = InstallActionRequest & {

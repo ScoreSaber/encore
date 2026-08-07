@@ -23,6 +23,26 @@ afterEach(async () => {
 });
 
 describe('install management', () => {
+   test('pins and reorders installs across rescans', async () => {
+      const harness = await createHarness();
+      const first = await harness.register(await createInstallFolder(harness.dataPath, 'Beat Saber 1', '1.37.0'));
+      const second = await harness.register(await createInstallFolder(harness.dataPath, 'Beat Saber 2', '1.38.0'));
+      const detected = await createInstallFolder(harness.dataPath, 'Steam Beat Saber', '1.39.0');
+      harness.setCandidates([createCandidate(detected)]);
+      const store = (await harness.registry.rescan()).installs.find((install) => install.source === 'store');
+      if (!store) throw new Error('store install was not detected');
+
+      const pinned = await harness.management.setPinned({ installId: store.id, pinned: true });
+      expect(pinned.ok).toBe(true);
+      if (!pinned.ok) return;
+      expect(pinned.value.installs.find((install) => install.id === store.id)?.pinned).toBe(true);
+      expect((await harness.management.reorder({ installIds: [store.id, second.id, first.id] })).ok).toBe(true);
+
+      const rescanned = await harness.registry.rescan();
+      expect(rescanned.installs.map((install) => install.id)).toEqual([store.id, second.id, first.id]);
+      expect(rescanned.installs[0]?.pinned).toBe(true);
+   });
+
    test('deletes an install in place and refuses the folders a store owns', async () => {
       const harness = await createHarness();
       const detected = await createInstallFolder(harness.dataPath, 'Steam Beat Saber', '1.37.0');

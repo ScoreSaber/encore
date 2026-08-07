@@ -25,18 +25,10 @@ import { ModelActionDialog } from '@/modules/models/renderer/model-action-dialog
 import { ModelSearchDialog } from '@/modules/models/renderer/model-search-dialog';
 import type { InstallModels } from '@/modules/models/renderer/use-install-models';
 import { useModelActions } from '@/modules/models/renderer/use-model-actions';
-import { SharedFolderMenuItems, SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
+import { SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
 import { localTargetId } from '@/modules/targets/contract';
 
-export function InstallModelsPanel({
-   request,
-   models,
-   onManageSharedContent
-}: {
-   request: TargetModelCollectionRequest;
-   models: InstallModels;
-   onManageSharedContent: () => void;
-}) {
+export function InstallModelsPanel({ request, models }: { request: TargetModelCollectionRequest; models: InstallModels }) {
    const t = useTranslations('models');
    const tabs = useTranslations('models.tabs');
    const common = useTranslations('common');
@@ -58,14 +50,7 @@ export function InstallModelsPanel({
    const searchable = isCatalogModelType(type);
    const selectedVisible = visibleIds.filter((modelId) => selected.has(modelId)).length;
    const scanning = snapshot.status === 'scanning' ? snapshot.progress : null;
-   const note = scanning
-      ? t('scanning', { scanned: scanning.scanned, total: scanning.total })
-      : visible.length === models.models.length
-        ? null
-        : t('countFiltered', {
-             visible: visible.length,
-             total: models.models.length
-          });
+   const note = scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null;
 
    const openFolder = async (modelId: string) => {
       const opened = await actions.openFolder(modelId).catch(() => null);
@@ -168,35 +153,44 @@ export function InstallModelsPanel({
                {modelTypes.map((modelType) => (
                   <TabsTrigger key={modelType} value={modelType}>
                      {tabs(modelType)}
-                     <span className="text-muted-foreground text-xs">{models.counts[modelType]}</span>
                   </TabsTrigger>
                ))}
             </TabsList>
          </Tabs>
 
          <CollectionToolbar
-            label={t('title')}
-            filter={models.models.length > 0 ? { value: query, label: t('filter'), onChange: setQuery } : null}
+            filter={{ value: query, label: common('search'), onChange: setQuery }}
             note={note}
             rescan={{ label: common('rescan'), busy, onClick: models.rescan }}
             menu={
-               <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                     <Button type="button" variant="outline" size="icon-sm" aria-label={common('more')}>
-                        <MoreHorizontal />
-                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                     {local ? (
+               local ? (
+                  <DropdownMenu>
+                     <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label={common('more')}>
+                           <MoreHorizontal />
+                        </Button>
+                     </DropdownMenuTrigger>
+                     <DropdownMenuContent align="end">
                         <DropdownMenuItem disabled={busy} onSelect={() => void actions.importModels()}>
                            <Upload />
                            {common('import')}
                         </DropdownMenuItem>
-                     ) : null}
-
-                     <SharedFolderMenuItems separated={local} onManage={onManageSharedContent} />
-                  </DropdownMenuContent>
-               </DropdownMenu>
+                     </DropdownMenuContent>
+                  </DropdownMenu>
+               ) : undefined
+            }
+            action={
+               <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!searchable}
+                  aria-description={searchable ? undefined : t('issues.unsupportedType')}
+                  onClick={() => setSearchOpen(true)}
+               >
+                  <Search data-icon="inline-start" />
+                  {t('findMore')}
+               </Button>
             }
          >
             {selected.size > 0 ? (
@@ -213,18 +207,6 @@ export function InstallModelsPanel({
                   </Button>
                </ButtonGroup>
             ) : null}
-
-            <Button
-               type="button"
-               variant="outline"
-               size="sm"
-               disabled={!searchable}
-               aria-description={searchable ? undefined : t('issues.unsupportedType')}
-               onClick={() => setSearchOpen(true)}
-            >
-               <Search data-icon="inline-start" />
-               {t('find')}
-            </Button>
          </CollectionToolbar>
 
          <SharedFolderNotice shared={shared} />

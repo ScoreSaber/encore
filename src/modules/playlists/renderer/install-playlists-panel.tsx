@@ -23,18 +23,10 @@ import { PlaylistAddDialog } from '@/modules/playlists/renderer/playlist-add-dia
 import { PlaylistDetailDialog } from '@/modules/playlists/renderer/playlist-detail-dialog';
 import type { InstallPlaylists } from '@/modules/playlists/renderer/use-install-playlists';
 import { usePlaylistActions } from '@/modules/playlists/renderer/use-playlist-actions';
-import { SharedFolderMenuItems, SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
+import { SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
 import { localTargetId } from '@/modules/targets/contract';
 
-export function InstallPlaylistsPanel({
-   request,
-   playlists,
-   onManageSharedContent
-}: {
-   request: TargetPlaylistCollectionRequest;
-   playlists: InstallPlaylists;
-   onManageSharedContent: () => void;
-}) {
+export function InstallPlaylistsPanel({ request, playlists }: { request: TargetPlaylistCollectionRequest; playlists: InstallPlaylists }) {
    const t = useTranslations('playlists');
    const common = useTranslations('common');
    const format = useFormatters();
@@ -55,13 +47,7 @@ export function InstallPlaylistsPanel({
    const visibleIds = visible.map((playlist) => playlist.id);
    const selectedVisible = visibleIds.filter((playlistId) => selected.has(playlistId)).length;
    const scanning = snapshot.status === 'scanning' ? snapshot.progress : null;
-   const note = scanning
-      ? t('scanning', { scanned: scanning.scanned, total: scanning.total })
-      : snapshot.playlists.length === 0
-        ? null
-        : visible.length === snapshot.playlists.length
-          ? t('count', { count: snapshot.playlists.length })
-          : t('countFiltered', { visible: visible.length, total: snapshot.playlists.length });
+   const note = scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null;
 
    const openFolder = async () => {
       const opened = await actions.openFolder().catch(() => null);
@@ -162,30 +148,25 @@ export function InstallPlaylistsPanel({
    return (
       <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
          <CollectionToolbar
-            label={t('title')}
-            filter={snapshot.playlists.length > 0 ? { value: query, label: t('filter'), onChange: setQuery } : null}
+            filter={{ value: query, label: common('search'), onChange: setQuery }}
             note={note}
             rescan={{ label: common('rescan'), busy, onClick: playlists.rescan }}
             menu={
-               <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                     <Button type="button" variant="outline" size="icon-sm" aria-label={common('more')}>
-                        <MoreHorizontal />
-                     </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                     {local ? (
-                        <>
-                           <DropdownMenuItem onSelect={() => void openFolder()}>
-                              <FolderOpen />
-                              {common('openFolder.action')}
-                           </DropdownMenuItem>
-                        </>
-                     ) : null}
-
-                     <SharedFolderMenuItems separated={local} onManage={onManageSharedContent} />
-                  </DropdownMenuContent>
-               </DropdownMenu>
+               local ? (
+                  <DropdownMenu>
+                     <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="ghost" size="icon-sm" aria-label={common('more')}>
+                           <MoreHorizontal />
+                        </Button>
+                     </DropdownMenuTrigger>
+                     <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={() => void openFolder()}>
+                           <FolderOpen />
+                           {common('openFolder.action')}
+                        </DropdownMenuItem>
+                     </DropdownMenuContent>
+                  </DropdownMenu>
+               ) : undefined
             }
          >
             {selected.size > 0 ? (

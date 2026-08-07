@@ -69,13 +69,45 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
            });
    }
 
-   async function update(installId: InstallId, patch: { name?: string; color?: string | null }) {
+   async function update(installId: InstallId, patch: { name?: string; pinned?: boolean; color?: string | null }) {
+      const current = await list();
+      const detail = details.get(installId);
+      if (!detail) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
+
       const updated = await store.update(installId, patch);
       if (Result.isError(updated)) return Result.err<InstallDetail | null, FilesystemProblem>(updated.error);
       if (!updated.value) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
 
-      await rescan();
-      return Result.ok<InstallDetail | null, FilesystemProblem>(details.get(installId) ?? null);
+      const changed = {
+         name: updated.value.name ?? detail.name,
+         pinned: updated.value.pinned,
+         color: updated.value.color,
+         updatedAt: updated.value.updatedAt
+      };
+      const nextDetail = { ...detail, ...changed };
+      details.set(installId, nextDetail);
+      snapshot = {
+         ...current,
+         installs: current.installs.map((install) => (install.id === installId ? { ...install, ...changed } : install))
+      };
+      emit(snapshot);
+
+      return Result.ok<InstallDetail | null, FilesystemProblem>(nextDetail);
+   }
+
+   async function reorder(installIds: InstallId[]) {
+      const current = await list();
+      const reordered = await store.reorder(installIds);
+      if (Result.isError(reordered)) return Result.err<InstallRegistrySnapshot, FilesystemProblem>(reordered.error);
+
+      const installs = new Map(current.installs.map((install) => [install.id, install]));
+      snapshot = {
+         ...current,
+         installs: reordered.value.map((record) => installs.get(record.id)!)
+      };
+      emit(snapshot);
+
+      return Result.ok<InstallRegistrySnapshot, FilesystemProblem>(snapshot);
    }
 
    async function associateStore(installId: InstallId, detectedStore: InstallDetail['store']) {
@@ -180,6 +212,7 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
             record.name === `Beat Saber ${version}`
                ? (version ?? record.name)
                : (record.name ?? version ?? stripMechanicalSuffix(basename(record.path))),
+         pinned: record.pinned,
          version,
          store: record.store,
          source: record.source,
@@ -209,6 +242,7 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
       rescan,
       register,
       update,
+      reorder,
       associateStore,
       forget,
       subscribe,

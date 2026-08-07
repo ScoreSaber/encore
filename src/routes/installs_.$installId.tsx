@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import { createFileRoute, Navigate, useNavigate } from '@tanstack/react-router';
+import { createFileRoute, Navigate } from '@tanstack/react-router';
 import { useTranslations } from 'use-intl';
 import { z } from 'zod';
 
@@ -56,7 +56,6 @@ function InstallDetailRoute() {
    const [activeTab, setActiveTab] = useState<InstallTab>('mods');
    const [loadedTabs, setLoadedTabs] = useState<Set<InstallTab>>(() => new Set(['mods']));
    const [folderFailed, setFolderFailed] = useState(false);
-   const navigate = useNavigate();
    const pendingSelection = useRef<string | null>(null);
    const target = targets.find((candidate) => candidate.id === targetId) ?? null;
    const supportsManagement = target?.capabilities.includes('manage-installs') ?? false;
@@ -79,9 +78,6 @@ function InstallDetailRoute() {
          }
       });
    }, [settings, targetId, installId]);
-
-   // the selection sync above already points settings at this target, so /shared opens on it
-   const manageSharedContent = () => void navigate({ to: '/shared' });
 
    const openFolder = async () => {
       const opened = await actions.openFolder().catch(() => null);
@@ -124,7 +120,6 @@ function InstallDetailRoute() {
                      actions={actions}
                      shortcuts={shortcuts}
                      onOpenFolder={() => void openFolder()}
-                     onManageSharedContent={manageSharedContent}
                   />
                }
                tabs={
@@ -150,7 +145,7 @@ function InstallDetailRoute() {
             <TabsContent forceMount value="maps" className={`${tabBodyClassName} data-[state=inactive]:hidden`}>
                {loadedTabs.has('maps') ? (
                   <Suspense fallback={<LoadingPanel />}>
-                     <InstallMapsTab request={request} active={activeTab === 'maps'} onManageSharedContent={manageSharedContent} />
+                     <InstallMapsTab request={request} active={activeTab === 'maps'} />
                   </Suspense>
                ) : null}
             </TabsContent>
@@ -158,7 +153,7 @@ function InstallDetailRoute() {
             <TabsContent forceMount value="models" className={`${tabBodyClassName} data-[state=inactive]:hidden`}>
                {loadedTabs.has('models') ? (
                   <Suspense fallback={<LoadingPanel />}>
-                     <InstallModelsTab request={request} active={activeTab === 'models'} onManageSharedContent={manageSharedContent} />
+                     <InstallModelsTab request={request} active={activeTab === 'models'} />
                   </Suspense>
                ) : null}
             </TabsContent>
@@ -166,7 +161,7 @@ function InstallDetailRoute() {
             <TabsContent forceMount value="playlists" className={`${tabBodyClassName} data-[state=inactive]:hidden`}>
                {loadedTabs.has('playlists') ? (
                   <Suspense fallback={<LoadingPanel />}>
-                     <InstallPlaylistsTab request={request} active={activeTab === 'playlists'} onManageSharedContent={manageSharedContent} />
+                     <InstallPlaylistsTab request={request} active={activeTab === 'playlists'} />
                   </Suspense>
                ) : null}
             </TabsContent>

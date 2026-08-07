@@ -13,6 +13,7 @@ import {
    type InstallForgetPreview,
    type InstallForgetResult,
    type InstallOperationResult,
+   type InstallRegistryResult,
    type InstallUpdateRequest,
    type InstallUpdateResult
 } from '@/modules/installs/contract';
@@ -62,6 +63,19 @@ export function createInstallManagementService(options: InstallManagementOptions
       if (Result.isError(updated)) return { ok: false, error: toIpcError(updated.error) };
 
       return updated.value ? { ok: true, value: updated.value } : failure(request.installId, 'not-found');
+   }
+
+   async function setPinned({ installId, pinned }: { installId: string; pinned: boolean }): Promise<InstallRegistryResult> {
+      const updated = await options.registry.update(installId, { pinned });
+      if (Result.isError(updated)) return { ok: false, error: toIpcError(updated.error) };
+      if (!updated.value) return failure(installId, 'not-found');
+
+      return { ok: true, value: await options.registry.list() };
+   }
+
+   async function reorder({ installIds }: { installIds: string[] }): Promise<InstallRegistryResult> {
+      const reordered = await options.registry.reorder(installIds);
+      return Result.isError(reordered) ? { ok: false, error: toIpcError(reordered.error) } : { ok: true, value: reordered.value };
    }
 
    async function previewDelete({ installId }: { installId: string }): Promise<InstallDeletePreview> {
@@ -178,7 +192,7 @@ export function createInstallManagementService(options: InstallManagementOptions
       };
    }
 
-   return { list, getDetail, rescan, update, previewDelete, delete: deleteInstall, previewForget, forget };
+   return { list, getDetail, rescan, update, setPinned, reorder, previewDelete, delete: deleteInstall, previewForget, forget };
 }
 
 function toIpcError(problem: FilesystemProblem): IpcError {

@@ -1,20 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 
-import {
-   ArrowUp,
-   ChevronRight,
-   Download,
-   FolderInput,
-   GripVertical,
-   ListChecks,
-   MoreHorizontal,
-   RotateCcw,
-   Search,
-   Settings2,
-   Trash2
-} from 'lucide-react';
+import { ArrowUp, ChevronRight, Download, FolderInput, GripVertical, ListChecks, MoreHorizontal, RotateCcw, Settings2, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
+import { CollectionToolbar } from '@/components/collection/collection-toolbar';
 import { RefreshButton } from '@/components/refresh-button';
 import { EmptyPanel, ErrorPanel, LoadingPanel, WarningLine } from '@/components/state/state-panel';
 import { Button } from '@/components/ui/button';
@@ -22,7 +11,6 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { InputGroup, InputGroupAddon, InputGroupInput } from '@/components/ui/input-group';
 import { MasterDetail, MasterDetailList, MasterDetailPane, MasterDetailRow } from '@/components/ui/master-detail';
 import { cn } from '@/components/utils';
 
@@ -156,23 +144,47 @@ function ReadyMods({
 
    return (
       <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
-         <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {snapshot.mods.length + snapshot.external.length > 0 ? (
-               <InputGroup className="h-8 min-w-40 flex-1">
-                  <InputGroupInput
-                     value={query}
-                     aria-label={t('filter')}
-                     placeholder={t('filter')}
-                     onChange={(event) => setQuery(event.target.value)}
-                  />
-                  <InputGroupAddon>
-                     <Search />
-                  </InputGroupAddon>
-               </InputGroup>
-            ) : null}
-
-            <div className="ml-auto flex shrink-0 items-center gap-2">
-               {toUpdate.length + toRemove.length + toInstall.length > 0 ? (
+         <CollectionToolbar
+            filter={{ value: query, label: common('search'), onChange: setQuery }}
+            rescan={{ label: common('refresh'), busy: mods.status === 'loading', disabled: busy, onClick: mods.refresh }}
+            menu={
+               <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                     <Button type="button" variant="ghost" size="icon-sm" aria-label={t('moreActions')} disabled={busy}>
+                        <MoreHorizontal />
+                     </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                     <DropdownMenuItem onSelect={() => void mods.chooseImport()}>
+                        <FolderInput />
+                        {t('import.action')}
+                     </DropdownMenuItem>
+                     <DropdownMenuItem
+                        onSelect={() => {
+                           sourcesChanged.current = false;
+                           setSourcesOpen(true);
+                        }}
+                     >
+                        <Settings2 />
+                        {t('sources.manage.action')}
+                     </DropdownMenuItem>
+                     {otherInstalls.length > 0 ? (
+                        <DropdownMenuItem onSelect={() => setInstallSelectionOpen(true)}>
+                           <ListChecks />
+                           {t('selectFromInstall.action')}
+                        </DropdownMenuItem>
+                     ) : null}
+                     <DropdownMenuSeparator />
+                     <DropdownMenuItem variant="destructive" disabled={nothingInstalled} onSelect={() => void mods.previewUninstall('all', [])}>
+                        <Trash2 />
+                        {t('uninstall.allAction')}
+                     </DropdownMenuItem>
+                  </DropdownMenuContent>
+               </DropdownMenu>
+            }
+         >
+            {toUpdate.length + toRemove.length + toInstall.length > 0 ? (
+               <>
                   <ButtonGroup aria-label={t('pending.hint')}>
                      {toUpdate.length > 0 ? (
                         <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void mods.previewInstall(toUpdate)}>
@@ -205,49 +217,15 @@ function ReadyMods({
                         </Button>
                      ) : null}
                   </ButtonGroup>
-               ) : null}
-               {toInstall.length + toRemove.length > 0 ? (
-                  <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={mods.resetSelection}>
-                     <RotateCcw data-icon="inline-start" />
-                     {t('pending.reset')}
-                  </Button>
-               ) : null}
-               <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                     <Button type="button" variant="outline" size="icon-sm" aria-label={t('moreActions')} disabled={busy}>
-                        <MoreHorizontal />
+                  {toInstall.length + toRemove.length > 0 ? (
+                     <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={mods.resetSelection}>
+                        <RotateCcw data-icon="inline-start" />
+                        {t('pending.reset')}
                      </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                     <DropdownMenuItem onSelect={() => void mods.chooseImport()}>
-                        <FolderInput />
-                        {t('import.action')}
-                     </DropdownMenuItem>
-                     <DropdownMenuItem
-                        onSelect={() => {
-                           sourcesChanged.current = false;
-                           setSourcesOpen(true);
-                        }}
-                     >
-                        <Settings2 />
-                        {t('sources.manage.action')}
-                     </DropdownMenuItem>
-                     {otherInstalls.length > 0 ? (
-                        <DropdownMenuItem onSelect={() => setInstallSelectionOpen(true)}>
-                           <ListChecks />
-                           {t('selectFromInstall.action')}
-                        </DropdownMenuItem>
-                     ) : null}
-                     <DropdownMenuSeparator />
-                     <DropdownMenuItem variant="destructive" disabled={nothingInstalled} onSelect={() => void mods.previewUninstall('all', [])}>
-                        <Trash2 />
-                        {t('uninstall.allAction')}
-                     </DropdownMenuItem>
-                  </DropdownMenuContent>
-               </DropdownMenu>
-               <RefreshButton label={common('refresh')} busy={mods.status === 'loading'} disabled={busy} onClick={mods.refresh} />
-            </div>
-         </div>
+                  ) : null}
+               </>
+            ) : null}
+         </CollectionToolbar>
 
          {otherInstalls.length > 0 ? (
             <SelectInstallModsDialog
@@ -355,7 +333,6 @@ function ExternalFiles({
                >
                   <ChevronRight className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
                   <span className="truncate font-medium">{t('external.category')}</span>
-                  <span className="shrink-0">{t('groups.count', { count: files.length })}</span>
                </button>
             </CollapsibleTrigger>
          </SectionHeader>
@@ -460,7 +437,6 @@ function ModGroupSection({
                >
                   <ChevronRight className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
                   <span className="text-foreground min-w-0 truncate font-medium">{group.label}</span>
-                  <span className="shrink-0">{t('groups.count', { count: group.mods.length })}</span>
                </button>
             </CollapsibleTrigger>
          </SectionHeader>

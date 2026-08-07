@@ -7,7 +7,10 @@ import {
    installForgetPreviewSchema,
    installForgetResultSchema,
    installOperationResultSchema,
+   installPinRequestSchema,
+   installRegistryResultSchema,
    installRegistrySnapshotSchema,
+   installReorderRequestSchema,
    installUpdateRequestSchema
 } from '@/modules/installs/contract';
 
@@ -31,6 +34,16 @@ export const installsApi = defineDomainApi(
          capability: 'manage-installs',
          input: installUpdateRequestSchema,
          output: installDetailResultSchema
+      }),
+      setPinned: targetProcedure({
+         capability: 'manage-installs',
+         input: installPinRequestSchema,
+         output: installRegistryResultSchema
+      }),
+      reorder: targetProcedure({
+         capability: 'manage-installs',
+         input: installReorderRequestSchema,
+         output: installRegistryResultSchema
       }),
       previewDelete: targetProcedure({
          capability: 'manage-installs',

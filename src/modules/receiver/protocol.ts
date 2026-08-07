@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { targetSchema, type TargetCapability } from '@/modules/targets/contract';
 
-export const receiverProtocolVersion = 11;
+export const receiverProtocolVersion = 12;
 export const receiverSupportedProtocolVersions = [receiverProtocolVersion];
 export const receiverProtocolVersionHeader = 'x-encore-protocol-version';
 

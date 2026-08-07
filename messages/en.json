@@ -30,6 +30,7 @@
       "refresh": "Refresh",
       "rescan": "Rescan",
       "retry": "Retry",
+      "search": "Search...",
       "scope": {
          "install": "Install",
          "path": "Install folder",
@@ -176,6 +177,11 @@
          "incomplete": "Incomplete",
          "missing": "Missing"
       },
+      "sidebar": {
+         "pin": "Pin {name}",
+         "unpin": "Unpin {name}",
+         "reorderHint": "Drag or use Alt+Up and Alt+Down to reorder"
+      },
       "problems": {
          "pathUnreadable": "This install folder could not be read at {path}",
          "registryWriteFailed": "The install list could not be saved at {path}",
@@ -249,16 +255,13 @@
    },
    "maps": {
       "title": "Custom maps",
-      "count": "{count, plural, one {# map} other {# maps}}",
-      "countFiltered": "{visible, number} of {total, number} maps",
       "empty": "This install has no custom maps yet",
       "missing": "This install has no CustomLevels folder yet. Encore creates it the first time a map is added",
       "unsupportedTarget": "This device cannot manage maps from Encore",
       "loadError": "The map library is unavailable right now",
       "scanning": "Reading maps {scanned} of {total}",
       "selectAll": "Select every map",
-      "filter": "Filter maps",
-      "noMatches": "No maps match that filter",
+      "noMatches": "No maps match that search",
       "deleteSelected": "{count, plural, =0 {Delete} one {Delete # map} other {Delete # maps}}",
       "duplicate": "Duplicate",
       "unreadable": "Unreadable",
@@ -279,7 +282,7 @@
          "sourceUnavailable": "BeatSaver did not return this map",
          "unsupportedTarget": "This device cannot manage maps from Encore"
       },
-      "find": "Find maps",
+      "findMore": "Find more maps",
       "export": "{count, plural, =0 {Export} one {Export # map} other {Export # maps}}",
       "actions": {
          "delete": {
@@ -343,19 +346,17 @@
    },
    "models": {
       "title": "Models",
-      "countFiltered": "{visible, number} of {total, number} models",
       "empty": "This install has no {type} yet",
       "missing": "This install has no model folders yet. Encore creates them the first time a model is added",
       "unsupportedTarget": "This device cannot manage models from Encore",
       "loadError": "The model list is unavailable right now",
       "scanning": "Reading models {scanned} of {total}",
       "selectAll": "Select every model",
-      "filter": "Filter models",
-      "noMatches": "No models match that filter",
+      "noMatches": "No models match that search",
       "deleteSelected": "{count, plural, =0 {Delete} one {Delete # model} other {Delete # models}}",
       "duplicate": "Duplicate",
       "unreadable": "Unreadable",
-      "find": "Find models",
+      "findMore": "Find more models",
       "export": "{count, plural, =0 {Export} one {Export # model} other {Export # models}}",
       "tabs": {
          "avatar": "Avatars",
@@ -449,16 +450,13 @@
    },
    "playlists": {
       "title": "Playlists",
-      "count": "{count, plural, one {# playlist} other {# playlists}}",
-      "countFiltered": "{visible, number} of {total, number} playlists",
       "empty": "This install has no playlists yet",
       "missing": "This install has no Playlists folder yet. Encore creates it the first time a playlist is added",
       "unsupportedTarget": "This device cannot manage playlists from Encore",
       "loadError": "The playlist list is unavailable right now",
       "scanning": "Reading playlists {scanned} of {total}",
       "selectAll": "Select every playlist",
-      "filter": "Filter playlists",
-      "noMatches": "No playlists match that filter",
+      "noMatches": "No playlists match that search",
       "deleteSelected": "{count, plural, =0 {Delete} one {Delete # playlist} other {Delete # playlists}}",
       "export": "{count, plural, =0 {Export} one {Export # playlist} other {Export # playlists}}",
       "unreadable": "Unreadable",
@@ -1058,8 +1056,7 @@
          "remove": "Will be removed",
          "reset": "Reset"
       },
-      "filter": "Filter mods",
-      "filterEmpty": "No mods match that filter",
+      "filterEmpty": "No mods match that search",
       "loadError": "The mod list could not be read",
       "bsipaMissing": "BSIPA is not installed yet. Encore installs it first whenever you install another mod",
       "unknownAuthor": "Unknown author",
@@ -1070,7 +1067,6 @@
          "remote": "from BeatMods at {time}"
       },
       "groups": {
-         "count": "{count, plural, one {# mod} other {# mods}}",
          "collapse": "Collapse {name}",
          "expand": "Expand {name}",
          "reorder": "Reorder {name}",

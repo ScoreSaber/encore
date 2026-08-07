@@ -26,21 +26,6 @@ export function useInstallModels(request: TargetModelCollectionRequest) {
 
    const snapshot = query.data ?? createEmptyModelCollectionSnapshot(request);
    const models = useMemo(() => snapshot.models.filter((model) => model.type === type), [snapshot.models, type]);
-   const counts = useMemo(() => {
-      const tally: Record<ModelType, number> = {
-         avatar: 0,
-         bloq: 0,
-         platform: 0,
-         saber: 0,
-         wall: 0
-      };
-      for (const model of snapshot.models) {
-         tally[model.type] += 1;
-      }
-
-      return tally;
-   }, [snapshot.models]);
-
    const selectType = useCallback((next: ModelType) => {
       setType(next);
       setSelected(new Set());
@@ -66,7 +51,6 @@ export function useInstallModels(request: TargetModelCollectionRequest) {
    return {
       snapshot,
       models,
-      counts,
       type,
       status,
       selected,

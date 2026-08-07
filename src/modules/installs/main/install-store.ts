@@ -18,6 +18,7 @@ export const installRecordSchema = z.object({
    targetId: z.string(),
    source: installSourceSchema,
    name: z.string().min(1).nullable(),
+   pinned: z.boolean().default(false),
    color: z.string().nullable(),
    store: storeKindSchema.nullable(),
    path: z.string(),
@@ -84,6 +85,7 @@ export function createInstallStore(options: { dataPath: string }) {
       const now = new Date().toISOString();
       const detected = new Set<string>();
       const next: InstallRecord[] = [];
+      const currentOrder = new Map(current.map((record, index) => [record.id, index]));
       let changed = false;
 
       for (const record of current) {
@@ -108,6 +110,7 @@ export function createInstallStore(options: { dataPath: string }) {
             targetId: candidate.targetId,
             source: 'store',
             name: existing?.name ?? customInstallName(basename(path)),
+            pinned: existing?.pinned ?? false,
             color: existing?.color ?? null,
             store: candidate.store,
             path,
@@ -123,6 +126,8 @@ export function createInstallStore(options: { dataPath: string }) {
 
          changed ||= !unchanged;
       }
+
+      next.sort((left, right) => (currentOrder.get(left.id) ?? current.length) - (currentOrder.get(right.id) ?? current.length));
 
       changed ||= current.some((record) => record.source === 'store' && !next.some((candidate) => candidate.id === record.id));
 
@@ -140,6 +145,7 @@ export function createInstallStore(options: { dataPath: string }) {
          targetId: registration.targetId,
          source: registration.source,
          name: customInstallName(basename(path)),
+         pinned: false,
          color: registration.color ?? null,
          store: registration.store ?? null,
          path,
@@ -154,7 +160,7 @@ export function createInstallStore(options: { dataPath: string }) {
          : Result.ok<InstallRecord, FilesystemProblem>(record);
    }
 
-   async function update(installId: InstallId, patch: { name?: string; color?: string | null; store?: StoreKind }) {
+   async function update(installId: InstallId, patch: { name?: string; pinned?: boolean; color?: string | null; store?: StoreKind }) {
       const current = await load();
       const existing = current.find((record) => record.id === installId);
       if (!existing) return Result.ok<InstallRecord | null, FilesystemProblem>(null);
@@ -162,6 +168,7 @@ export function createInstallStore(options: { dataPath: string }) {
       const updated: InstallRecord = {
          ...existing,
          ...(patch.name === undefined ? {} : { name: patch.name }),
+         ...(patch.pinned === undefined ? {} : { pinned: patch.pinned }),
          ...(patch.color === undefined ? {} : { color: patch.color }),
          ...(patch.store === undefined ? {} : { store: patch.store }),
          updatedAt: new Date().toISOString()
@@ -181,19 +188,34 @@ export function createInstallStore(options: { dataPath: string }) {
       return Result.isError(written) ? Result.err<void, FilesystemProblem>(written.error) : Result.ok<void, FilesystemProblem>(undefined);
    }
 
+   async function reorder(installIds: InstallId[]) {
+      const current = await load();
+      const order = new Map(installIds.map((installId, index) => [installId, index]));
+      const next = [...current].sort((left, right) => {
+         const leftIndex = order.get(left.id);
+         const rightIndex = order.get(right.id);
+
+         if (leftIndex === undefined) return rightIndex === undefined ? 0 : 1;
+         if (rightIndex === undefined) return -1;
+         return leftIndex - rightIndex;
+      });
+
+      return next.every((record, index) => record.id === current[index]?.id) ? Result.ok<InstallRecord[], FilesystemProblem>(current) : persist(next);
+   }
+
    async function persist(next: InstallRecord[]) {
       const written = await writeJsonFileAtomic(filePath, { schemaVersion: installStoreFileVersion, installs: next }, installStoreFileSchema, {
          root: options.dataPath,
          scope: 'settings'
       });
 
+      if (Result.isError(written)) return Result.err<InstallRecord[], FilesystemProblem>(written.error);
+
       records = next;
-      return Result.isError(written)
-         ? Result.err<InstallRecord[], FilesystemProblem>(written.error)
-         : Result.ok<InstallRecord[], FilesystemProblem>(next);
+      return Result.ok<InstallRecord[], FilesystemProblem>(next);
    }
 
-   return { load, find, findByPath, resolveStoreCandidates, register, update, remove, filePath };
+   return { load, find, findByPath, resolveStoreCandidates, register, update, reorder, remove, filePath };
 }
 
 function matchesStoreRecord(record: InstallRecord, id: string, key: string, candidate: StoreInstallCandidate) {

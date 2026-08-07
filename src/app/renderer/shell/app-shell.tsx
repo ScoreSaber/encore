@@ -1,6 +1,8 @@
+import { useState } from 'react';
+
 import { queryOptions, useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { FolderPlus, FolderSymlink, Home, Monitor, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
+import { FolderPlus, FolderSymlink, Home, Monitor, Pin, PinOff, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { RefreshButton } from '@/components/refresh-button';
@@ -34,6 +36,8 @@ import { useAppUpdate } from '@/modules/updates/renderer/use-app-update';
 const sidebarItemClassName =
    'text-muted-foreground hover:bg-accent hover:text-accent-foreground flex h-10 cursor-default items-center justify-center gap-3 rounded-md px-0 text-sm font-medium transition-colors sm:justify-start sm:px-3';
 const activeSidebarItemClassName = 'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground';
+const activeSidebarRowClassName =
+   'has-[[data-status=active]]:bg-primary has-[[data-status=active]]:text-primary-foreground has-[[data-status=active]]:hover:bg-primary has-[[data-status=active]]:hover:text-primary-foreground';
 const appInfoQuery = queryOptions({
    queryKey: ipcQueryKey(appIpc.getInfo),
    queryFn: () => window.encore.app.getInfo(),
@@ -261,14 +265,23 @@ function SidebarTargetSection({ target, showName }: { target: Target; showName: 
                <span className="min-w-0 truncate">{target.name}</span>
             </div>
          ) : null}
-         <SidebarInstalls targetId={target.id} installs={installs} />
+         <SidebarInstalls targetId={target.id} installs={installs} canOrganise={target.capabilities.includes('manage-installs')} />
       </div>
    );
 }
 
-function SidebarInstalls({ targetId, installs }: { targetId: TargetId; installs: ReturnType<typeof useInstalls> }) {
+function SidebarInstalls({
+   targetId,
+   installs,
+   canOrganise
+}: {
+   targetId: TargetId;
+   installs: ReturnType<typeof useInstalls>;
+   canOrganise: boolean;
+}) {
    const t = useTranslations('targets');
    const common = useTranslations('common');
+   const [draggedInstallId, setDraggedInstallId] = useState<string | null>(null);
 
    if (installs.loadStatus === 'loading') {
       return <Skeleton className="h-10 rounded-md" />;
@@ -283,29 +296,140 @@ function SidebarInstalls({ targetId, installs }: { targetId: TargetId; installs:
       );
    }
 
-   return (
-      <>
-         {(installs.snapshot?.installs ?? []).map((install) => (
-            <SidebarInstallLink key={install.id} install={install} targetId={targetId} />
-         ))}
-      </>
-   );
+   const pinned = (installs.snapshot?.installs ?? []).filter((install) => install.pinned);
+   const ordered = [...pinned, ...(installs.snapshot?.installs ?? []).filter((install) => !install.pinned)];
+
+   const moveInstall = (installId: string, targetInstallId: string) => {
+      if (installId === targetInstallId) return;
+
+      const from = ordered.findIndex((install) => install.id === installId);
+      const target = ordered.findIndex((install) => install.id === targetInstallId);
+      if (from === -1 || target === -1 || ordered[from]?.pinned !== ordered[target]?.pinned) return;
+
+      const next = [...ordered];
+      const [moved] = next.splice(from, 1);
+      if (!moved) return;
+      next.splice(target, 0, moved);
+      installs.reorder(next.map((install) => install.id));
+   };
+
+   const moveInstallBy = (installId: string, offset: number) => {
+      const index = ordered.findIndex((install) => install.id === installId);
+      const target = ordered[index + offset];
+      if (target) moveInstall(installId, target.id);
+   };
+
+   return ordered.map((install) => (
+      <SidebarInstallRow
+         key={install.id}
+         install={install}
+         targetId={targetId}
+         canOrganise={canOrganise}
+         canReorder={canOrganise && (install.pinned ? pinned.length : ordered.length - pinned.length) > 1}
+         disabled={installs.organising}
+         dragging={draggedInstallId === install.id}
+         onPin={() => installs.setPinned(install.id, !install.pinned)}
+         onDragStart={() => setDraggedInstallId(install.id)}
+         onDragEnd={() => setDraggedInstallId(null)}
+         onDrop={() => {
+            if (draggedInstallId) moveInstall(draggedInstallId, install.id);
+            setDraggedInstallId(null);
+         }}
+         onMove={(offset) => moveInstallBy(install.id, offset)}
+      />
+   ));
 }
 
-function SidebarInstallLink({ install, targetId }: { install: InstallSummary; targetId: TargetId }) {
+function SidebarInstallRow({
+   install,
+   targetId,
+   canOrganise,
+   canReorder,
+   disabled,
+   dragging,
+   onPin,
+   onDragStart,
+   onDragEnd,
+   onDrop,
+   onMove
+}: {
+   install: InstallSummary;
+   targetId: TargetId;
+   canOrganise: boolean;
+   canReorder: boolean;
+   disabled: boolean;
+   dragging: boolean;
+   onPin: () => void;
+   onDragStart: () => void;
+   onDragEnd: () => void;
+   onDrop: () => void;
+   onMove: (offset: number) => void;
+}) {
+   const t = useTranslations('installs.sidebar');
+
    return (
-      <Link
-         to="/installs/$installId"
-         params={{ installId: install.id }}
-         search={{ targetId }}
-         className={sidebarItemClassName}
-         activeProps={{ className: activeSidebarItemClassName }}
-         aria-label={install.name}
+      <div
+         draggable={canReorder && !disabled}
+         className={cn(sidebarItemClassName, activeSidebarRowClassName, 'group/install relative w-full transition-opacity', dragging && 'opacity-50')}
+         onDragStart={(event) => {
+            if (!canReorder || disabled || (event.target instanceof Element && event.target.closest('button'))) {
+               event.preventDefault();
+               return;
+            }
+
+            event.dataTransfer.clearData();
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', install.id);
+            onDragStart();
+         }}
+         onDragEnd={onDragEnd}
+         onDragOver={(event) => {
+            if (canReorder) event.preventDefault();
+         }}
+         onDrop={(event) => {
+            event.preventDefault();
+            onDrop();
+         }}
       >
-         <InstallColorSwatch color={install.color} />
-         <InstallPlatformIcon store={install.store} />
-         <span className="hidden min-w-0 flex-1 truncate sm:block">{install.name}</span>
-      </Link>
+         <Link
+            to="/installs/$installId"
+            params={{ installId: install.id }}
+            search={{ targetId }}
+            draggable={false}
+            className={cn('flex h-full min-w-0 flex-1 cursor-default items-center justify-center gap-3 sm:justify-start', canOrganise && 'sm:pr-6')}
+            aria-label={install.name}
+            aria-description={canReorder ? t('reorderHint') : undefined}
+            onKeyDown={(event) => {
+               if (!canReorder || !event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+               event.preventDefault();
+               onMove(event.key === 'ArrowUp' ? -1 : 1);
+            }}
+         >
+            <InstallColorSwatch color={install.color} />
+            <InstallPlatformIcon store={install.store} />
+            <span className="hidden min-w-0 flex-1 truncate sm:block">{install.name}</span>
+         </Link>
+
+         {canOrganise ? (
+            <Tooltip>
+               <TooltipTrigger asChild>
+                  <Button
+                     type="button"
+                     variant="ghost"
+                     size="icon-xs"
+                     disabled={disabled}
+                     draggable={false}
+                     className="absolute right-1 hidden shrink-0 cursor-pointer opacity-0 group-focus-within/install:opacity-100 group-hover/install:opacity-100 sm:flex"
+                     aria-label={t(install.pinned ? 'unpin' : 'pin', { name: install.name })}
+                     onClick={onPin}
+                  >
+                     {install.pinned ? <PinOff /> : <Pin />}
+                  </Button>
+               </TooltipTrigger>
+               <TooltipContent side="right">{t(install.pinned ? 'unpin' : 'pin', { name: install.name })}</TooltipContent>
+            </Tooltip>
+         ) : null}
+      </div>
    );
 }
 
