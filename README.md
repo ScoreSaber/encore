@@ -4,7 +4,7 @@
    </a>
 </p>
 
-![Encore desktop app](assets/encore-app.png)
+![Encore desktop app](assets/encore-app.webp)
 
 ## Getting Started
 
