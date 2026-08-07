@@ -9,10 +9,10 @@ export default function Home() {
       <BeatSaberBackground />
 
       <section
-        className="@container w-full max-w-[1280px] min-[877px]:w-[min(74.32vw,123.34svh)]! min-[877px]:max-w-none! min-[877px]:[--spacing:0.3125cqw]"
+        className="@container w-full max-w-[1280px] min-[877px]:w-[min(74.32vw,124.45svh)]! min-[877px]:max-w-none! min-[877px]:[--spacing:max(0.25rem,0.3125cqw)]"
         aria-labelledby="hero-title"
       >
-        <div className="flex w-full translate-y-1.5 items-end justify-between pr-4 pl-[clamp(20px,1.875vw,30px)] max-[876px]:flex-col max-[876px]:items-center max-[876px]:px-0 min-[877px]:pl-7.5">
+        <div className="flex w-full translate-y-1.5 items-end justify-between pr-4 pl-[clamp(20px,1.875vw,30px)] max-[1100px]:flex-col max-[1100px]:items-center max-[1100px]:px-0 min-[877px]:pl-7.5">
           <div className="relative flex min-w-0 translate-y-1.5 items-center justify-start gap-[clamp(2px,0.35vw,6px)] max-[540px]:flex-col min-[877px]:gap-1.5">
             <img
               className="aspect-square h-auto w-[clamp(96px,9vw,128px)] -translate-y-1.75 shrink-0 shadow-none [filter:none] max-[540px]:w-[76px] min-[877px]:w-32"
@@ -48,9 +48,11 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="flex items-end text-[0.82rem] max-[876px]:mt-5 max-[876px]:items-center min-[877px]:text-[calc(var(--spacing)*3.28)]">
+          <div className="flex items-end text-[0.82rem] max-[1100px]:mt-5 max-[1100px]:items-center min-[877px]:text-[calc(var(--spacing)*3.28)]">
             <div className="flex flex-wrap justify-center gap-2.5">
-              <DownloadButton />
+              <div className="max-[876px]:hidden">
+                <DownloadButton />
+              </div>
               <div className="flex items-center gap-2.5">
                 <a
                   className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border border-white bg-white px-3.25 font-semibold text-[#09090b] no-underline"
@@ -75,12 +77,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-6 scale-[1.015] max-[876px]:hidden min-[877px]:mt-6">
+        <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-[clamp(calc(var(--spacing)*6),calc(var(--spacing)*6_+_1rem+(166.667svh_-_100vw)/4),calc(6.8svh_+_2rem))] scale-[1.015] max-[876px]:hidden min-[877px]:mt-6">
           <img
             className="block h-auto w-full [box-shadow:0_28px_64px_-28px_rgba(0,0,0,0.75)]"
             src={encoreApp.src}
-            width={1549}
-            height={971}
+            width={1489}
+            height={925}
             alt="Encore desktop app"
             fetchPriority="high"
           />
