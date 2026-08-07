@@ -77,12 +77,12 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-[clamp(calc(var(--spacing)*6),calc(var(--spacing)*6_+_1rem+(166.667svh_-_100vw)/4),calc(6.8svh_+_2rem))] scale-[1.015] max-[876px]:hidden min-[877px]:mt-6">
+        <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-[clamp(0px,calc(1rem+(166.667svh_-_100vw)/2.5),calc(6.8svh_+_2rem))] scale-[1.015] max-[876px]:hidden min-[877px]:mt-6">
           <img
             className="block h-auto w-full [box-shadow:0_28px_64px_-28px_rgba(0,0,0,0.75)]"
             src={encoreApp.src}
-            width={1489}
-            height={925}
+            width={1516}
+            height={979}
             alt="Encore desktop app"
             fetchPriority="high"
           />
