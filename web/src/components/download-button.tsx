@@ -96,7 +96,7 @@ export function DownloadButton() {
 
   return (
     <a
-      className="inline-flex min-h-8 items-center justify-center gap-[9px] rounded-[7px] border px-[13px] text-[0.82rem] font-semibold text-[#06101a] no-underline [border-color:color-mix(in_srgb,var(--accent)_72%,white)] [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]"
+      className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border px-3.25 font-semibold text-[#06101a] no-underline [border-color:color-mix(in_srgb,var(--accent)_72%,white)] [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]"
       href={downloadUrl}
     >
       <PlatformIcon platform={platform} />
