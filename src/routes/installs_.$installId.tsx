@@ -12,10 +12,15 @@ import { EditInstallDialog } from '@/modules/installs/renderer/edit-install-dial
 import { InstallActionDialog } from '@/modules/installs/renderer/install-action-dialog';
 import { InstallActionsMenu } from '@/modules/installs/renderer/install-actions-menu';
 import { InstallTopBar } from '@/modules/installs/renderer/install-top-bar';
+import { installDetailQueryOptions } from '@/modules/installs/renderer/queries';
 import { useInstallActions } from '@/modules/installs/renderer/use-install-actions';
 import { useInstallDetail } from '@/modules/installs/renderer/use-install-detail';
 import { useInstallEditor } from '@/modules/installs/renderer/use-install-editor';
 import { useInstallLaunch } from '@/modules/launch/renderer/use-install-launch';
+import { mapListQueryOptions } from '@/modules/maps/renderer/map-queries';
+import { modelListQueryOptions } from '@/modules/models/renderer/model-queries';
+import { modListQueryOptions } from '@/modules/mods/renderer/mod-queries';
+import { playlistListQueryOptions } from '@/modules/playlists/renderer/playlist-queries';
 import { useSettings } from '@/modules/settings/renderer/settings-provider';
 import { useInstallShortcuts } from '@/modules/shortcuts/renderer/use-install-shortcuts';
 import { localTargetId } from '@/modules/targets/contract';
@@ -37,6 +42,19 @@ const installDetailSearchSchema = z.object({
 
 export const Route = createFileRoute('/installs_/$installId')({
    validateSearch: installDetailSearchSchema,
+   loaderDeps: ({ search }) => ({ targetId: search.targetId }),
+   loader: async ({ cause, context, deps, params }) => {
+      if (cause !== 'stay') return;
+
+      const request = { targetId: deps.targetId, installId: params.installId };
+      await Promise.all([
+         context.queryClient.prefetchQuery(installDetailQueryOptions(request)),
+         context.queryClient.prefetchQuery(modListQueryOptions(request)),
+         context.queryClient.prefetchQuery(mapListQueryOptions(request)),
+         context.queryClient.prefetchQuery(modelListQueryOptions(request)),
+         context.queryClient.prefetchQuery(playlistListQueryOptions(request))
+      ]);
+   },
    component: InstallDetailRoute
 });
 
