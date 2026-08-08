@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check, FolderOpen } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
@@ -14,13 +14,13 @@ export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
    const t = useTranslations('installs.manage.edit');
    const common = useTranslations('common');
    const { state } = editor;
-   const saving = state.status === 'saving';
+   const busy = state.status === 'saving' || state.status === 'choosing';
 
    return (
       <Dialog
          open={state.status !== 'closed'}
          onOpenChange={(nextOpen) => {
-            if (nextOpen || saving) return;
+            if (nextOpen || busy) return;
 
             editor.close();
          }}
@@ -41,18 +41,32 @@ export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
                         id="install-name"
                         value={state.name}
                         maxLength={60}
-                        disabled={saving}
+                        disabled={busy}
                         placeholder={t('namePlaceholder')}
                         onChange={(event) => editor.edit({ name: event.target.value })}
                      />
                   </div>
+
+                  {state.canChangePath ? (
+                     <div className="flex flex-col gap-2">
+                        <span className="font-medium">{t('folder')}</span>
+                        <div className="flex items-start gap-2">
+                           <div className="bg-muted/40 min-w-0 flex-1 rounded-md border px-3 py-2 text-xs break-all">{state.path}</div>
+                           <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void editor.choosePath()}>
+                              <FolderOpen data-icon="inline-start" />
+                              {t('changeFolder')}
+                           </Button>
+                        </div>
+                        <p className="text-muted-foreground text-xs">{t('folderHint')}</p>
+                     </div>
+                  ) : null}
 
                   <div className="flex flex-col gap-2">
                      <span className="font-medium">{t('color')}</span>
                      <div className="flex flex-wrap items-center gap-2">
                         <button
                            type="button"
-                           disabled={saving}
+                           disabled={busy}
                            aria-label={t('noColor')}
                            aria-pressed={state.color === null}
                            className={cn(
@@ -68,7 +82,7 @@ export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
                            <button
                               key={color}
                               type="button"
-                              disabled={saving}
+                              disabled={busy}
                               aria-label={color}
                               aria-pressed={state.color === color}
                               style={{ backgroundColor: color }}
@@ -86,7 +100,7 @@ export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
                                  'size-7 rounded-full p-0',
                                  state.color !== null && !installColors.includes(state.color) && 'ring-ring ring-2 ring-offset-2'
                               )}
-                              disabled={saving}
+                              disabled={busy}
                               label={t('customColor')}
                               inputLabel={t('colorInputLabel')}
                               value={state.color ?? defaultInstallColor}
@@ -107,7 +121,7 @@ export function EditInstallDialog({ editor }: { editor: InstallEditor }) {
             )}
 
             <DialogFooter>
-               <Button type="button" variant="outline" size="sm" disabled={saving} onClick={editor.close}>
+               <Button type="button" variant="outline" size="sm" disabled={busy} onClick={editor.close}>
                   {common('cancel')}
                </Button>
                <Button type="button" size="sm" disabled={!editor.canSave} onClick={() => void editor.save()}>

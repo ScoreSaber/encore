@@ -11,11 +11,11 @@ import { useSettings } from '@/modules/settings/renderer/settings-provider';
 type PendingRootChange = {
    currentRoot: string;
    currentInstallCount: number;
-   selected: InstallRootValidation;
+   selected: Extract<InstallRootValidation, { status: 'ok' }>;
 };
 
-export function LibraryRootField({ disabled, onChange }: { disabled: boolean; onChange: () => void }) {
-   const t = useTranslations('downloads.library');
+export function InstallRootField({ disabled, onChange }: { disabled: boolean; onChange?: () => void }) {
+   const t = useTranslations('installs.library');
    const common = useTranslations('common');
    const settings = useSettings();
    const [pending, setPending] = useState<PendingRootChange | null>(null);
@@ -30,7 +30,7 @@ export function LibraryRootField({ disabled, onChange }: { disabled: boolean; on
       if (choice.status === 'cancelled') return;
 
       if (choice.selected.status === 'invalid') {
-         setIssue(choice.selected.issue ?? 'inspect-failed');
+         setIssue(choice.selected.issue);
          return;
       }
 
@@ -44,15 +44,16 @@ export function LibraryRootField({ disabled, onChange }: { disabled: boolean; on
       if (!saved.ok) return;
 
       setPending(null);
-      onChange();
+      onChange?.();
    }
 
    return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 py-2">
          <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
                <div className="font-medium">{t('label')}</div>
-               <div className="text-muted-foreground break-all">{issue ? t(`rootIssue.${issue}`) : installRoot}</div>
+               <div className="text-muted-foreground text-xs">{t('description')}</div>
+               <div className="text-muted-foreground mt-1 text-xs break-all">{issue ? t(`rootIssue.${issue}`) : installRoot}</div>
             </div>
             <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={disabled} onClick={() => void pickRoot()}>
                <FolderOpen data-icon="inline-start" />

@@ -121,6 +121,30 @@ describe('map service', () => {
       expect(await readdir(customLevelsPath(install.path))).toEqual([]);
    });
 
+   test('uses the replacement folder after an already scanned install is repointed', async () => {
+      const harness = await createHarness();
+      const install = await harness.firstInstall();
+      await writeInstalledMap(install.path, 'old-map', 'Old map');
+      const oldSnapshot = await harness.maps.list({ installId: install.id });
+      expect(oldSnapshot.maps.map((map) => map.title)).toEqual(['Old map']);
+
+      const replacementPath = await createInstallFolder(harness.dataPath, 'Replacement Beat Saber');
+      await writeInstalledMap(replacementPath, 'new-map', 'New map');
+      await harness.repointInstall(install.id, replacementPath);
+
+      const replacementSnapshot = await harness.maps.list({ installId: install.id });
+      expect(replacementSnapshot.mapsPath).toBe(customLevelsPath(replacementPath));
+      expect(replacementSnapshot.maps.map((map) => map.title)).toEqual(['New map']);
+
+      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [replacementSnapshot.maps[0]!.id] });
+      expect(deleted.ok).toBe(true);
+      if (!deleted.ok) return;
+
+      expect((await waitForOperation(harness.operations, deleted.value.id))?.status).toBe('completed');
+      expect(await readdir(customLevelsPath(replacementPath))).toEqual([]);
+      expect(await readdir(customLevelsPath(install.path))).toEqual(['old-map']);
+   });
+
    test('refuses a second copy of a map that is already installed', async () => {
       const harness = await createHarness();
       const install = await harness.firstInstall();
@@ -232,6 +256,10 @@ async function createHarness(options: { fetchContent?: ContentFetch } = {}) {
          await registry.register({ source: 'library', path });
          return (await registry.list()).installs.find((install) => install.path === path)!;
       },
+      repointInstall: async (installId: string, path: string) => {
+         const updated = await registry.update(installId, { path });
+         if (Result.isError(updated) || !updated.value) throw new Error('the test install could not be repointed');
+      },
       setCatalogHash: (hash: string) => {
          catalogHash = hash;
       }
@@ -281,6 +309,14 @@ async function writeMapArchive(parentPath: string, fileName: string, title: stri
    await writeFile(archivePath, buildMapArchive(title));
 
    return archivePath;
+}
+
+async function writeInstalledMap(installPath: string, folderName: string, title: string) {
+   const mapPath = join(customLevelsPath(installPath), folderName);
+   await mkdir(mapPath, { recursive: true });
+   await writeFile(join(mapPath, 'Info.dat'), rawMapInfo(title));
+   await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
+   await writeFile(join(mapPath, 'song.egg'), 'song');
 }
 
 const difficultyData = '{"_notes":[]}';

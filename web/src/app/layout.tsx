@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
-import encoreLogo from "../../../assets/encore-logo.svg";
+import encoreLogo from "../../../assets/logo.svg";
 
 const geist = localFont({
   src: [

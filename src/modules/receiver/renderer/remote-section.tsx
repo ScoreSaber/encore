@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { AlertTriangle, KeyRound, Laptop, Pencil, PowerOff, ShieldCheck, Trash2, Unplug, Wifi } from 'lucide-react';
+import { AlertTriangle, KeyRound, Pencil, PowerOff, ShieldCheck, Trash2, Unplug, Wifi } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { ConfirmDialog } from '@/components/dialog/confirm-dialog';
@@ -53,51 +53,53 @@ export function RemoteSection({
 
    return (
       <>
-         {receiver.error && !setupOpen && !teardownOpen ? (
-            <Alert className="mt-6" variant="destructive">
-               <AlertTriangle />
-               <AlertTitle>{t('remote.errorTitle')}</AlertTitle>
-               <AlertDescription>{receiver.error}</AlertDescription>
-            </Alert>
-         ) : null}
+         <SettingsSection title={t('remote.title')}>
+            <div className="flex min-w-0 flex-col gap-3">
+               {receiver.error && !setupOpen && !teardownOpen ? (
+                  <Alert variant="destructive">
+                     <AlertTriangle />
+                     <AlertTitle>{t('remote.errorTitle')}</AlertTitle>
+                     <AlertDescription>{receiver.error}</AlertDescription>
+                  </Alert>
+               ) : null}
 
-         <SettingsSection title={configured ? t('remote.title') : undefined}>
-            {configured ? (
-               <div className="flex min-w-0 flex-col">
-                  <div className="flex flex-wrap justify-end gap-2 py-2">
-                     <Button type="button" size="sm" disabled={controlsDisabled} onClick={() => setSetupOpen(true)}>
-                        <Wifi data-icon="inline-start" />
-                        {t('remote.connectComputer')}
-                     </Button>
-                     <Button type="button" variant="outline" size="sm" disabled={controlsDisabled} onClick={() => setTeardownOpen(true)}>
-                        <PowerOff data-icon="inline-start" />
-                        {t('remote.turnOff.action')}
-                     </Button>
-                  </div>
+               {configured ? (
+                  <>
+                     <div className="flex flex-wrap justify-end gap-2">
+                        <Button type="button" size="sm" disabled={controlsDisabled} onClick={() => setSetupOpen(true)}>
+                           <Wifi data-icon="inline-start" />
+                           {t('remote.connectComputer')}
+                        </Button>
+                        <Button type="button" variant="outline" size="sm" disabled={controlsDisabled} onClick={() => setTeardownOpen(true)}>
+                           <PowerOff data-icon="inline-start" />
+                           {t('remote.turnOff.action')}
+                        </Button>
+                     </div>
 
-                  <div className="mt-2 min-w-0 divide-y border-y">
-                     {canShareThisComputer ? (
-                        <ThisComputerSection receiver={receiver} receiverSettings={receiverSettings} disabled={controlsDisabled} />
-                     ) : null}
-                     {showControlledComputers ? (
-                        <ControlledComputersSection
-                           receiver={receiver}
-                           disabled={controlsDisabled}
-                           targets={remoteTargets}
-                           status={targetsStatus}
-                           onReloadTargets={onReloadTargets}
-                        />
-                     ) : null}
-                  </div>
-               </div>
-            ) : (
-               <ConnectionSetupPrompt
-                  context="settings"
-                  canShareThisComputer={canShareThisComputer}
-                  disabled={controlsDisabled}
-                  onSetup={() => setSetupOpen(true)}
-               />
-            )}
+                     <div className="min-w-0 divide-y border-t">
+                        {canShareThisComputer ? (
+                           <ThisComputerSection receiver={receiver} receiverSettings={receiverSettings} disabled={controlsDisabled} />
+                        ) : null}
+                        {showControlledComputers ? (
+                           <ControlledComputersSection
+                              receiver={receiver}
+                              disabled={controlsDisabled}
+                              targets={remoteTargets}
+                              status={targetsStatus}
+                              onReloadTargets={onReloadTargets}
+                           />
+                        ) : null}
+                     </div>
+                  </>
+               ) : (
+                  <ConnectionSetupPrompt
+                     context="settings"
+                     canShareThisComputer={canShareThisComputer}
+                     disabled={controlsDisabled}
+                     onSetup={() => setSetupOpen(true)}
+                  />
+               )}
+            </div>
          </SettingsSection>
 
          <RemoteSetupDialog
@@ -139,16 +141,11 @@ function ThisComputerSection({
    const listensOnAllInterfaces = selectedInterface?.host === '0.0.0.0';
 
    return (
-      <div className="min-w-0 py-4">
+      <div className="min-w-0 py-3">
          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 gap-3">
-               <div className="text-muted-foreground flex size-9 shrink-0 items-center justify-center">
-                  <Laptop className="size-4" />
-               </div>
-               <div className="min-w-0">
-                  <h3 className="font-medium">{t('remote.thisComputer.title')}</h3>
-                  <p className="text-muted-foreground mt-0.5 text-xs">{t('remote.thisComputer.description')}</p>
-               </div>
+            <div className="min-w-0">
+               <h3 className="text-sm font-medium">{t('remote.thisComputer.title')}</h3>
+               <p className="text-muted-foreground mt-0.5 text-xs">{t('remote.thisComputer.description')}</p>
             </div>
             <Badge variant={status === 'running' ? 'default' : status === 'error' ? 'destructive' : 'outline'}>
                {t(`remote.receiver.statusValue.${status}`)}
@@ -156,7 +153,7 @@ function ThisComputerSection({
          </div>
 
          {receiverSettings.enabled ? (
-            <div className="ml-12 flex flex-col gap-4 pt-4 pr-1">
+            <div className="flex flex-col gap-4 pt-4">
                {addresses.length > 0 ? (
                   <div>
                      <div className="text-muted-foreground text-xs font-medium">{t('remote.receiver.address', { count: addresses.length })}</div>
@@ -284,26 +281,18 @@ function ControlledComputersSection({
    const t = useTranslations('settings');
 
    return (
-      <div className="min-w-0 py-4">
-         <div className="flex items-center gap-3">
-            <div className="text-muted-foreground flex size-9 shrink-0 items-center justify-center">
-               <Wifi className="size-4" />
+      <div className="min-w-0">
+         {status === 'loading' ? <LoadingPanel className="w-full py-3" /> : null}
+
+         {status === 'error' ? <ErrorPanel className="w-full py-3" message={t('remote.remotes.loadError')} onRetry={onReloadTargets} /> : null}
+
+         {targets.length > 0 ? (
+            <div className="flex w-full flex-col divide-y">
+               {targets.map((target) => (
+                  <RemoteTargetRow key={target.id} target={target} disabled={disabled} onForget={() => void receiver.forgetRemote(target.id)} />
+               ))}
             </div>
-            <h3 className="font-medium">{t('remote.remotes.title')}</h3>
-         </div>
-         <div className="ml-12 pt-3 pr-1">
-            {status === 'loading' ? <LoadingPanel className="w-full" /> : null}
-
-            {status === 'error' ? <ErrorPanel className="w-full" message={t('remote.remotes.loadError')} onRetry={onReloadTargets} /> : null}
-
-            {targets.length > 0 ? (
-               <div className="flex w-full flex-col divide-y border-t">
-                  {targets.map((target) => (
-                     <RemoteTargetRow key={target.id} target={target} disabled={disabled} onForget={() => void receiver.forgetRemote(target.id)} />
-                  ))}
-               </div>
-            ) : null}
-         </div>
+         ) : null}
       </div>
    );
 }
@@ -314,10 +303,7 @@ function RemoteTargetRow({ target, disabled, onForget }: { target: Target; disab
    const [confirmOpen, setConfirmOpen] = useState(false);
 
    return (
-      <div className="flex items-center gap-3 py-3 text-sm">
-         <div className="text-muted-foreground flex size-8 shrink-0 items-center justify-center">
-            <Laptop className="size-4" />
-         </div>
+      <div className="flex items-center gap-3 py-2.5 text-sm">
          <div className="min-w-0 flex-1">
             <div className="truncate font-medium">{target.name}</div>
             <div className="text-muted-foreground truncate text-xs">

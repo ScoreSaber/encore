@@ -20,23 +20,33 @@ export function ConnectionSetupPrompt({
 }) {
    const home = useTranslations('home.connection');
    const settings = useTranslations('settings');
-   const isHome = context === 'home';
-   const title = isHome ? home(hasSavedPC ? 'offlineTitle' : 'title') : settings('remote.overview.offTitle');
-   const description = isHome
-      ? home(hasSavedPC ? 'offlineDescription' : 'description')
-      : settings(canShareThisComputer ? 'remote.overview.offDescription' : 'remote.overview.manageDescription');
-   const setupLabel = isHome ? home(hasSavedPC ? 'connectAnother' : 'connect') : settings('remote.setUp');
-   const Heading = isHome ? 'h2' : 'h3';
+
+   if (context === 'settings') {
+      return (
+         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+            <p className="text-muted-foreground min-w-0 flex-1 text-sm">
+               {settings(canShareThisComputer ? 'remote.overview.offDescription' : 'remote.overview.manageDescription')}
+            </p>
+            <Button type="button" size="sm" className="shrink-0" disabled={disabled} onClick={onSetup}>
+               <Cable data-icon="inline-start" />
+               {settings('remote.setUp')}
+            </Button>
+         </div>
+      );
+   }
+
+   const title = home(hasSavedPC ? 'offlineTitle' : 'title');
+   const description = home(hasSavedPC ? 'offlineDescription' : 'description');
 
    return (
       <section className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
          <Cable className="text-primary size-5 shrink-0" />
          <div className="min-w-0 flex-1">
-            <Heading className="font-medium">{title}</Heading>
+            <h2 className="font-medium">{title}</h2>
             <p className="text-muted-foreground max-w-2xl text-sm">{description}</p>
          </div>
          <ButtonGroup className="shrink-0" aria-label={title}>
-            {isHome && hasSavedPC ? (
+            {hasSavedPC ? (
                <Button asChild type="button" variant="outline" size="sm">
                   <Link to="/settings">
                      <Settings data-icon="inline-start" />
@@ -46,7 +56,7 @@ export function ConnectionSetupPrompt({
             ) : null}
             <Button type="button" size="sm" disabled={disabled} onClick={onSetup}>
                <Cable data-icon="inline-start" />
-               {setupLabel}
+               {home(hasSavedPC ? 'connectAnother' : 'connect')}
             </Button>
          </ButtonGroup>
       </section>

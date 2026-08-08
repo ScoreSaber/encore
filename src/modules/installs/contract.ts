@@ -60,13 +60,6 @@ export type InstallDetail = z.infer<typeof installDetailSchema>;
 export type InstallRegistrySnapshot = z.infer<typeof installRegistrySnapshotSchema>;
 export type TargetInstallRegistrySnapshot = { targetId: TargetId } & InstallRegistrySnapshot;
 
-export type InstallActionRequest = {
-   targetId: TargetId;
-   installId: InstallId;
-};
-
-export type InstallDetailRequest = InstallActionRequest;
-
 export const installNameSchema = z.string().trim().min(1).max(60);
 export const installColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 
@@ -76,7 +69,8 @@ export const installColors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6
 export const installUpdateRequestSchema = z.object({
    installId: installIdSchema,
    name: installNameSchema.optional(),
-   color: installColorSchema.nullable().optional()
+   color: installColorSchema.nullable().optional(),
+   path: z.string().trim().min(1).optional()
 });
 
 export const installPinRequestSchema = z.object({
@@ -94,6 +88,9 @@ export const installReorderRequestSchema = z.object({
 export const installActionRequestSchema = z.object({
    installId: installIdSchema
 });
+
+export type InstallActionRequest = { targetId: TargetId } & z.infer<typeof installActionRequestSchema>;
+export type InstallDetailRequest = InstallActionRequest;
 
 export const installActionIssueSchema = z.enum([
    'inspect-failed',
@@ -169,12 +166,11 @@ export type InstallUpdateResult = IpcResult<InstallDetail>;
 export type InstallRegistryResult = IpcResult<InstallRegistrySnapshot>;
 export type InstallOperationResult = IpcResult<OperationSnapshot>;
 
-export type InstallUpdateRequest = InstallActionRequest & {
-   name?: string;
-   color?: string | null;
-};
+export type InstallUpdateRequest = { targetId: TargetId } & z.infer<typeof installUpdateRequestSchema>;
 
 export type InstallOpenFolderResult = { status: 'opened' } | { status: 'unsupported' } | { status: 'failed'; message: string };
+
+export type InstallLocationChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; path: string };
 
 export function invalidInstallAction(request: { installId: InstallId }, issue: InstallActionIssue, detail?: string): InstallActionProblem {
    return {
@@ -189,11 +185,9 @@ export type InstallRootIssue = 'empty' | 'inspect-failed' | 'not-a-directory' | 
 
 export type InstallRootValidation = {
    path: string;
-   status: 'ok' | 'invalid';
    exists: boolean;
    installCount: number;
-   issue?: InstallRootIssue;
-};
+} & ({ status: 'ok' } | { status: 'invalid'; issue: InstallRootIssue });
 
 export type InstallRootChoice =
    | { status: 'cancelled' }
@@ -204,8 +198,7 @@ export type InstallRootChoice =
         selected: InstallRootValidation;
      };
 
-export type InstallImportIssue =
-   | 'already-registered'
+export type InstallFolderIssue =
    | 'inspect-failed'
    | 'missing-executable'
    | 'missing-game-data'
@@ -213,6 +206,8 @@ export type InstallImportIssue =
    | 'not-absolute'
    | 'not-found'
    | 'unknown-version';
+
+export type InstallImportIssue = 'already-registered' | InstallFolderIssue;
 
 export type InstallImportPreview =
    | {

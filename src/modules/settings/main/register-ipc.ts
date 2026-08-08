@@ -54,10 +54,9 @@ async function chooseProtonFolder(event: IpcMainInvokeEvent, settingsStore: Sett
 }
 
 async function chooseInstallRoot(event: IpcMainInvokeEvent, settingsStore: SettingsStore): Promise<InstallRootChoice> {
-   const picked = await showOpenDialog(event, { properties: ['openDirectory', 'createDirectory'] });
-   if (picked.canceled || !picked.filePaths[0]) return { status: 'cancelled' };
-
    const currentRoot = (await settingsStore.getSnapshot()).library.installRoot;
+   const picked = await showOpenDialog(event, { properties: ['openDirectory', 'createDirectory'], defaultPath: currentRoot });
+   if (picked.canceled || !picked.filePaths[0]) return { status: 'cancelled' };
 
    return {
       status: 'selected',

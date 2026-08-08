@@ -2,7 +2,7 @@ import { shell, type IpcMainInvokeEvent } from 'electron';
 
 import { showOpenDialog } from '@/app/ipc/dialogs';
 import { defineIpcHandlers } from '@/app/ipc/main';
-import type { InstallActionRequest, InstallImportChoice, InstallOpenFolderResult } from '@/modules/installs/contract';
+import type { InstallActionRequest, InstallImportChoice, InstallLocationChoice, InstallOpenFolderResult } from '@/modules/installs/contract';
 import { installsIpc } from '@/modules/installs/ipc';
 import type { InstallImportService } from '@/modules/installs/main/install-import';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
@@ -11,6 +11,7 @@ import { localTargetId, type TargetId } from '@/modules/targets/contract';
 export function createInstallsIpcModule(installs: InstallRegistry, imports: InstallImportService) {
    return defineIpcHandlers(installsIpc, {
       chooseImportSource: (event, request) => chooseImportSource(event, imports, request.targetId),
+      chooseInstallLocation: (event, request) => chooseInstallLocation(event, installs, request),
       import: (_event, request) =>
          request.targetId === localTargetId
             ? imports.start(request.sourcePath)
@@ -24,6 +25,26 @@ export function createInstallsIpcModule(installs: InstallRegistry, imports: Inst
               },
       openFolder: (_event, request) => openInstallFolder(installs, request)
    });
+}
+
+async function chooseInstallLocation(
+   event: IpcMainInvokeEvent,
+   installs: InstallRegistry,
+   request: InstallActionRequest
+): Promise<InstallLocationChoice> {
+   if (request.targetId !== localTargetId) return { status: 'unsupported' };
+
+   const install = await installs.get(request.installId);
+
+   const picked = await showOpenDialog(event, {
+      title: 'Choose the Beat Saber install folder',
+      buttonLabel: 'Choose folder',
+      properties: ['openDirectory'],
+      ...(install ? { defaultPath: install.path } : {})
+   });
+   const path = picked.filePaths[0];
+
+   return picked.canceled || !path ? { status: 'cancelled' } : { status: 'selected', path };
 }
 
 async function chooseImportSource(event: IpcMainInvokeEvent, imports: InstallImportService, targetId: TargetId): Promise<InstallImportChoice> {

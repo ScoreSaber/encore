@@ -120,6 +120,7 @@ function ProtocolRow({
 
    return (
       <SettingsRow
+         className="min-h-9 py-1.5 first:pt-1.5 last:pb-1.5"
          label={schemes.length > 0 ? t('linkLabel', { name: label, schemes: schemes.map((scheme) => `${scheme}://`).join(', ') }) : label}
          htmlFor={id}
          description={failed ? t('unavailable') : permanent ? t('registeredPermanent') : undefined}

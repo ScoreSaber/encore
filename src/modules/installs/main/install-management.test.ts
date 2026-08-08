@@ -23,6 +23,48 @@ afterEach(async () => {
 });
 
 describe('install management', () => {
+   test('repoints an install to a validated folder without moving either folder', async () => {
+      const harness = await createHarness();
+      const originalPath = await createInstallFolder(harness.dataPath, 'Beat Saber 1', '1.37.0');
+      const replacementPath = await createInstallFolder(harness.dataPath, 'Beat Saber 2', '1.39.0');
+      const install = await harness.register(originalPath);
+
+      expect(await harness.management.update({ installId: install.id, path: replacementPath })).toMatchObject({
+         ok: true,
+         value: { id: install.id, path: replacementPath, version: '1.39.0', status: 'ready' }
+      });
+      expect((await harness.registry.list()).installs).toMatchObject([{ id: install.id, path: replacementPath }]);
+      expect(await readdir(originalPath)).toContain('Beat Saber.exe');
+      expect(await readdir(replacementPath)).toContain('Beat Saber.exe');
+   });
+
+   test('rejects invalid, duplicate and store-owned replacement folders', async () => {
+      const harness = await createHarness();
+      const firstPath = await createInstallFolder(harness.dataPath, 'Beat Saber 1', '1.37.0');
+      const secondPath = await createInstallFolder(harness.dataPath, 'Beat Saber 2', '1.38.0');
+      const invalidPath = join(harness.dataPath, 'Not Beat Saber');
+      await mkdir(invalidPath);
+      const first = await harness.register(firstPath);
+      const second = await harness.register(secondPath);
+
+      expect(await harness.management.update({ installId: first.id, path: invalidPath })).toMatchObject({
+         ok: false,
+         error: { code: 'installs.manage.invalid-path', message: 'the selected folder has no Beat Saber executable' }
+      });
+      expect(await harness.management.update({ installId: first.id, path: secondPath })).toMatchObject({
+         ok: false,
+         error: { code: 'installs.manage.already-registered' }
+      });
+
+      harness.setCandidates([createCandidate(firstPath)]);
+      const store = (await harness.registry.rescan()).installs.find((install) => install.source === 'store')!;
+      expect(await harness.management.update({ installId: store.id, path: invalidPath })).toMatchObject({
+         ok: false,
+         error: { code: 'installs.manage.store-owned' }
+      });
+      expect((await harness.registry.get(second.id))?.path).toBe(secondPath);
+   });
+
    test('pins and reorders installs across rescans', async () => {
       const harness = await createHarness();
       const first = await harness.register(await createInstallFolder(harness.dataPath, 'Beat Saber 1', '1.37.0'));

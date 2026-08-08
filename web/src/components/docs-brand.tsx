@@ -1,4 +1,4 @@
-import encoreLogo from "../../../assets/encore-logo.svg";
+import encoreLogo from "../../../assets/logo.svg";
 
 export function DocsBrand() {
   return (

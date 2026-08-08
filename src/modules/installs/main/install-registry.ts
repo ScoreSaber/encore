@@ -9,7 +9,7 @@ import {
    type InstallRegistrySnapshot
 } from '@/modules/installs/contract';
 import { readBeatSaberVersion } from '@/modules/installs/main/beat-saber-version';
-import { createInstallStore, type InstallRecord, type InstallRegistration } from '@/modules/installs/main/install-store';
+import { createInstallStore, type InstallRecord, type InstallRecordPatch, type InstallRegistration } from '@/modules/installs/main/install-store';
 import { stripMechanicalSuffix } from '@/modules/installs/main/naming';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreInstallCandidate } from '@/modules/stores/contract';
@@ -69,7 +69,7 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
            });
    }
 
-   async function update(installId: InstallId, patch: { name?: string; pinned?: boolean; color?: string | null }) {
+   async function update(installId: InstallId, patch: InstallRecordPatch) {
       const current = await list();
       const detail = details.get(installId);
       if (!detail) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
@@ -77,6 +77,11 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
       const updated = await store.update(installId, patch);
       if (Result.isError(updated)) return Result.err<InstallDetail | null, FilesystemProblem>(updated.error);
       if (!updated.value) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
+
+      if (patch.path !== undefined) {
+         await rescan();
+         return Result.ok<InstallDetail | null, FilesystemProblem>(details.get(installId) ?? null);
+      }
 
       const changed = {
          name: updated.value.name ?? detail.name,

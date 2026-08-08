@@ -11,6 +11,7 @@ import { AdvancedSection } from '@/modules/settings/renderer/advanced-section';
 import { AppearanceSection } from '@/modules/settings/renderer/appearance-section';
 import { BSManagerSection } from '@/modules/settings/renderer/bsmanager-section';
 import { DeepLinkSection } from '@/modules/settings/renderer/deep-link-section';
+import { InstallationSection } from '@/modules/settings/renderer/installation-section';
 import { ModRepositoriesSection } from '@/modules/settings/renderer/mod-repositories-section';
 import { SettingsLoading, SettingsPageShell } from '@/modules/settings/renderer/settings-layout';
 import { useSettings } from '@/modules/settings/renderer/settings-provider';
@@ -84,6 +85,8 @@ function SettingsRoute() {
 
          <div className="flex flex-col">
             <AppearanceSection disabled={controlsDisabled} />
+
+            <InstallationSection disabled={controlsDisabled} />
 
             <ModRepositoriesSection />
 

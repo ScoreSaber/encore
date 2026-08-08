@@ -142,12 +142,12 @@ export function ModRepositoriesFields({
       <>
          {!addOnly ? (
             <>
-               <Field orientation="vertical" className="py-2">
+               <Field orientation="vertical" className="py-3 first:pt-0 last:pb-0">
                   <FieldContent className="min-w-0 gap-0.5">
                      <FieldTitle>{t('official.label')}</FieldTitle>
                   </FieldContent>
 
-                  <div className="flex w-full flex-col gap-2">
+                  <div className="flex w-full flex-col divide-y border-y">
                      {snapshot?.official.map((source) => (
                         <RepositoryRow
                            key={source.id}
@@ -206,7 +206,7 @@ export function ModRepositoriesFields({
             </>
          ) : null}
 
-         <Field orientation="vertical" className={reviewOnly ? undefined : 'py-2'}>
+         <Field orientation="vertical" className={reviewOnly ? undefined : 'py-3 first:pt-0 last:pb-0'}>
             {!reviewOnly ? (
                <>
                   <FieldContent className="min-w-0 gap-0.5">
@@ -300,7 +300,7 @@ export function ModRepositoriesFields({
          </Field>
 
          {!addOnly && showRepositoryList ? (
-            <Field orientation="vertical" className="py-2">
+            <Field orientation="vertical" className="py-3 first:pt-0 last:pb-0">
                <div className="flex w-full items-center justify-between gap-2">
                   <FieldTitle>{t('list.label')}</FieldTitle>
                   <RefreshButton
@@ -310,7 +310,7 @@ export function ModRepositoriesFields({
                   />
                </div>
 
-               <div className="flex w-full flex-col gap-2">
+               <div className="flex w-full flex-col divide-y border-y">
                   {!snapshot && !loadFailed ? <LoadingPanel /> : null}
                   {loadFailed ? (
                      <ErrorPanel message={t('unavailable')} onRetry={() => refreshRepositories.mutate(undefined, { onSuccess: onChanged })} />
@@ -356,7 +356,7 @@ function RepositoryRow({
    const [confirmOpen, setConfirmOpen] = useState(false);
 
    return (
-      <div className="bg-background/50 flex flex-col gap-2 rounded-md border px-3 py-2 text-sm @lg/field-group:flex-row @lg/field-group:items-center">
+      <div className="flex flex-col gap-2 py-2.5 text-sm @lg/field-group:flex-row @lg/field-group:items-center">
          <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-center gap-1">
                <div className="truncate font-medium">{repository.name}</div>

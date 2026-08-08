@@ -187,15 +187,40 @@
          "registryWriteFailed": "The install list could not be saved at {path}",
          "versionUnknown": "The Beat Saber version could not be detected"
       },
+      "library": {
+         "label": "Default install folder",
+         "description": "New Beat Saber downloads are stored here. Existing installs are not moved",
+         "change": "Change folder",
+         "rootIssue": {
+            "empty": "Pick a folder to keep downloaded versions in",
+            "inspect-failed": "That folder could not be inspected",
+            "not-a-directory": "That path is not a folder",
+            "not-absolute": "Pick a full folder path",
+            "not-writable": "Encore cannot write to that folder",
+            "parent-missing": "The parent folder does not exist",
+            "unchanged": "Downloads already land in that folder"
+         },
+         "rootChange": {
+            "description": "Encore only points new downloads at this folder. Nothing is copied or moved",
+            "currentRoot": "Current folder",
+            "newRoot": "New folder",
+            "staying": "{count, plural, =0 {No installs stay behind} one {# install stays behind} other {# installs stay behind}}",
+            "found": "{count, plural, =0 {No installs found} one {# install found} other {# installs found}}",
+            "confirm": "Use new folder"
+         }
+      },
       "manage": {
          "size": "Size",
          "sizeValue": "{size} in {count} files",
          "edit": {
             "action": "Edit",
             "title": "Edit install",
-            "description": "The name and colour are stored by Encore and never written into the install folder",
+            "description": "Change how Encore identifies this install. Installs managed directly by Encore can point at another existing folder",
             "name": "Name",
             "namePlaceholder": "Install name",
+            "folder": "Install folder",
+            "changeFolder": "Change folder",
+            "folderHint": "Encore points at the selected folder without moving or changing any files",
             "color": "Colour",
             "changeColor": "Change colour",
             "customColor": "Custom colour",
@@ -886,27 +911,6 @@
          "completed": "The version was downloaded and the install list is up to date",
          "cancelled": "The download was cancelled. Nothing was added to the install root",
          "failed": "The download failed"
-      },
-      "library": {
-         "label": "Download folder",
-         "change": "Change folder",
-         "rootIssue": {
-            "empty": "Pick a folder to keep downloaded versions in",
-            "inspect-failed": "That folder could not be inspected",
-            "not-a-directory": "That path is not a folder",
-            "not-absolute": "Pick a full folder path",
-            "not-writable": "Encore cannot write to that folder",
-            "parent-missing": "The parent folder does not exist",
-            "unchanged": "Downloads already land in that folder"
-         },
-         "rootChange": {
-            "description": "Encore only points at the new folder. Nothing is copied or moved, so move an existing library yourself if you need it there",
-            "currentRoot": "Current folder",
-            "newRoot": "New folder",
-            "staying": "{count, plural, =0 {No installs stay behind} one {# install stays behind} other {# installs stay behind}}",
-            "found": "{count, plural, =0 {No installs found} one {# install found} other {# installs found}}",
-            "confirm": "Use new folder"
-         }
       }
    },
    "launch": {
@@ -1279,6 +1283,9 @@
    },
    "settings": {
       "pageTitle": "Settings",
+      "installation": {
+         "title": "Installation"
+      },
       "advanced": {
          "title": "Advanced",
          "useSymlinks": {
@@ -1432,7 +1439,6 @@
             "description": "Make Beat Saber on this PC available to Encore elsewhere"
          },
          "remotes": {
-            "title": "Other computers",
             "loadError": "Encore could not read the connected PC list",
             "forget": "Forget",
             "forgetConfirm": {

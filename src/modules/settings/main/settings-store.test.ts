@@ -14,6 +14,18 @@ afterEach(async () => {
 });
 
 describe('settings store', () => {
+   test('persists the default folder used by new installs', async () => {
+      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
+      tempRoots.push(dataPath);
+      const installRoot = join(dataPath, 'Beat Saber installs');
+      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+
+      expect((await store.updateLibrarySettings({ installRoot })).ok).toBe(true);
+
+      const reloaded = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+      expect((await reloaded.getSnapshot()).library.installRoot).toBe(installRoot);
+   });
+
    test('defaults the resource saver off in an existing last launch', async () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);

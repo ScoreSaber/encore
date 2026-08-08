@@ -47,6 +47,13 @@ export type InstallRegistration = {
    store?: StoreKind | null;
 };
 
+export type InstallRecordPatch = {
+   name?: string;
+   pinned?: boolean;
+   color?: string | null;
+   path?: string;
+};
+
 export function storeInstallKey(candidate: StoreInstallCandidate) {
    const app = candidate.appId ?? basename(candidate.path);
    return `${candidate.targetId}|${candidate.store}|${app}|${resolveFilesystemPath(candidate.libraryPath)}`;
@@ -160,7 +167,7 @@ export function createInstallStore(options: { dataPath: string }) {
          : Result.ok<InstallRecord, FilesystemProblem>(record);
    }
 
-   async function update(installId: InstallId, patch: { name?: string; pinned?: boolean; color?: string | null; store?: StoreKind }) {
+   async function update(installId: InstallId, patch: InstallRecordPatch & { store?: StoreKind }) {
       const current = await load();
       const existing = current.find((record) => record.id === installId);
       if (!existing) return Result.ok<InstallRecord | null, FilesystemProblem>(null);
@@ -170,6 +177,7 @@ export function createInstallStore(options: { dataPath: string }) {
          ...(patch.name === undefined ? {} : { name: patch.name }),
          ...(patch.pinned === undefined ? {} : { pinned: patch.pinned }),
          ...(patch.color === undefined ? {} : { color: patch.color }),
+         ...(patch.path === undefined ? {} : { path: resolveFilesystemPath(patch.path) }),
          ...(patch.store === undefined ? {} : { store: patch.store }),
          updatedAt: new Date().toISOString()
       };

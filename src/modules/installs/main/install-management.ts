@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 
 import type { IpcError, IpcFailureResult } from '@/app/ipc/core';
 import { deletePathWithProgress } from '@/lib/filesystem/operations';
-import type { FilesystemProblem } from '@/lib/filesystem/path';
+import { isSamePath, type FilesystemProblem } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
 import {
    installColorSchema,
@@ -17,13 +17,18 @@ import {
    type InstallUpdateRequest,
    type InstallUpdateResult
 } from '@/modules/installs/contract';
+import { inspectInstallFolder, installFolderIssueMessages } from '@/modules/installs/main/install-folder';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 
 import { dirname } from 'node:path';
 
-const actionIssueMessages: Record<InstallActionIssue, string> = {
+type InstallUpdateIssue = InstallActionIssue | 'already-registered' | 'invalid-path';
+
+const actionIssueMessages: Record<InstallUpdateIssue, string> = {
+   'already-registered': 'the selected folder is already registered with Encore',
    'inspect-failed': 'the install folder could not be inspected',
+   'invalid-path': 'the selected folder is not a complete Beat Saber install',
    'invalid-color': 'the colour is not a hex colour Encore can store',
    'invalid-name': 'the name has to be between 1 and 60 characters',
    'not-found': 'the install is not in the registry anymore',
@@ -56,9 +61,28 @@ export function createInstallManagementService(options: InstallManagementOptions
       const color = request.color === undefined || request.color === null ? null : installColorSchema.safeParse(request.color);
       if (color && !color.success) return failure(request.installId, 'invalid-color');
 
+      let path = request.path?.trim();
+      if (path !== undefined && isSamePath(path, install.path)) path = undefined;
+      if (path !== undefined && install.source === 'store') return failure(request.installId, 'store-owned');
+
+      if (path !== undefined) {
+         const inspected = await inspectInstallFolder(path);
+         if (inspected.status === 'invalid') {
+            return failure(request.installId, 'invalid-path', inspected.detail, installFolderIssueMessages[inspected.issue]);
+         }
+
+         const installs = await options.registry.list();
+         if (installs.installs.some((candidate) => candidate.id !== request.installId && isSamePath(candidate.path, inspected.path))) {
+            return failure(request.installId, 'already-registered');
+         }
+
+         path = inspected.path;
+      }
+
       const updated = await options.registry.update(request.installId, {
          ...(name ? { name: name.data } : {}),
-         ...(request.color === undefined ? {} : { color: color ? color.data : null })
+         ...(request.color === undefined ? {} : { color: color ? color.data : null }),
+         ...(path === undefined ? {} : { path })
       });
       if (Result.isError(updated)) return { ok: false, error: toIpcError(updated.error) };
 
@@ -181,12 +205,12 @@ export function createInstallManagementService(options: InstallManagementOptions
       return invalidInstallAction({ installId }, issue, detail);
    }
 
-   function failure(installId: string, issue: InstallActionIssue, detail?: string): IpcFailureResult {
+   function failure(installId: string, issue: InstallUpdateIssue, detail?: string, message = actionIssueMessages[issue]): IpcFailureResult {
       return {
          ok: false,
          error: {
             code: `installs.manage.${issue}`,
-            message: actionIssueMessages[issue],
+            message,
             details: { installId, detail }
          }
       };

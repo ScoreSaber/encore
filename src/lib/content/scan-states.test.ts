@@ -35,6 +35,43 @@ describe('content scan states', () => {
       expect(rescanned).toEqual({ status: 'ready', value: 2 });
    });
 
+   test('rescans with empty state when an install id resolves to a new path', async () => {
+      let installPath = '/game/first';
+      let scans = 0;
+      const published: Snapshot[] = [];
+      const states = createScanStates<Snapshot, string, string[]>({
+         getInstallPath: async () => installPath,
+         emptySnapshot: (_installId, status) => ({ status: status === 'unsupported' ? 'missing' : status, value: 0 }),
+         emptyExtra: () => [],
+         runScan: async ({ state }) => {
+            scans += 1;
+            expect(state.cache.size).toBe(0);
+            expect(state.extra).toEqual([]);
+            state.cache.set(installPath, 'parsed');
+            state.extra.push(installPath);
+            return { status: 'ready', value: scans };
+         },
+         publish: (snapshot) => published.push(snapshot),
+         cache: {
+            load: async () => null,
+            save: async () => undefined,
+            remove: async () => undefined
+         }
+      });
+
+      await states.list('install');
+      published.length = 0;
+      installPath = '/game/second';
+
+      expect(await states.list('install')).toEqual({ status: 'ready', value: 2 });
+      expect(published).toEqual([
+         { status: 'scanning', value: 0 },
+         { status: 'ready', value: 2 }
+      ]);
+      expect(states.get('install')).toMatchObject({ installPath: '/game/second', extra: ['/game/second'] });
+      expect([...states.get('install')!.cache.keys()]).toEqual(['/game/second']);
+   });
+
    test('evicts old idle install state', async () => {
       const states = createScanStates<Snapshot, string, null>({
          getInstallPath: async (installId) => `/game/${installId}`,

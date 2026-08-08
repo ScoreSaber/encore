@@ -11,8 +11,8 @@ import { Separator } from '@/components/ui/separator';
 import { useFormatters } from '@/app/renderer/i18n/formatters';
 import type { MessageKey } from '@/app/renderer/i18n/keys';
 import { versionSupportsStore, type DownloadIssue, type DownloadVersion } from '@/modules/downloads/contract';
-import { LibraryRootField } from '@/modules/downloads/renderer/library-root-field';
 import type { VersionDownloader } from '@/modules/downloads/renderer/use-version-download';
+import { InstallRootField } from '@/modules/installs/renderer/install-root-field';
 import type { OperationSnapshot } from '@/modules/operations/contract';
 import { isOperationFinished } from '@/modules/operations/renderer/operation-progress';
 import { storeKinds, type StoreKind } from '@/modules/stores/contract';
@@ -103,7 +103,7 @@ export function DownloadVersionDialog({ downloader, targetName }: { downloader: 
                   <p className="text-muted-foreground text-xs break-all">{state.preview.detail}</p>
                ) : null}
                {state.status === 'unavailable' && state.preview.issue === 'depot-not-empty' && canChangeRoot ? (
-                  <LibraryRootField disabled={false} onChange={downloader.recheck} />
+                  <InstallRootField disabled={false} onChange={downloader.recheck} />
                ) : null}
 
                {state.status === 'failed' ? (
