@@ -1,9 +1,44 @@
+import type { Metadata } from "next";
+
 import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
 import { HomeNavigation } from "@/components/home/navigation";
 import { HomeFooter, HomeSections } from "@/components/home/sections";
 import encoreApp from "../../../assets/encore-app.webp";
 import encoreLogo from "../../../assets/encore-logo.svg";
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: "/",
+    title: "Encore",
+    images: [
+      {
+        url: "/social-preview.png?v=4",
+        type: "image/png",
+        width: 1200,
+        height: 630,
+        alt: "Encore",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Encore",
+    images: [
+      {
+        url: "/social-preview.png?v=4",
+        type: "image/png",
+        width: 1200,
+        height: 630,
+        alt: "Encore",
+      },
+    ],
+  },
+};
 
 export default function Home() {
   return (

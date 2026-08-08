@@ -36,8 +36,8 @@ const geistPixel = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://encore.scoresaber.com"),
   title: "Encore",
-  description: "A modern desktop companion for Beat Saber",
   icons: {
     icon: encoreLogo.src,
   },
@@ -45,7 +45,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   colorScheme: "dark",
-  themeColor: "#00020b",
+  themeColor: "#59b0f4",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
