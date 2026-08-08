@@ -19,6 +19,7 @@ export type MapInfo = {
    bpm: number | null;
    durationSeconds: number | null;
    songFileName: string | null;
+   audioDataFileName: string | null;
    coverFileName: string | null;
    difficulties: MapDifficultyInfo[];
 };
@@ -65,7 +66,12 @@ const v4InfoSchema = z.object({
    version: z.string(),
    song: z.object({ title: z.string().optional(), subTitle: z.string().optional(), author: z.string().optional() }).optional(),
    audio: z
-      .object({ songFilename: z.string().optional(), songDuration: positiveNumberSchema.optional(), bpm: positiveNumberSchema.optional() })
+      .object({
+         songFilename: z.string().optional(),
+         audioDataFilename: z.string().optional(),
+         songDuration: positiveNumberSchema.optional(),
+         bpm: positiveNumberSchema.optional()
+      })
       .optional(),
    coverImageFilename: z.string().optional(),
    difficultyBeatmaps: z.array(v4BeatmapSchema).optional()
@@ -142,6 +148,7 @@ function parseLegacyInfo(value: unknown, folderName?: string): MapResult<MapInfo
       bpm: info._beatsPerMinute ?? null,
       durationSeconds: null,
       songFileName,
+      audioDataFileName: null,
       coverFileName,
       difficulties
    });
@@ -181,6 +188,9 @@ function parseV4Info(value: unknown, folderName?: string): MapResult<MapInfo> {
    const songFileName = optionalFileName(info.audio?.songFilename);
    if (songFileName === false) return unsafeFileName(info.audio?.songFilename ?? '', folderName);
 
+   const audioDataFileName = optionalFileName(info.audio?.audioDataFilename);
+   if (audioDataFileName === false) return unsafeFileName(info.audio?.audioDataFilename ?? '', folderName);
+
    const coverFileName = optionalFileName(info.coverImageFilename);
    if (coverFileName === false) return unsafeFileName(info.coverImageFilename ?? '', folderName);
 
@@ -193,6 +203,7 @@ function parseV4Info(value: unknown, folderName?: string): MapResult<MapInfo> {
       bpm: info.audio?.bpm ?? null,
       durationSeconds: info.audio?.songDuration ?? null,
       songFileName,
+      audioDataFileName,
       coverFileName,
       difficulties
    });

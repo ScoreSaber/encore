@@ -21,6 +21,8 @@ export async function computeMapHash(input: MapHashInput): Promise<MapResult<Map
          const hash = createHash('sha1');
          hash.update(input.rawInfo);
 
+         if (input.info.audioDataFileName) await updateHashFromFile(hash, join(input.mapPath, input.info.audioDataFileName));
+
          for (const difficulty of input.info.difficulties) {
             await updateHashFromFile(hash, join(input.mapPath, difficulty.beatmapFileName));
             if (difficulty.lightshowFileName) await updateHashFromFile(hash, join(input.mapPath, difficulty.lightshowFileName));

@@ -158,6 +158,25 @@ describe('map service', () => {
       expect(finished?.error?.code).toBe('maps.hash.failed');
       expect(await readdir(customLevelsPath(install.path)).catch(() => [])).toEqual([]);
    });
+
+   test('installs a downloaded v4 map whose BeatSaver hash includes audio data', async () => {
+      const archive = buildV4MapArchive();
+      const harness = await createHarness({ fetchContent: () => Promise.resolve(new Response(archive)) });
+      const install = await harness.firstInstall();
+      harness.setCatalogHash(v4MapArchiveHash());
+
+      const started = await harness.maps.startDownload({
+         installId: install.id,
+         source: { kind: 'beatsaver', key: '2a1b' }
+      });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      const finished = await waitForOperation(harness.operations, started.value.id);
+
+      expect(finished?.status).toBe('completed');
+      expect((await harness.maps.list({ installId: install.id })).maps.map((map) => map.title)).toEqual(['Reality Check']);
+   });
 });
 
 async function createHarness(options: { fetchContent?: ContentFetch } = {}) {
@@ -272,6 +291,56 @@ function buildMapArchive(title: string) {
 
 function mapArchiveHash(title: string) {
    return createHash('sha1').update(rawMapInfo(title)).update(difficultyData).digest('hex');
+}
+
+const v4AudioData = '{"version":"4.0.0","bpmData":[]}';
+const v4DifficultyData = '{"version":"4.0.0","colorNotes":[]}';
+const v4LightshowData = '{"version":"4.0.0","basicEvents":[]}';
+
+function buildV4MapArchive() {
+   return zipSync({
+      'Info.dat': encode(rawV4MapInfo()),
+      'AudioData.dat': encode(v4AudioData),
+      'Easy.dat': encode(v4DifficultyData),
+      'Expert.dat': encode(v4DifficultyData),
+      'Lightshow.dat': encode(v4LightshowData),
+      'song.egg': encode('song')
+   });
+}
+
+function v4MapArchiveHash() {
+   return createHash('sha1')
+      .update(rawV4MapInfo())
+      .update(v4AudioData)
+      .update(v4DifficultyData)
+      .update(v4LightshowData)
+      .update(v4DifficultyData)
+      .update(v4LightshowData)
+      .digest('hex');
+}
+
+function rawV4MapInfo() {
+   return JSON.stringify({
+      version: '4.0.1',
+      song: { title: 'Reality Check', author: 'Artist' },
+      audio: { songFilename: 'song.egg', audioDataFilename: 'AudioData.dat', bpm: 160 },
+      difficultyBeatmaps: [
+         {
+            characteristic: 'Standard',
+            difficulty: 'Easy',
+            beatmapAuthors: { mappers: ['Mapper'] },
+            beatmapDataFilename: 'Easy.dat',
+            lightshowDataFilename: 'Lightshow.dat'
+         },
+         {
+            characteristic: 'Standard',
+            difficulty: 'Expert',
+            beatmapAuthors: { mappers: ['Mapper'] },
+            beatmapDataFilename: 'Expert.dat',
+            lightshowDataFilename: 'Lightshow.dat'
+         }
+      ]
+   });
 }
 
 function rawMapInfo(title: string, coverFileName?: string) {
