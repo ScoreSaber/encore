@@ -18,6 +18,7 @@
       "import": "Import",
       "loading": "Loading",
       "more": "More actions",
+      "rememberDownload": "Download future links to this install without asking",
       "openFolder": {
          "action": "Open folder",
          "failed": "The folder could not be opened",
@@ -385,9 +386,10 @@
          "map": "Map",
          "mapper": "Mapper",
          "unknownMap": "BeatSaver key {key}",
-         "install": "Install",
+         "destination": "Destination",
          "noInstalls": "Add an install first, then open the link again",
          "confirm": "Download map",
+         "success": "Map downloaded",
          "issues": {
             "invalidKey": "That link does not name a BeatSaver map",
             "unsupportedLink": "Encore does not handle that kind of link"
@@ -489,9 +491,10 @@
          "author": "Author",
          "type": "Kind",
          "unknownModel": "ModelSaber id {id}",
-         "install": "Install",
+         "destination": "Destination",
          "noInstalls": "Add an install first, then open the link again",
          "confirm": "Download model",
+         "success": "Model downloaded",
          "issues": {
             "invalidId": "That link does not name a ModelSaber model",
             "unsupportedLink": "Encore does not handle that kind of link"
@@ -592,9 +595,10 @@
          "description": "A link or a playlist file asked Encore to add a playlist to an install",
          "address": "Address",
          "file": "File",
-         "install": "Install",
+         "destination": "Destination",
          "noInstalls": "Add an install first, then open the playlist again",
          "confirm": "Add playlist",
+         "success": "Playlist added",
          "issues": {
             "invalidSource": "That link does not carry a playlist address",
             "unsupportedLink": "Encore does not handle that kind of link"
@@ -1075,8 +1079,9 @@
       },
       "link": {
          "title": "Launch from a link",
-         "description": "This link came from outside Encore. Nothing starts until you confirm it",
+         "description": "A link asked Encore to launch Beat Saber",
          "install": "Install",
+         "remember": "Launch future Encore links without asking",
          "issues": {
             "invalidRequest": "This link is not a launch Encore can run",
             "unknownAction": "This link asks for something Encore does not do",
@@ -1337,6 +1342,17 @@
          "mapScheme": "Map links",
          "modelScheme": "Model links",
          "playlistScheme": "Playlist links",
+         "launchHandling": {
+            "title": "Launch links",
+            "description": "Launch Beat Saber from Encore shortcuts without asking first"
+         },
+         "downloadDestination": {
+            "title": "Download link destination",
+            "description": "Choose where future map, model and playlist links are downloaded. Shared libraries appear once",
+            "askEveryTime": "Ask every time",
+            "unavailable": "Saved install unavailable",
+            "unavailableDescription": "The saved install is unavailable, so Encore asks where to download links"
+         },
          "registeredPermanent": "Linux keeps the desktop entry, so remove it there to undo this",
          "unavailable": "The link setting could not be read"
       },

@@ -52,5 +52,6 @@ export const playlistsIpc = defineIpcDescriptor({
       'playlists:set-link-registered',
       playlistLinkRegistrationSchema
    ),
-   onLinkOpened: defineIpcEvent<PlaylistLinkEvent>('playlists:link-opened')
+   onLinkOpened: defineIpcEvent<PlaylistLinkEvent>('playlists:link-opened'),
+   takePendingLink: defineIpcCommand<PlaylistLinkEvent | null>('playlists:take-pending-link')
 });

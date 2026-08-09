@@ -2,6 +2,7 @@ import { shell, type IpcMainInvokeEvent } from 'electron';
 
 import { showOpenDialog, showSaveDialog } from '@/ipc/dialogs';
 import { broadcastIpcEvent, defineIpcHandlers } from '@/ipc/main';
+import { createPendingIpcEvent } from '@/ipc/pending-event';
 import type { TargetPlaylistCollectionRequest, TargetPlaylistSelectionRequest } from '@/modules/playlists/api';
 import {
    parsePlaylistLink,
@@ -9,6 +10,7 @@ import {
    playlistLinkScheme,
    type PlaylistExportChoice,
    type PlaylistImportChoice,
+   type PlaylistLinkEvent,
    type PlaylistLinkProtocolResult,
    type PlaylistLinkProtocolState,
    type PlaylistOpenFolderResult
@@ -24,16 +26,20 @@ import { basename } from 'node:path';
 const importFilters = [{ name: 'Playlist', extensions: ['bplist', 'json'] }];
 
 export function createPlaylistsIpcModule(service: PlaylistService) {
+   const links = createPendingIpcEvent<PlaylistLinkEvent>((event) => broadcastIpcEvent(playlistsIpc.onLinkOpened, event));
+
    onDeepLink([playlistLinkScheme], (link) => {
       const parsed = parsePlaylistLink(link);
-      broadcastIpcEvent(
-         playlistsIpc.onLinkOpened,
+      links.publish(
          parsed.status === 'ok' ? { status: 'ready', source: { kind: 'url', url: parsed.url } } : { status: 'rejected', issue: parsed.issue }
       );
    });
 
    onFileOpened([playlistFileExtension], (path) => {
-      broadcastIpcEvent(playlistsIpc.onLinkOpened, { status: 'ready', source: { kind: 'file', path, fileName: basename(path) } });
+      links.publish({
+         status: 'ready',
+         source: { kind: 'file', path, fileName: basename(path) }
+      });
    });
 
    return defineIpcHandlers(playlistsIpc, {
@@ -42,14 +48,22 @@ export function createPlaylistsIpcModule(service: PlaylistService) {
       choosePlaylistImport,
       importPlaylists: (_event, request) =>
          request.targetId === localTargetId
-            ? service.startImport({ installId: request.installId, paths: request.paths })
+            ? service.startImport({
+                 installId: request.installId,
+                 paths: request.paths
+              })
             : unsupportedTarget('playlists', 'manage playlists', request),
       choosePlaylistExport,
       exportPlaylists: (_event, request) =>
          request.targetId === localTargetId
-            ? service.startExport({ installId: request.installId, playlistIds: request.playlistIds, destinationPath: request.destinationPath })
+            ? service.startExport({
+                 installId: request.installId,
+                 playlistIds: request.playlistIds,
+                 destinationPath: request.destinationPath
+              })
             : unsupportedTarget('playlists', 'manage playlists', request),
-      setPlaylistLinkRegistered: (_event, request) => setLinkRegistered(request.registered)
+      setPlaylistLinkRegistered: (_event, request) => setLinkRegistered(request.registered),
+      takePendingLink: () => links.take()
    });
 }
 
@@ -57,7 +71,11 @@ async function openPlaylistsFolder(service: PlaylistService, request: TargetPlay
    if (request.targetId !== localTargetId) return { status: 'unsupported' };
 
    const path = await service.getPlaylistsPath({ installId: request.installId });
-   if (!path) return { status: 'failed', message: 'this install has no playlists folder yet' };
+   if (!path)
+      return {
+         status: 'failed',
+         message: 'this install has no playlists folder yet'
+      };
 
    const failed = await shell.openPath(path);
    return failed ? { status: 'failed', message: failed } : { status: 'opened' };

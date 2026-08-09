@@ -3,6 +3,7 @@ import { useTranslations } from 'use-intl';
 
 import { WarningLine } from '@/components/state/state-panel';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 import { formatLaunchArgs, type LaunchIssue, type LaunchWarning } from '@/modules/launch/contract';
@@ -43,13 +44,15 @@ export function DeepLinkLaunchDialog() {
    const t = useTranslations('shortcuts.link');
    const launch = useTranslations('launch');
    const common = useTranslations('common');
-   const { state, confirm, dismiss } = useDeepLinkLaunch();
+   const { state, remember, setRemember, confirm, dismiss } = useDeepLinkLaunch();
+   const hidden =
+      state.status === 'received' || (state.status === 'previewing' && state.automatic) || (state.status === 'starting' && state.automatic);
 
    return (
       <Dialog
-         open={state.status !== 'idle'}
+         open={state.status !== 'idle' && !hidden}
          onOpenChange={(nextOpen) => {
-            if (nextOpen || state.status === 'starting') return;
+            if (nextOpen || hidden || state.status === 'starting') return;
 
             dismiss();
          }}
@@ -98,6 +101,12 @@ export function DeepLinkLaunchDialog() {
                         <WarningLine key={warning}>{launch(`warnings.${warningKeys[warning]}`)}</WarningLine>
                      ))}
                      {state.preview.options.closeEncore ? <WarningLine>{launch('closeEncore.description')}</WarningLine> : null}
+                     {state.status === 'ready' ? (
+                        <label className="flex items-start gap-2">
+                           <Checkbox checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
+                           <span className="min-w-0 break-words">{t('remember')}</span>
+                        </label>
+                     ) : null}
                   </>
                ) : null}
 

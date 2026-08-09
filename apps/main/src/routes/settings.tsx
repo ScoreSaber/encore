@@ -90,7 +90,7 @@ function SettingsRoute() {
 
             <ModRepositoriesSection />
 
-            <DeepLinkSection />
+            <DeepLinkSection disabled={controlsDisabled} />
 
             <BSManagerSection />
 

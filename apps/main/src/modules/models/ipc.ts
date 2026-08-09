@@ -49,5 +49,6 @@ export const modelsIpc = defineIpcDescriptor({
       'models:set-link-registered',
       modelLinkRegistrationSchema
    ),
-   onLinkOpened: defineIpcEvent<ModelLinkEvent>('models:link-opened')
+   onLinkOpened: defineIpcEvent<ModelLinkEvent>('models:link-opened'),
+   takePendingLink: defineIpcCommand<ModelLinkEvent | null>('models:take-pending-link')
 });

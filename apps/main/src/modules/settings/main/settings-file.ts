@@ -6,6 +6,7 @@ import {
    accentColorSchema,
    appSettingsSchema,
    librarySettingsSchema,
+   linkHandlingSettingsSchema,
    modGroupSettingsSchema,
    pairedDeviceSchema,
    remoteTargetRecordSchema,
@@ -38,6 +39,12 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          installIds: z.record(z.string().trim().min(1), z.string().trim().min(1)).catch(defaults.app.selection.installIds)
       })
       .catch(defaults.app.selection);
+   const linkHandling = z
+      .object({
+         launchWithoutAsking: z.boolean().catch(defaults.app.linkHandling.launchWithoutAsking),
+         downloadInstall: linkHandlingSettingsSchema.shape.downloadInstall.catch(defaults.app.linkHandling.downloadInstall)
+      })
+      .catch(defaults.app.linkHandling);
    const app = z
       .object({
          theme: themeSchema.catch(defaults.app.theme),
@@ -51,7 +58,8 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          modSourceResolution: modSourceResolutionSettingsSchema.catch(defaults.app.modSourceResolution),
          alphaWarningAccepted: z.boolean().catch(defaults.app.alphaWarningAccepted),
          bsmanagerPromptDismissed: z.boolean().catch(defaults.app.bsmanagerPromptDismissed),
-         modGroups: modGroupSettingsSchema.catch(defaults.app.modGroups)
+         modGroups: modGroupSettingsSchema.catch(defaults.app.modGroups),
+         linkHandling
       })
       .catch(defaults.app);
    const library = z

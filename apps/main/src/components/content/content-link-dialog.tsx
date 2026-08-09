@@ -3,9 +3,10 @@ import type { ReactNode } from 'react';
 import { Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
+import { contentLinkDestinationName, type ContentLinkDestination } from '@/components/content/content-link-destinations';
 import type { ContentLinkState } from '@/components/content/use-content-link';
-import type { ContentLinkInstall } from '@/components/content/use-content-link';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
@@ -15,12 +16,18 @@ import { isOperationFinished, OperationOutcome, OperationProgress } from '@/modu
 type ContentLinkDialogProps<Source, Issue> = {
    state: ContentLinkState<Source, Issue>;
    operation: OperationSnapshot | null;
-   installs: ContentLinkInstall[];
-   selectedInstallKey: string | null;
-   selectInstall: (key: string) => void;
+   destinations: ContentLinkDestination[];
+   selectedDestinationKey: string | null;
+   selectDestination: (key: string) => void;
    confirm: () => Promise<void>;
    cancel: () => void;
    dismiss: () => void;
+   hidden: boolean;
+   remember: {
+      checked: boolean;
+      label: string;
+      onCheckedChange: (checked: boolean) => void;
+   };
    issue: ReactNode;
    preview: ReactNode;
    labels: {
@@ -32,7 +39,7 @@ type ContentLinkDialogProps<Source, Issue> = {
       completed: string;
       cancelled: string;
       noInstalls: string;
-      install: string;
+      destination: string;
       confirm: string;
    };
 };
@@ -40,24 +47,27 @@ type ContentLinkDialogProps<Source, Issue> = {
 export function ContentLinkDialog<Source, Issue>({
    state,
    operation,
-   installs,
-   selectedInstallKey,
-   selectInstall,
+   destinations,
+   selectedDestinationKey,
+   selectDestination,
    confirm,
    cancel,
    dismiss,
+   hidden,
+   remember,
    issue,
    preview,
    labels
 }: ContentLinkDialogProps<Source, Issue>) {
    const common = useTranslations('common');
+   const sharedRoots = useTranslations('sharedContent.roots');
    const running = state.status === 'starting' || (state.status === 'running' && !isOperationFinished(operation));
 
    return (
       <Dialog
-         open={state.status !== 'idle'}
+         open={state.status !== 'idle' && !hidden}
          onOpenChange={(nextOpen) => {
-            if (nextOpen || running) return;
+            if (nextOpen || hidden || running) return;
 
             dismiss();
          }}
@@ -81,20 +91,20 @@ export function ContentLinkDialog<Source, Issue>({
                {state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? (
                   <>
                      {preview}
-                     {installs.length === 0 ? (
+                     {destinations.length === 0 ? (
                         <p className="text-muted-foreground">{labels.noInstalls}</p>
                      ) : (
                         <div className="flex flex-col gap-1.5">
-                           <span className="text-muted-foreground text-xs">{labels.install}</span>
-                           <Select value={selectedInstallKey ?? undefined} disabled={state.status !== 'ready'} onValueChange={selectInstall}>
+                           <span className="text-muted-foreground text-xs">{labels.destination}</span>
+                           <Select value={selectedDestinationKey ?? undefined} disabled={state.status !== 'ready'} onValueChange={selectDestination}>
                               <SelectTrigger className="w-full">
                                  <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
                                  <SelectGroup>
-                                    {installs.map((install) => (
-                                       <SelectItem key={install.key} value={install.key}>
-                                          {install.targetName} — {install.name}
+                                    {destinations.map((destination) => (
+                                       <SelectItem key={destination.key} value={destination.key}>
+                                          {destination.targetName} — {contentLinkDestinationName(destination, sharedRoots('sharedContentName'))}
                                        </SelectItem>
                                     ))}
                                  </SelectGroup>
@@ -102,6 +112,13 @@ export function ContentLinkDialog<Source, Issue>({
                            </Select>
                         </div>
                      )}
+
+                     {state.status === 'ready' ? (
+                        <label className="flex items-start gap-2">
+                           <Checkbox checked={remember.checked} onCheckedChange={(checked) => remember.onCheckedChange(checked === true)} />
+                           <span className="min-w-0 break-words">{remember.label}</span>
+                        </label>
+                     ) : null}
                   </>
                ) : null}
 
@@ -128,7 +145,7 @@ export function ContentLinkDialog<Source, Issue>({
                      <Button type="button" variant="outline" size="sm" onClick={dismiss}>
                         {common('cancel')}
                      </Button>
-                     <Button type="button" size="sm" disabled={!selectedInstallKey} onClick={() => void confirm()}>
+                     <Button type="button" size="sm" disabled={!selectedDestinationKey} onClick={() => void confirm()}>
                         <Download data-icon="inline-start" />
                         {labels.confirm}
                      </Button>

@@ -2,6 +2,7 @@ import { shell, type IpcMainInvokeEvent } from 'electron';
 
 import { showOpenDialog, showSaveDialog } from '@/ipc/dialogs';
 import { broadcastIpcEvent, defineIpcHandlers } from '@/ipc/main';
+import { createPendingIpcEvent } from '@/ipc/pending-event';
 import type { TargetModelCollectionRequest, TargetModelDetailRequest, TargetModelSelectionRequest } from '@/modules/models/api';
 import {
    modelLinkScheme,
@@ -24,8 +25,12 @@ import { unsupportedTarget } from '@/modules/targets/main/target-errors';
 const modelFileExtensions = modelTypes.map((type) => modelExtension(type).slice(1));
 
 export function createModelsIpcModule(service: ModelService) {
+   const links = createPendingIpcEvent<ModelLinkEvent>((event) => broadcastIpcEvent(modelsIpc.onLinkOpened, event));
+
    onDeepLink([modelLinkScheme], (link) => {
-      void resolveModelLink(service, link).then((event) => broadcastIpcEvent(modelsIpc.onLinkOpened, event));
+      void resolveModelLink(service, link).then((event) => {
+         links.publish(event);
+      });
    });
 
    return defineIpcHandlers(modelsIpc, {
@@ -37,7 +42,8 @@ export function createModelsIpcModule(service: ModelService) {
       chooseModelExport,
       exportModels: (_event, request) =>
          request.targetId === localTargetId ? service.startExport(request) : unsupportedTarget('models', 'manage models', request),
-      setModelLinkRegistered: (_event, request) => setLinkRegistered(request.registered)
+      setModelLinkRegistered: (_event, request) => setLinkRegistered(request.registered),
+      takePendingLink: () => links.take()
    });
 }
 

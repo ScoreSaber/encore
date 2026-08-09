@@ -25,12 +25,14 @@ export function ModelLinkDialog() {
       <ContentLinkDialog
          state={state}
          operation={link.operation}
-         installs={link.installs}
-         selectedInstallKey={link.selectedInstallKey}
-         selectInstall={link.selectInstall}
+         destinations={link.destinations}
+         selectedDestinationKey={link.selectedDestinationKey}
+         selectDestination={link.selectDestination}
          confirm={link.confirm}
          cancel={link.cancel}
          dismiss={link.dismiss}
+         hidden={link.dialogHidden}
+         remember={{ checked: link.remember, label: common('rememberDownload'), onCheckedChange: link.setRemember }}
          issue={
             state.status === 'rejected' ? (
                <>
@@ -57,7 +59,7 @@ export function ModelLinkDialog() {
             completed: actions('result.completed'),
             cancelled: actions('result.cancelled'),
             noInstalls: t('noInstalls'),
-            install: t('install'),
+            destination: t('destination'),
             confirm: t('confirm')
          }}
       />

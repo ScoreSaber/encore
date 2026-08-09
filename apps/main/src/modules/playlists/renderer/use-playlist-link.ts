@@ -1,41 +1,67 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 
-import { useContentLink } from '@/components/content/use-content-link';
+import { useTranslations } from 'use-intl';
 
-import type { PlaylistLinkIssue, PlaylistLinkSource } from '@/modules/playlists/contract';
-import { localTargetId } from '@/modules/targets/contract';
+import { useContentLinkDownload } from '@/components/content/use-content-link';
+import { usePendingLinkEvent } from '@/components/content/use-pending-link-event';
+
+import type { TargetCallResult } from '@/lib/api';
+import type { InstallId } from '@/modules/installs/contract';
+import type { PlaylistLinkEvent, PlaylistLinkIssue, PlaylistLinkSource, PlaylistOperationResult } from '@/modules/playlists/contract';
+import { localTargetId, type TargetId } from '@/modules/targets/contract';
+
+const pendingLinkFailure = {
+   code: 'playlists.link-intake-failed',
+   message: 'failed to read the pending playlist link'
+};
+const startFailure = {
+   code: 'playlists.start-failed',
+   message: 'the playlist could not be added'
+};
 
 export function usePlaylistLink() {
+   const t = useTranslations('playlists.link');
    const playlists = window.encore.playlists;
-   const { accept, reject, startTarget, ...link } = useContentLink<PlaylistLinkSource, PlaylistLinkIssue>(
-      'manage-playlists',
-      (source, target) => source.kind === 'url' || target.id === localTargetId
+   const start = useCallback(
+      async (source: PlaylistLinkSource, targetId: TargetId, installId: InstallId): Promise<TargetCallResult<PlaylistOperationResult>> => {
+         if (source.kind === 'url')
+            return playlists.startDownload({
+               targetId,
+               installId,
+               url: source.url
+            });
+
+         return {
+            targetId,
+            status: 'ok',
+            value: await playlists.importPlaylists({
+               targetId,
+               installId,
+               paths: [source.path]
+            })
+         };
+      },
+      [playlists]
+   );
+   const link = useContentLinkDownload<PlaylistLinkSource, PlaylistLinkIssue>('manage-playlists', {
+      start,
+      startFailure,
+      successMessage: t('success'),
+      sharedFolderIds: () => ['playlists'],
+      supportsTarget: (source, target) => source.kind === 'url' || target.id === localTargetId
+   });
+   const open = useCallback(
+      (event: PlaylistLinkEvent) => {
+         if (event.status === 'rejected') {
+            link.reject(event.issue, event.detail);
+         } else {
+            link.accept(event.source);
+         }
+      },
+      [link.accept, link.reject]
    );
 
-   useEffect(() => {
-      return playlists.onLinkOpened((event) => {
-         if (event.status === 'rejected') {
-            reject(event.issue, event.detail);
-         } else {
-            accept(event.source);
-         }
-      });
-   }, [accept, playlists, reject]);
+   usePendingLinkEvent(playlists, open, link.fail, pendingLinkFailure);
 
-   const confirm = useCallback(async () => {
-      await startTarget(
-         async (source, targetId, installId) => {
-            if (source.kind === 'url') return playlists.startDownload({ targetId, installId, url: source.url });
-
-            return {
-               targetId,
-               status: 'ok',
-               value: await playlists.importPlaylists({ targetId, installId, paths: [source.path] })
-            };
-         },
-         { code: 'playlists.start-failed', message: 'the playlist could not be added' }
-      );
-   }, [playlists, startTarget]);
-
-   return { ...link, confirm };
+   return link;
 }

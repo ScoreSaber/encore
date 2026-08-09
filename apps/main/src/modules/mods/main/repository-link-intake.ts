@@ -1,17 +1,14 @@
 import { broadcastIpcEvent } from '@/ipc/main';
+import { createPendingIpcEvent } from '@/ipc/pending-event';
 import type { ModRepositoryLinkEvent } from '@/modules/mods/contract';
 import { modsIpc } from '@/modules/mods/ipc';
 
-let pendingLink: ModRepositoryLinkEvent | null = null;
+const links = createPendingIpcEvent<ModRepositoryLinkEvent>((event) => broadcastIpcEvent(modsIpc.onRepositoryLinkOpened, event));
 
 export function queueRepositoryLink(event: ModRepositoryLinkEvent) {
-   pendingLink = event;
-
-   broadcastIpcEvent(modsIpc.onRepositoryLinkOpened, event);
+   links.publish(event);
 }
 
 export function takePendingRepositoryLink() {
-   const event = pendingLink;
-   pendingLink = null;
-   return event;
+   return links.take();
 }

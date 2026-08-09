@@ -1,39 +1,55 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 
-import { useContentLink } from '@/components/content/use-content-link';
+import { useTranslations } from 'use-intl';
 
-import type { BeatSaverMapSummary, MapLinkIssue } from '@/modules/maps/contract';
+import { useContentLinkDownload } from '@/components/content/use-content-link';
+import { usePendingLinkEvent } from '@/components/content/use-pending-link-event';
+
+import type { InstallId } from '@/modules/installs/contract';
+import type { BeatSaverMapSummary, MapLinkEvent, MapLinkIssue } from '@/modules/maps/contract';
+import type { TargetId } from '@/modules/targets/contract';
 
 type MapLinkSource = { key: string; map: BeatSaverMapSummary | null };
 
+const pendingLinkFailure = {
+   code: 'maps.link-intake-failed',
+   message: 'failed to read the pending map link'
+};
+const startFailure = {
+   code: 'maps.start-failed',
+   message: 'the download could not be started'
+};
+
 export function useMapLink() {
+   const t = useTranslations('maps.link');
    const maps = window.encore.maps;
-   const { accept, reject, startTarget, ...link } = useContentLink<MapLinkSource, MapLinkIssue>('manage-maps');
-
-   useEffect(() => {
-      return maps.onLinkOpened((event) => {
+   const start = useCallback(
+      (source: MapLinkSource, targetId: TargetId, installId: InstallId) =>
+         maps.startDownload({
+            targetId,
+            installId,
+            source: { kind: 'beatsaver', key: source.key }
+         }),
+      [maps]
+   );
+   const link = useContentLinkDownload<MapLinkSource, MapLinkIssue>('manage-maps', {
+      start,
+      startFailure,
+      successMessage: t('success'),
+      sharedFolderIds: () => ['maps']
+   });
+   const open = useCallback(
+      (event: MapLinkEvent) => {
          if (event.status === 'rejected') {
-            reject(event.issue, event.detail);
+            link.reject(event.issue, event.detail);
          } else {
-            accept({ key: event.key, map: event.map });
+            link.accept({ key: event.key, map: event.map });
          }
-      });
-   }, [accept, maps, reject]);
+      },
+      [link.accept, link.reject]
+   );
 
-   const confirm = useCallback(async () => {
-      await startTarget(
-         (source, targetId, installId) =>
-            maps.startDownload({
-               targetId,
-               installId,
-               source: { kind: 'beatsaver', key: source.key }
-            }),
-         {
-            code: 'maps.start-failed',
-            message: 'the download could not be started'
-         }
-      );
-   }, [maps, startTarget]);
+   usePendingLinkEvent(maps, open, link.fail, pendingLinkFailure);
 
-   return { ...link, confirm };
+   return link;
 }

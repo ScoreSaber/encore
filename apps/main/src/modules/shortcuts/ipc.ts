@@ -28,5 +28,6 @@ export const shortcutsIpc = defineIpcDescriptor({
    create: defineIpcCommand<ShortcutResult, ShortcutRequest>('shortcuts:create', shortcutRequestSchema),
    setProtocolRegistered: defineIpcCommand<ShortcutProtocolResult, { registered: boolean }>('shortcuts:set-protocol', shortcutProtocolRequestSchema),
 
-   onLinkOpened: defineIpcEvent<LaunchLinkEvent>('shortcuts:link-opened')
+   onLinkOpened: defineIpcEvent<LaunchLinkEvent>('shortcuts:link-opened'),
+   takePendingLink: defineIpcCommand<LaunchLinkEvent | null>('shortcuts:take-pending-link')
 });

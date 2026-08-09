@@ -50,5 +50,6 @@ export const mapsIpc = defineIpcDescriptor({
    chooseMapExport: defineIpcCommand<MapExportChoice, TargetRequest<MapSelectionRequest>>('maps:choose-export', mapSelectionRequestSchema),
    exportMaps: defineIpcCommand<MapOperationResult, TargetRequest<MapExportRequest>>('maps:export', mapExportRequestSchema),
    setMapLinkRegistered: defineIpcCommand<MapLinkProtocolResult, { registered: boolean }>('maps:set-link-registered', mapLinkRegistrationSchema),
-   onLinkOpened: defineIpcEvent<MapLinkEvent>('maps:link-opened')
+   onLinkOpened: defineIpcEvent<MapLinkEvent>('maps:link-opened'),
+   takePendingLink: defineIpcCommand<MapLinkEvent | null>('maps:take-pending-link')
 });

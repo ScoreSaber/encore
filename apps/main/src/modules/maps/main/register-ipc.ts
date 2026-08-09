@@ -2,6 +2,7 @@ import { shell, type IpcMainInvokeEvent } from 'electron';
 
 import { showOpenDialog, showSaveDialog } from '@/ipc/dialogs';
 import { broadcastIpcEvent, defineIpcHandlers } from '@/ipc/main';
+import { createPendingIpcEvent } from '@/ipc/pending-event';
 import type { TargetMapCollectionRequest, TargetMapSelectionRequest } from '@/modules/maps/api';
 import {
    mapLinkSchemes,
@@ -21,8 +22,12 @@ import { localTargetId, type TargetRequest } from '@/modules/targets/contract';
 import { unsupportedTarget } from '@/modules/targets/main/target-errors';
 
 export function createMapsIpcModule(service: MapService) {
+   const links = createPendingIpcEvent<MapLinkEvent>((event) => broadcastIpcEvent(mapsIpc.onLinkOpened, event));
+
    onDeepLink(mapLinkSchemes, (link) => {
-      void resolveMapLink(service, link).then((event) => broadcastIpcEvent(mapsIpc.onLinkOpened, event));
+      void resolveMapLink(service, link).then((event) => {
+         links.publish(event);
+      });
    });
 
    return defineIpcHandlers(mapsIpc, {
@@ -35,7 +40,8 @@ export function createMapsIpcModule(service: MapService) {
       chooseMapExport,
       exportMaps: (_event, request) =>
          request.targetId === localTargetId ? service.startExport(request) : unsupportedTarget('maps', 'manage maps', request),
-      setMapLinkRegistered: (_event, request) => setLinkRegistered(request.registered)
+      setMapLinkRegistered: (_event, request) => setLinkRegistered(request.registered),
+      takePendingLink: () => links.take()
    });
 }
 

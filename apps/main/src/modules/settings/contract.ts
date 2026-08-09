@@ -1,9 +1,10 @@
 import { z } from 'zod';
 
+import { installIdSchema } from '@/modules/installs/contract';
 import { launchOptionsSchema, launchRecordSchema } from '@/modules/launch/contract';
 import { defaultModSourceResolutionSettings, modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
 import { customSharedFolderSchema } from '@/modules/shared-content/contract';
-import { localTargetId } from '@/modules/targets/contract';
+import { localTargetId, targetIdSchema } from '@/modules/targets/contract';
 import { defaultLocale, localeSchema } from '@/renderer/i18n/config';
 
 export const defaultAccentColor = '#59b0f4';
@@ -58,6 +59,16 @@ export function createDefaultModGroupSettings() {
    return { order: [], collapsed: ['category:library'] };
 }
 
+export const linkHandlingSettingsSchema = z.object({
+   launchWithoutAsking: z.boolean(),
+   downloadInstall: z
+      .object({
+         targetId: targetIdSchema,
+         installId: installIdSchema
+      })
+      .nullable()
+});
+
 export const appSettingsSchema = z.object({
    theme: themeSchema,
    accentColor: accentColorSchema,
@@ -70,7 +81,8 @@ export const appSettingsSchema = z.object({
    modSourceResolution: modSourceResolutionSettingsSchema.default(defaultModSourceResolutionSettings),
    alphaWarningAccepted: z.boolean().default(false),
    bsmanagerPromptDismissed: z.boolean().default(false),
-   modGroups: modGroupSettingsSchema.default(createDefaultModGroupSettings())
+   modGroups: modGroupSettingsSchema.default(createDefaultModGroupSettings()),
+   linkHandling: linkHandlingSettingsSchema.default({ launchWithoutAsking: false, downloadInstall: null })
 });
 
 export const librarySettingsSchema = z.object({
@@ -97,7 +109,8 @@ export const appSettingsPatchSchema = z.object({
    modSourceResolution: modSourceResolutionSettingsSchema.optional(),
    alphaWarningAccepted: z.boolean().optional(),
    bsmanagerPromptDismissed: z.boolean().optional(),
-   modGroups: modGroupSettingsSchema.optional()
+   modGroups: modGroupSettingsSchema.optional(),
+   linkHandling: linkHandlingSettingsSchema.partial().optional()
 });
 
 export const librarySettingsPatchSchema = z.object({
@@ -165,7 +178,8 @@ export function createDefaultAppSettings(): AppSettings {
       modSourceResolution: defaultModSourceResolutionSettings,
       alphaWarningAccepted: false,
       bsmanagerPromptDismissed: false,
-      modGroups: createDefaultModGroupSettings()
+      modGroups: createDefaultModGroupSettings(),
+      linkHandling: { launchWithoutAsking: false, downloadInstall: null }
    };
 }
 
@@ -203,7 +217,8 @@ export function applyAppSettingsPatch(settings: AppSettings, patch: AppSettingsP
       modSourceResolution: patch.modSourceResolution ?? settings.modSourceResolution,
       alphaWarningAccepted: patch.alphaWarningAccepted ?? settings.alphaWarningAccepted,
       bsmanagerPromptDismissed: patch.bsmanagerPromptDismissed ?? settings.bsmanagerPromptDismissed,
-      modGroups: patch.modGroups ?? settings.modGroups
+      modGroups: patch.modGroups ?? settings.modGroups,
+      linkHandling: { ...settings.linkHandling, ...patch.linkHandling }
    };
 }
 
