@@ -3,7 +3,7 @@
    "version": "0.1.10",
    "description": "A lightweight desktop companion for managing Beat Saber installs, mods and other user generated content",
    "author": "ScoreSaber",
-   "license": "GPL-2.0-only",
+   "license": "GPL-3.0-only",
    "homepage": "https://encore.scoresaber.com",
    "desktopName": "com.scoresaber.encore",
    "private": true,

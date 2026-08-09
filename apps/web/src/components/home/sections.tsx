@@ -125,7 +125,7 @@ export function HomeFooter() {
               target="_blank"
               rel="noreferrer"
             >
-              GPL-2.0 licensed
+              GPL-3.0 licensed
             </a>
           </p>
         </div>
