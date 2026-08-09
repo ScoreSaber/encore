@@ -12,6 +12,7 @@ import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const initialUpdateCheckDelayMs = 3_000;
+const updateCheckIntervalMs = 5 * 60_000;
 const updateLogFileName = 'updater.log';
 const maxPendingUpdateLogLines = 256;
 
@@ -39,6 +40,10 @@ export function initializeAutoUpdates() {
    setTimeout(() => {
       void checkForUpdates();
    }, initialUpdateCheckDelayMs);
+
+   setInterval(() => {
+      void checkForUpdates();
+   }, updateCheckIntervalMs);
 }
 
 export async function checkForUpdates() {
