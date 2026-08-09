@@ -12,7 +12,7 @@ const config = {
     unoptimized: true,
   },
   turbopack: {
-    root: path.resolve(import.meta.dirname, ".."),
+    root: path.resolve(import.meta.dirname, "../.."),
   },
 };
 

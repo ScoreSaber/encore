@@ -4,7 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { ContentSection } from "@/components/home/content-section";
 import { RepositorySection } from "@/components/home/repository-section";
 import { SharedContentSection } from "@/components/home/shared-content-section";
-import scoreSaberLogo from "../../../../assets/scoresaber.svg";
+import scoreSaberLogo from "../../../../../assets/scoresaber.svg";
 
 const faq = [
   {

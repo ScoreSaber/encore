@@ -5,24 +5,24 @@ import type { ReactNode } from "react";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 
-import encoreLogo from "../../../assets/logo.svg";
+import encoreLogo from "../../../../assets/logo.svg";
 
 const geist = localFont({
   src: [
     {
-      path: "../../../assets/fonts/geist-latin-400-normal.woff2",
+      path: "../../../../assets/fonts/geist-latin-400-normal.woff2",
       weight: "400",
     },
     {
-      path: "../../../assets/fonts/geist-latin-500-normal.woff2",
+      path: "../../../../assets/fonts/geist-latin-500-normal.woff2",
       weight: "500",
     },
     {
-      path: "../../../assets/fonts/geist-latin-600-normal.woff2",
+      path: "../../../../assets/fonts/geist-latin-600-normal.woff2",
       weight: "600",
     },
     {
-      path: "../../../assets/fonts/geist-latin-700-normal.woff2",
+      path: "../../../../assets/fonts/geist-latin-700-normal.woff2",
       weight: "700",
     },
   ],
@@ -30,7 +30,7 @@ const geist = localFont({
 });
 
 const geistPixel = localFont({
-  src: "../../../assets/fonts/GeistPixel-Square.woff2",
+  src: "../../../../assets/fonts/GeistPixel-Square.woff2",
   weight: "500",
   variable: "--font-pixel",
 });

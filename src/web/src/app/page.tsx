@@ -4,8 +4,8 @@ import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
 import { HomeNavigation } from "@/components/home/navigation";
 import { HomeFooter, HomeSections } from "@/components/home/sections";
-import encoreApp from "../../../assets/encore-app.webp";
-import encoreLogo from "../../../assets/logo.svg";
+import encoreApp from "../../../../assets/encore-app.webp";
+import encoreLogo from "../../../../assets/logo.svg";
 
 export const metadata: Metadata = {
   alternates: {

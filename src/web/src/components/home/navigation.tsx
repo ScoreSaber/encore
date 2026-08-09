@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 
 import { DownloadButton } from "@/components/download-button";
 import { GitHubIcon } from "@/components/github-icon";
-import encoreLogo from "../../../../assets/logo.svg";
+import encoreLogo from "../../../../../assets/logo.svg";
 
 export function HomeNavigation() {
   const [featureButtonVisible, setFeatureButtonVisible] = useState(true);

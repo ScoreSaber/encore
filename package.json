@@ -7,7 +7,7 @@
    "desktopName": "com.scoresaber.encore",
    "private": true,
    "workspaces": [
-      "web"
+      "src/web"
    ],
    "type": "module",
    "main": "out/main/index.js",
@@ -17,16 +17,16 @@
       "dev:web": "turbo run dev --filter=@encore/web",
       "predev": "install-electron",
       "build": "electron-vite build && bun run typecheck",
-      "build:watchdog": "bun run scripts/build-watchdog.ts",
+      "build:watchdog": "bun run src/app/native/watchdog/build.ts",
       "build:all": "turbo run build",
       "build:web": "turbo run build --filter=@encore/web",
-      "deploy:web": "bun run build:web && bun run --cwd web pages:deploy",
+      "deploy:web": "bun run build:web && bun run --cwd src/web pages:deploy",
       "start": "electron-vite preview",
       "prestart": "install-electron",
       "typecheck": "tsc --noEmit",
       "typecheck:all": "turbo run typecheck",
       "test": "bun test",
-      "lint": "oxlint src/ scripts/ electron.vite.config.ts",
+      "lint": "oxlint src/ electron.vite.config.ts",
       "lint:all": "turbo run lint",
       "format": "oxfmt .",
       "format:check": "oxfmt --check .",

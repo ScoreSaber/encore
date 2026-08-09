@@ -2,14 +2,15 @@ import { chmod, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const repositoryPath = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const watchdogPath = dirname(fileURLToPath(import.meta.url));
+const repositoryPath = resolve(watchdogPath, '../../../..');
 const outputDirectory = join(repositoryPath, 'build', 'watchdog');
 
 if (process.platform === 'darwin') process.exit(0);
 if (process.platform !== 'linux' && process.platform !== 'win32') throw new Error(`unsupported watchdog build platform: ${process.platform}`);
 
 const sourceFile = process.platform === 'linux' ? 'encore-watchdog-linux.c' : 'encore-watchdog-win.c';
-const sourcePath = join(repositoryPath, 'native', 'encore-watchdog', sourceFile);
+const sourcePath = join(watchdogPath, sourceFile);
 
 await mkdir(outputDirectory, { recursive: true });
 

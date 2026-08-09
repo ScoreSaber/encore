@@ -58,7 +58,7 @@
         "vite": "8.1.2",
       },
     },
-    "web": {
+    "src/web": {
       "name": "@encore/web",
       "version": "0.0.0",
       "dependencies": {
@@ -173,7 +173,7 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
-    "@encore/web": ["@encore/web@workspace:web"],
+    "@encore/web": ["@encore/web@workspace:src/web"],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.25.12", "", { "os": "aix", "cpu": "ppc64" }, "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA=="],
 
