@@ -16,6 +16,7 @@ import {
    type SharedContentsMode
 } from '@/modules/shared-content/contract';
 import { sharedContentIssueKeys, SharedFolderStateBadge } from '@/modules/shared-content/renderer/shared-folder-actions';
+import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedConnect } from '@/modules/shared-content/renderer/use-shared-connect';
 import { useFormatters } from '@/renderer/i18n/formatters';
 
@@ -128,6 +129,7 @@ function ConnectPreview({ preview }: { preview: ReadySharedConnectPreview }) {
    const actions = useTranslations('sharedContent.actions');
    const warnings = useTranslations('sharedContent.warnings');
    const format = useFormatters();
+   const folderLabel = useSharedFolderLabel();
    const planned = preview.folders.filter((folder) => folder.step !== 'skip');
 
    return (
@@ -149,7 +151,7 @@ function ConnectPreview({ preview }: { preview: ReadySharedConnectPreview }) {
                      <TableRow key={folder.id} className={folder.step === 'skip' ? 'opacity-60' : undefined}>
                         <TableCell className="min-w-0 whitespace-normal">
                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium">{shared(`folders.${folder.id}`)}</span>
+                              <span className="font-medium">{folderLabel(folder.id, folder.relativePath)}</span>
                               {folder.risky ? <Badge variant="secondary">{shared('risky')}</Badge> : null}
                            </div>
                         </TableCell>

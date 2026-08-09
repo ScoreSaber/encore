@@ -5,6 +5,8 @@ import { operationResultSchema } from '@/modules/operations/contract';
 import {
    sharedConnectActionSchema,
    sharedConnectPreviewSchema,
+   customSharedFolderActionResultSchema,
+   relativeFolderPathSchema,
    sharedContentActionSchema,
    sharedContentOverviewSchema,
    sharedContentPreviewSchema,
@@ -61,6 +63,16 @@ export const sharedContentApi = defineDomainApi(
             includeRisky: z.boolean().optional()
          }),
          output: operationResultSchema
+      }),
+      addCustomFolder: targetProcedure({
+         capability: 'share-content',
+         input: install.extend({ relativePath: relativeFolderPathSchema }),
+         output: customSharedFolderActionResultSchema
+      }),
+      forgetCustomFolder: targetProcedure({
+         capability: 'share-content',
+         input: z.object({ folderId: sharedFolderIdSchema }),
+         output: customSharedFolderActionResultSchema
       }),
       chooseRootCandidate: targetProcedure({ capability: 'share-content', input: path, output: sharedRootCandidateSchema }),
       addRoot: targetProcedure({

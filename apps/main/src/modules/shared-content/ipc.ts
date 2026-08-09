@@ -4,6 +4,7 @@ import { defineIpcDescriptor, defineIpcCommand } from '@/ipc/core';
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
 import {
    sharedFolderIdSchema,
+   type CustomSharedFolderChoice,
    type SharedContentOpenFolderResult,
    type SharedFolderRequest,
    type SharedRootRequest,
@@ -24,6 +25,10 @@ export const sharedContentIpc = defineIpcDescriptor({
    openSharedFolder: defineIpcCommand<SharedContentOpenFolderResult, TargetSharedContentRequest & SharedFolderRequest>(
       'shared-content:open-folder',
       sharedFolderRequestSchema
+   ),
+   chooseCustomFolder: defineIpcCommand<CustomSharedFolderChoice, TargetSharedContentRequest>(
+      'shared-content:choose-custom-folder',
+      targetInstallRequestSchema
    ),
    chooseSharedRoot: defineIpcCommand<SharedRootChoice, { targetId: TargetId }>('shared-content:choose-root', targetIdRequestSchema),
    openSharedRoot: defineIpcCommand<SharedContentOpenFolderResult, TargetRequest<SharedRootRequest>>(

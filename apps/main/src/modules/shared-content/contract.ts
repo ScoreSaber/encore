@@ -4,8 +4,30 @@ import type { IpcResult } from '@/ipc/core';
 import type { InstallId } from '@/modules/installs/contract';
 import type { OperationSnapshot } from '@/modules/operations/contract';
 
-export const sharedFolderIdSchema = z.enum(['avatars', 'maps', 'notes', 'platforms', 'playlists', 'sabers', 'user-data', 'wip-maps']);
+export const builtInSharedFolderIdSchema = z.enum(['avatars', 'maps', 'notes', 'platforms', 'playlists', 'sabers', 'user-data', 'wip-maps']);
+export const customSharedFolderIdSchema = z.string().regex(/^custom-[0-9a-f]{24}$/);
+export const sharedFolderIdSchema = z.union([builtInSharedFolderIdSchema, customSharedFolderIdSchema]);
 export const sharedFolderKindSchema = z.enum(['custom', 'maps', 'models', 'playlists']);
+
+export const relativeFolderPathSchema = z
+   .string()
+   .trim()
+   .min(1)
+   .transform((path) => path.replaceAll('\\', '/'))
+   .refine(
+      (path) =>
+         !path.startsWith('/') &&
+         !/^[a-z]:/i.test(path) &&
+         !path.includes(String.fromCodePoint(0)) &&
+         path.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..'),
+      'folder path must stay inside its install or library'
+   );
+
+export const customSharedFolderSchema = z.object({
+   id: customSharedFolderIdSchema,
+   installRelativePath: relativeFolderPathSchema,
+   libraryRelativePath: relativeFolderPathSchema
+});
 
 export const sharedFolderLinkStateSchema = z.enum(['absent', 'blocked', 'broken', 'foreign', 'linked', 'unlinked']);
 export const sharedLinkModeSchema = z.enum(['junction', 'symlink']);
@@ -55,6 +77,7 @@ export const sharedContentProblemSchema = z.object({
 });
 
 export type SharedFolderId = z.infer<typeof sharedFolderIdSchema>;
+export type BuiltInSharedFolderId = z.infer<typeof builtInSharedFolderIdSchema>;
 export type SharedFolderKind = z.infer<typeof sharedFolderKindSchema>;
 export type SharedFolderLinkState = z.infer<typeof sharedFolderLinkStateSchema>;
 export type SharedLinkMode = z.infer<typeof sharedLinkModeSchema>;
@@ -64,6 +87,7 @@ export type SharedContentsMode = z.infer<typeof sharedContentsModeSchema>;
 export type SharedContentWarning = z.infer<typeof sharedContentWarningSchema>;
 export type SharedContentIssue = z.infer<typeof sharedContentIssueSchema>;
 export type SharedContentProblem = z.infer<typeof sharedContentProblemSchema>;
+export type CustomSharedFolder = z.infer<typeof customSharedFolderSchema>;
 
 export type SharedFolderDefinition = {
    id: SharedFolderId;
@@ -124,6 +148,7 @@ export const sharedFolderInstallLinkSchema = z.object({
 
 export const sharedRootFolderSchema = z.object({
    id: sharedFolderIdSchema,
+   relativePath: z.string(),
    path: z.string(),
    exists: z.boolean()
 });
@@ -327,7 +352,12 @@ export const sharedRootCandidateSchema = z.object({
    path: z.string(),
    exists: z.boolean(),
    alreadyKnown: z.boolean(),
-   foldersFound: z.array(sharedFolderIdSchema)
+   foldersFound: z.array(
+      z.object({
+         id: sharedFolderIdSchema,
+         relativePath: z.string()
+      })
+   )
 });
 
 export type SharedRootActionResult = z.infer<typeof sharedRootActionResultSchema>;
@@ -335,12 +365,92 @@ export type SharedRootCandidate = z.infer<typeof sharedRootCandidateSchema>;
 
 export type SharedRootChoice = { status: 'cancelled' } | ({ status: 'selected' } & SharedRootCandidate);
 
-export function findSharedFolderDefinition(folderId: string) {
-   return sharedFolderDefinitions.find((definition) => definition.id === folderId) ?? null;
+export const customSharedFolderIssueSchema = z.enum([
+   'already-added',
+   'choose-failed',
+   'destination-conflict',
+   'folder-linked',
+   'install-not-found',
+   'outside-install',
+   'overlapping-folder',
+   'unknown-folder',
+   'unsupported-target',
+   'unsafe-folder',
+   'write-failed'
+]);
+
+export const customSharedFolderActionResultSchema = z.discriminatedUnion('status', [
+   z.object({ status: z.literal('ok'), folder: customSharedFolderSchema }),
+   z.object({ status: z.literal('invalid'), issue: customSharedFolderIssueSchema, detail: z.string().optional() })
+]);
+
+export type CustomSharedFolderIssue = z.infer<typeof customSharedFolderIssueSchema>;
+export type CustomSharedFolderActionResult = z.infer<typeof customSharedFolderActionResultSchema>;
+export type AddCustomSharedFolderRequest = {
+   installId: InstallId;
+   relativePath: string;
+};
+export type ForgetCustomSharedFolderRequest = {
+   folderId: SharedFolderId;
+};
+export type CustomSharedFolderChoice =
+   | { status: 'cancelled' }
+   | { status: 'unsupported' }
+   | { status: 'selected'; relativePath: string }
+   | { status: 'invalid'; issue: CustomSharedFolderIssue; detail?: string };
+
+export function isBuiltInSharedFolderId(folderId: SharedFolderId): folderId is BuiltInSharedFolderId {
+   return !folderId.startsWith('custom-');
+}
+
+export function isCustomSharedFolderId(folderId: SharedFolderId) {
+   return !isBuiltInSharedFolderId(folderId);
 }
 
 export function sharedFolderRelativePath(definition: SharedFolderDefinition) {
    return definition.segments.join('/');
+}
+
+export function sharedFolderLibraryRelativePath(definition: SharedFolderDefinition) {
+   return definition.sharedSegments.join('/');
+}
+
+export function createCustomSharedFolderDefinition(folder: CustomSharedFolder): SharedFolderDefinition {
+   return {
+      id: folder.id,
+      kind: 'custom',
+      segments: folder.installRelativePath.split('/'),
+      sharedSegments: folder.libraryRelativePath.split('/'),
+      risky: true
+   };
+}
+
+export function configuredSharedFolderDefinitions(customFolders: CustomSharedFolder[]) {
+   const customDefinitions = customFolders.map(createCustomSharedFolderDefinition);
+   const builtIns = sharedFolderDefinitions.filter(
+      (definition) =>
+         !customDefinitions.some((custom) => isStrictRelativePathInside(sharedFolderRelativePath(definition), sharedFolderRelativePath(custom)))
+   );
+
+   return [...builtIns, ...customDefinitions];
+}
+
+export function relativeFolderPathsOverlap(first: string, second: string) {
+   const firstKey = relativeFolderPathKey(first);
+   const secondKey = relativeFolderPathKey(second);
+
+   return firstKey === secondKey || firstKey.startsWith(`${secondKey}/`) || secondKey.startsWith(`${firstKey}/`);
+}
+
+function isStrictRelativePathInside(parent: string, child: string) {
+   const parentKey = relativeFolderPathKey(parent);
+   const childKey = relativeFolderPathKey(child);
+
+   return childKey.startsWith(`${parentKey}/`);
+}
+
+function relativeFolderPathKey(path: string) {
+   return path.replaceAll('\\', '/').toLowerCase();
 }
 
 export function defaultContentsMode(action: SharedContentAction): SharedContentsMode {

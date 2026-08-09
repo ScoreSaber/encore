@@ -3,7 +3,13 @@ import { shell, type IpcMainInvokeEvent } from 'electron';
 import { showOpenDialog } from '@/ipc/dialogs';
 import { defineIpcHandlers } from '@/ipc/main';
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
-import type { SharedContentOpenFolderResult, SharedFolderRequest, SharedRootChoice, SharedRootRequest } from '@/modules/shared-content/contract';
+import type {
+   CustomSharedFolderChoice,
+   SharedContentOpenFolderResult,
+   SharedFolderRequest,
+   SharedRootChoice,
+   SharedRootRequest
+} from '@/modules/shared-content/contract';
 import { sharedContentIpc } from '@/modules/shared-content/ipc';
 import type { SharedContentService } from '@/modules/shared-content/main/shared-content-service';
 import { localTargetId, type TargetId, type TargetRequest } from '@/modules/targets/contract';
@@ -11,9 +17,27 @@ import { localTargetId, type TargetId, type TargetRequest } from '@/modules/targ
 export function createSharedContentIpcModule(service: SharedContentService) {
    return defineIpcHandlers(sharedContentIpc, {
       openSharedFolder: (_event, request) => openSharedFolder(service, request),
+      chooseCustomFolder: (event, request) => chooseCustomFolder(event, service, request),
       chooseSharedRoot: (event, request) => chooseSharedRoot(event, service, request),
       openSharedRoot: (_event, request) => openSharedRoot(service, request)
    });
+}
+
+async function chooseCustomFolder(
+   event: IpcMainInvokeEvent,
+   service: SharedContentService,
+   request: TargetSharedContentRequest
+): Promise<CustomSharedFolderChoice> {
+   if (request.targetId !== localTargetId) return { status: 'unsupported' };
+
+   const installPath = await service.getInstallPath(request.installId);
+   if (!installPath) return { status: 'invalid', issue: 'install-not-found' };
+
+   const picked = await showOpenDialog(event, { properties: ['openDirectory'], defaultPath: installPath });
+   const path = picked.filePaths[0];
+   if (picked.canceled || !path) return { status: 'cancelled' };
+
+   return service.chooseCustomFolder(request.installId, path);
 }
 
 async function openSharedFolder(

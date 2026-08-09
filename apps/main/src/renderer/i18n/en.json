@@ -678,6 +678,25 @@
          "unavailable": "This machine cannot create folder links right now: {detail}",
          "unknownReason": "the link test failed"
       },
+      "customFolders": {
+         "add": "Add folder",
+         "custom": "Custom",
+         "forget": "Remove from list",
+         "hint": "Share a specific folder inside this install",
+         "issues": {
+            "already-added": "That folder is already in the list",
+            "choose-failed": "The folder picker could not be opened",
+            "destination-conflict": "That Library location is already used by another folder",
+            "folder-linked": "Disconnect this folder from every install before removing it",
+            "install-not-found": "This install is no longer available",
+            "outside-install": "Choose a folder inside this install",
+            "overlapping-folder": "Choose a folder that is not inside another custom folder",
+            "unknown-folder": "That custom folder is no longer in the list",
+            "unsupported-target": "Custom folders can only be managed on the device itself",
+            "unsafe-folder": "Encore will not replace that game folder",
+            "write-failed": "The custom folder could not be saved"
+         }
+      },
       "columns": {
          "folder": "Folder",
          "state": "State"

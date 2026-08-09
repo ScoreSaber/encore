@@ -3,7 +3,15 @@ import { Result } from 'better-result';
 import { readRecent, setRecent } from '@/lib/content/content-cache';
 import { createContentFailure, createOperationFailure } from '@/lib/content/content-errors';
 import { createContentEvents } from '@/lib/content/content-events';
-import { isPathInside, isSamePath, resolveFilesystemPath, pathExistsSafely } from '@/lib/filesystem/path';
+import {
+   isPathInside,
+   isSamePath,
+   resolveFilesystemPath,
+   pathExistsSafely,
+   readPathInfo,
+   resolveManagedPath,
+   type PathInfo
+} from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
 import type { InstallId, InstallSummary } from '@/modules/installs/contract';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
@@ -13,17 +21,26 @@ import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import {
    createEmptySharedContentOverview,
    createEmptySharedContentSnapshot,
+   configuredSharedFolderDefinitions,
+   createCustomSharedFolderDefinition,
    defaultConnectContents,
    defaultContentsMode,
-   findSharedFolderDefinition,
    invalidSharedConnect,
    invalidSharedContentAction,
    isConnectContentsAllowed,
    isContentsModeAllowed,
-   sharedFolderDefinitions,
+   isCustomSharedFolderId,
+   relativeFolderPathSchema,
+   relativeFolderPathsOverlap,
+   sharedFolderLibraryRelativePath,
    sharedFolderRelativePath,
    type ReadySharedConnectPreview,
    type ReadySharedContentPreview,
+   type AddCustomSharedFolderRequest,
+   type CustomSharedFolder,
+   type CustomSharedFolderActionResult,
+   type CustomSharedFolderChoice,
+   type ForgetCustomSharedFolderRequest,
    type SharedConnectFolderPlan,
    type SharedConnectOutcome,
    type SharedConnectPreview,
@@ -42,7 +59,6 @@ import {
    type SharedContentsMode,
    type SharedContentWarning,
    type SharedFolderDefinition,
-   type SharedFolderId,
    type SharedFolderInstallLink,
    type SharedFolderOverview,
    type SharedFolderRequest,
@@ -50,9 +66,11 @@ import {
    type SharedInstallOverview,
    type SharedLinkSupport,
    type SharedRootActionResult,
+   type SharedRootCandidate,
    type SharedRootRequest,
    type SharedRootOverview
 } from '@/modules/shared-content/contract';
+import { customSharedFolderId } from '@/modules/shared-content/main/custom-folder-id';
 import { preferredLinkMode, probeLinkSupport, readFolderLink } from '@/modules/shared-content/main/folder-link';
 import { createSharedContentTransfers, type FolderContext } from '@/modules/shared-content/main/shared-content-transfer';
 import {
@@ -64,6 +82,7 @@ import {
 } from '@/modules/shared-content/main/shared-paths';
 
 import { mkdir, readdir } from 'node:fs/promises';
+import { relative, sep } from 'node:path';
 
 const actionIssueMessages: Record<SharedContentIssue, string> = {
    'already-linked': 'this folder is already a link',
@@ -79,6 +98,8 @@ const actionIssueMessages: Record<SharedContentIssue, string> = {
    'unsupported-target': 'this target cannot share content'
 };
 
+const unsafeCustomFolderPaths = new Set(['Beat Saber_Data', 'IPA', 'Libs', 'Plugins', 'MonoBleedingEdge'].map(relativePathKey));
+
 type SharedContentServiceOptions = {
    registry: InstallRegistry;
    settingsStore: SettingsStore;
@@ -87,11 +108,14 @@ type SharedContentServiceOptions = {
 };
 
 type ResolvedFolder = { status: 'invalid'; issue: SharedContentIssue; detail?: string } | ({ status: 'ok' } & FolderContext);
+type InspectedCustomFolder = Extract<CustomSharedFolderChoice, { status: 'invalid' }> | { status: 'ok'; relativePath: string; info: PathInfo };
 
 type Library = {
    installRoot: string;
    sharedRootPath: string;
    rootPaths: string[];
+   customFolders: CustomSharedFolder[];
+   definitions: SharedFolderDefinition[];
    useSymlinks: boolean;
 };
 
@@ -128,7 +152,7 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       const problems: SharedContentProblem[] = [];
       const folders: SharedFolderStatus[] = [];
 
-      for (const definition of sharedFolderDefinitions) {
+      for (const definition of library.definitions) {
          folders.push(await readFolderStatus(install.path, sharedRootPath, definition, library.rootPaths));
       }
 
@@ -162,7 +186,7 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       const installs: SharedInstallOverview[] = [];
       for (const install of registrySnapshot.installs) {
          const statuses: SharedFolderStatus[] = [];
-         for (const definition of sharedFolderDefinitions) {
+         for (const definition of library.definitions) {
             statuses.push(await readFolderStatus(install.path, sharedRootPath, definition, library.rootPaths));
          }
 
@@ -172,9 +196,14 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       const roots: SharedRootOverview[] = [];
       for (const rootPath of library.rootPaths) {
          const folders = [];
-         for (const definition of sharedFolderDefinitions) {
+         for (const definition of library.definitions) {
             const folderPath = sharedFolderPath(rootPath, definition);
-            folders.push({ id: definition.id, path: folderPath, exists: await pathExistsSafely(folderPath) });
+            folders.push({
+               id: definition.id,
+               relativePath: sharedFolderRelativePath(definition),
+               path: folderPath,
+               exists: await pathExistsSafely(folderPath)
+            });
          }
 
          roots.push({
@@ -186,7 +215,7 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       }
 
       // the folder-centric view stays scoped to the active root
-      const folders: SharedFolderOverview[] = sharedFolderDefinitions.map((definition) => {
+      const folders: SharedFolderOverview[] = library.definitions.map((definition) => {
          const folderPath = sharedFolderPath(sharedRootPath, definition);
          const links: SharedFolderInstallLink[] = [];
 
@@ -223,12 +252,15 @@ export function createSharedContentService(options: SharedContentServiceOptions)
    }
 
    async function getFolderPath(request: SharedFolderRequest) {
-      const definition = findSharedFolderDefinition(request.folderId);
+      const library = await readLibrary();
+      const definition = library.definitions.find((candidate) => candidate.id === request.folderId);
       if (!definition) return null;
 
-      const library = await readLibrary();
-
       return sharedFolderPath(library.sharedRootPath, definition);
+   }
+
+   async function getInstallPath(installId: InstallId) {
+      return (await options.registry.get(installId))?.path ?? null;
    }
 
    async function preview(request: SharedContentActionRequest, rootPath?: string): Promise<SharedContentPreview> {
@@ -350,7 +382,7 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       const warnings = new Set<SharedContentWarning>();
       let riskyHeldBack = false;
 
-      for (const definition of sharedFolderDefinitions) {
+      for (const definition of library.definitions) {
          const status = await readFolderStatus(install.path, rootPath, definition, library.rootPaths);
          const step = planConnectStep(request.action, status, rootPath, includeRisky);
          // a risky folder skipped only because it is opt-out keeps the preview alive so the toggle shows
@@ -500,7 +532,8 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       if (action === 'link') return previewed.contents === 'discard' ? 'discard' : 'move';
 
       // copying back from a shared folder that is gone would fail, keep an empty folder instead
-      const definition = findSharedFolderDefinition(plan.id);
+      const library = await readLibrary();
+      const definition = library.definitions.find((candidate) => candidate.id === plan.id);
       const sourcePath = definition ? sharedFolderPath(previewed.rootPath, definition) : null;
       if (previewed.contents === 'copy' && sourcePath && (await pathExistsSafely(sourcePath))) return 'copy';
 
@@ -529,15 +562,128 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       return 'skip';
    }
 
+   async function chooseCustomFolder(installId: InstallId, path: string): Promise<CustomSharedFolderChoice> {
+      const inspected = await inspectCustomFolder(installId, path);
+      if (inspected.status === 'invalid') return inspected;
+
+      return { status: 'selected', relativePath: inspected.relativePath };
+   }
+
+   async function addCustomFolder(request: AddCustomSharedFolderRequest): Promise<CustomSharedFolderActionResult> {
+      const inspected = await inspectCustomFolder(request.installId, request.relativePath);
+      if (inspected.status === 'invalid') return inspected;
+
+      const library = await readLibrary();
+      const installRelativePath = inspected.relativePath;
+      const existingDefinition = library.definitions.find(
+         (definition) => relativePathKey(sharedFolderRelativePath(definition)) === relativePathKey(installRelativePath)
+      );
+      if (existingDefinition) return { status: 'invalid', issue: 'already-added' };
+
+      if (unsafeCustomFolderPaths.has(relativePathKey(installRelativePath))) return { status: 'invalid', issue: 'unsafe-folder' };
+
+      const overlappingCustom = library.customFolders.find((folder) => relativeFolderPathsOverlap(folder.installRelativePath, installRelativePath));
+      if (overlappingCustom) return { status: 'invalid', issue: 'overlapping-folder', detail: overlappingCustom.installRelativePath };
+
+      const libraryRelativePath = inferredLibraryRelativePath(inspected.info.targetPath, library) ?? installRelativePath;
+      const folder: CustomSharedFolder = {
+         id: customSharedFolderId(installRelativePath, libraryRelativePath),
+         installRelativePath,
+         libraryRelativePath
+      };
+      const definitions = configuredSharedFolderDefinitions([...library.customFolders, folder]);
+
+      const sourceOverlap = definitions.find(
+         (definition) => definition.id !== folder.id && relativeFolderPathsOverlap(sharedFolderRelativePath(definition), installRelativePath)
+      );
+      if (sourceOverlap) {
+         return {
+            status: 'invalid',
+            issue: isCustomSharedFolderId(sourceOverlap.id) ? 'overlapping-folder' : 'unsafe-folder',
+            detail: sharedFolderRelativePath(sourceOverlap)
+         };
+      }
+
+      const destinationOverlap = definitions.find(
+         (definition) => definition.id !== folder.id && relativeFolderPathsOverlap(sharedFolderLibraryRelativePath(definition), libraryRelativePath)
+      );
+      if (destinationOverlap) {
+         return { status: 'invalid', issue: 'destination-conflict', detail: sharedFolderLibraryRelativePath(destinationOverlap) };
+      }
+
+      const written = await options.settingsStore.updateLibrarySettings({ customFolders: [...library.customFolders, folder] });
+      if (!written.ok) return { status: 'invalid', issue: 'write-failed', detail: written.error.message };
+
+      void rescanAll();
+      return { status: 'ok', folder };
+   }
+
+   async function forgetCustomFolder(request: ForgetCustomSharedFolderRequest): Promise<CustomSharedFolderActionResult> {
+      const library = await readLibrary();
+      const folder = library.customFolders.find((candidate) => candidate.id === request.folderId);
+      if (!folder) return { status: 'invalid', issue: 'unknown-folder' };
+
+      const definition = createCustomSharedFolderDefinition(folder);
+
+      const registrySnapshot = await options.registry.list();
+      for (const install of registrySnapshot.installs) {
+         const status = await readFolderStatus(install.path, library.sharedRootPath, definition, library.rootPaths);
+         if (status.state === 'broken' || status.state === 'foreign' || status.state === 'linked') {
+            return { status: 'invalid', issue: 'folder-linked', detail: install.name };
+         }
+      }
+
+      const customFolders = library.customFolders.filter((candidate) => candidate.id !== folder.id);
+      const written = await options.settingsStore.updateLibrarySettings({ customFolders });
+      if (!written.ok) return { status: 'invalid', issue: 'write-failed', detail: written.error.message };
+
+      void rescanAll();
+      return { status: 'ok', folder };
+   }
+
+   async function inspectCustomFolder(installId: InstallId, path: string): Promise<InspectedCustomFolder> {
+      const install = await options.registry.get(installId);
+      if (!install) return { status: 'invalid', issue: 'install-not-found' };
+
+      const managed = await resolveManagedPath({ root: install.path, path });
+      if (Result.isError(managed)) {
+         return { status: 'invalid', issue: 'outside-install', detail: managed.error.message };
+      }
+
+      const info = await readPathInfo(managed.value.path);
+      if (Result.isError(info)) return { status: 'invalid', issue: 'unsafe-folder', detail: info.error.message };
+      if (info.value.kind !== 'directory' && (info.value.kind !== 'link' || info.value.targetKind !== 'directory')) {
+         return { status: 'invalid', issue: 'unsafe-folder' };
+      }
+
+      const relativePath = managed.value.relativePath.split(sep).join('/');
+      return { status: 'ok', relativePath, info: info.value };
+   }
+
+   function inferredLibraryRelativePath(targetPath: string | undefined, library: Library) {
+      if (!targetPath) return null;
+
+      const rootPath = library.rootPaths.find((root) => isPathInside(root, targetPath));
+      if (!rootPath) return null;
+
+      const parsed = relativeFolderPathSchema.safeParse(relative(rootPath, targetPath).split(sep).join('/'));
+      return parsed.success ? parsed.data : null;
+   }
+
    async function chooseRootCandidate(input: SharedRootRequest) {
       const { path } = input;
       const resolvedPath = resolveFilesystemPath(path);
       const library = await readLibrary();
       const exists = await pathExistsSafely(resolvedPath);
-      const foldersFound: SharedFolderId[] = [];
+      const foldersFound: SharedRootCandidate['foldersFound'] = [];
 
-      for (const definition of sharedFolderDefinitions) {
-         if (await pathExistsSafely(sharedFolderPath(resolvedPath, definition))) foldersFound.push(definition.id);
+      for (const definition of library.definitions) {
+         if (await pathExistsSafely(sharedFolderPath(resolvedPath, definition))) {
+            foldersFound.push({
+               id: definition.id,
+               relativePath: sharedFolderRelativePath(definition)
+            });
+         }
       }
 
       return {
@@ -629,13 +775,12 @@ export function createSharedContentService(options: SharedContentServiceOptions)
    }
 
    async function resolveFolder(request: SharedFolderRequest & { action?: SharedContentAction }, rootPath?: string): Promise<ResolvedFolder> {
-      const definition = findSharedFolderDefinition(request.folderId);
-      if (!definition) return { status: 'invalid', issue: 'unknown-folder' };
-
       const install = await options.registry.get(request.installId);
       if (!install) return { status: 'invalid', issue: 'install-not-found' };
 
       const library = await readLibrary();
+      const definition = library.definitions.find((candidate) => candidate.id === request.folderId);
+      if (!definition) return { status: 'invalid', issue: 'unknown-folder' };
       const requestedRoot = rootPath ? findKnownRoot(library, rootPath) : library.sharedRootPath;
       if (!requestedRoot) return { status: 'invalid', issue: 'unknown-root' };
 
@@ -681,8 +826,29 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       definition: SharedFolderDefinition,
       knownRoots: string[]
    ): Promise<SharedFolderStatus> {
-      const folderPath = installFolderPath(installPath, definition);
-      const sharedPath = sharedFolderPath(rootPath, definition);
+      const expectedFolderPath = installFolderPath(installPath, definition);
+      const expectedSharedPath = sharedFolderPath(rootPath, definition);
+      const [managedFolder, managedShared] = await Promise.all([
+         resolveManagedPath({ root: installPath, path: expectedFolderPath }),
+         resolveManagedPath({ root: rootPath, path: expectedSharedPath })
+      ]);
+
+      if (Result.isError(managedFolder) || Result.isError(managedShared)) {
+         return {
+            id: definition.id,
+            kind: definition.kind,
+            relativePath: sharedFolderRelativePath(definition),
+            installFolderPath: expectedFolderPath,
+            sharedFolderPath: expectedSharedPath,
+            state: 'blocked',
+            linkTargetPath: null,
+            rootPath: null,
+            risky: definition.risky
+         };
+      }
+
+      const folderPath = managedFolder.value.path;
+      const sharedPath = managedShared.value.path;
       const link = await readFolderLink(folderPath, sharedPath);
       let state = link.state;
       let linkedRoot = state === 'linked' ? rootPath : null;
@@ -763,6 +929,8 @@ export function createSharedContentService(options: SharedContentServiceOptions)
          installRoot: settings.library.installRoot,
          sharedRootPath,
          rootPaths,
+         customFolders: settings.library.customFolders,
+         definitions: configuredSharedFolderDefinitions(settings.library.customFolders),
          useSymlinks: settings.library.useSymlinks
       };
    }
@@ -809,10 +977,14 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       rescan,
       getOverview,
       getFolderPath,
+      getInstallPath,
       preview,
       start,
       previewConnect,
       startConnect,
+      chooseCustomFolder,
+      addCustomFolder,
+      forgetCustomFolder,
       chooseRootCandidate,
       addRoot,
       activateRoot,
@@ -821,4 +993,8 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       subscribe: events.subscribe,
       dispose
    };
+}
+
+function relativePathKey(path: string) {
+   return path.replaceAll('\\', '/').toLowerCase();
 }

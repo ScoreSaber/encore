@@ -98,7 +98,7 @@ describe('bsmanager adoption', () => {
       if (Result.isError(registered)) throw new Error('expected the version to register');
 
       await harness.writeConfig([{ BSVersion: '1.37.0', metadata: { id: 'one', store: 'oculus' } }]);
-      await harness.adoption.migrateInstallStores();
+      await harness.adoption.migrateAdoptedSetup();
       const plan = await harness.adoption.plan();
 
       expect(plan).toMatchObject({ status: 'ok', versions: [{ id: '1.37.0', store: 'oculus', status: 'adopted' }] });
@@ -113,6 +113,24 @@ describe('bsmanager adoption', () => {
       const plan = await harness.adoption.plan();
 
       expect(plan).toMatchObject({ status: 'ok', versions: [{ id: '1.37.0', store: 'oculus', status: 'ready' }] });
+   });
+
+   test('migrates custom links for versions adopted by an earlier Encore release', async () => {
+      const harness = await createHarness();
+      const installPath = await harness.writeVersion('1.37.0');
+      const registered = await harness.registry.register({ source: 'bsmanager', path: installPath, store: 'steam' });
+      if (Result.isError(registered)) throw new Error('expected the version to register');
+
+      const sharedFolder = join(harness.rootPath, 'SharedContent', 'BeatLeader');
+      await mkdir(sharedFolder, { recursive: true });
+      await mkdir(join(installPath, 'UserData'), { recursive: true });
+      await symlink(sharedFolder, join(installPath, 'UserData', 'BeatLeader'), process.platform === 'win32' ? 'junction' : 'dir');
+
+      await harness.adoption.migrateAdoptedSetup();
+
+      expect((await harness.settingsStore.getSnapshot()).library.customFolders).toEqual([
+         expect.objectContaining({ installRelativePath: 'UserData/BeatLeader', libraryRelativePath: 'BeatLeader' })
+      ]);
    });
 
    test('only converts links between installs after explicit cleanup', async () => {
@@ -160,6 +178,45 @@ describe('bsmanager adoption', () => {
 
       const appConfig = await readBSManagerAppConfig(join(harness.appDataPath, 'bs-manager', 'config.json'));
       expect(appConfig['use-symlinks']).toBe(process.platform !== 'win32');
+   });
+
+   test('adopts and converts a custom nested folder link', async () => {
+      const harness = await createHarness();
+      const firstInstall = await harness.writeVersion('1.37.0');
+      const secondInstall = await harness.writeVersion('1.29.1');
+      await harness.writeConfig([
+         { BSVersion: '1.37.0', metadata: { id: 'one', store: 'STEAM' } },
+         { BSVersion: '1.29.1', metadata: { id: 'two', store: 'STEAM' } }
+      ]);
+
+      const sourceFolder = join(secondInstall, 'UserData', 'BeatLeader');
+      const linkedFolder = join(firstInstall, 'UserData', 'BeatLeader');
+      await mkdir(sourceFolder, { recursive: true });
+      await mkdir(join(firstInstall, 'UserData'), { recursive: true });
+      await writeFile(join(sourceFolder, 'settings.json'), '{"enabled":true}', 'utf8');
+      await symlink(sourceFolder, linkedFolder, process.platform === 'win32' ? 'junction' : 'dir');
+
+      const plan = await harness.adoption.plan();
+      if (plan.status !== 'ok') throw new Error(`expected a plan, got ${plan.issue}`);
+      const custom = plan.customFolders.find((folder) => folder.installRelativePath === 'UserData/BeatLeader');
+      if (!custom) throw new Error('expected the custom folder to be detected');
+
+      const adopted = await harness.adoption.adopt({
+         rootPath: harness.rootPath,
+         versionIds: ['1.37.0', '1.29.1'],
+         adoptSharedRoot: true
+      });
+      if (!adopted.ok) throw new Error('expected adoption to complete');
+      expect((await harness.settingsStore.getSnapshot()).library.customFolders).toContainEqual(custom);
+
+      const cleaned = await harness.adoption.cleanup({ rootPath: harness.rootPath });
+      if (!cleaned.ok) throw new Error('expected cleanup to start');
+      expect(await waitForOperation(harness.operations, cleaned.value.id)).toMatchObject({ status: 'completed' });
+
+      const sharedFolder = join(harness.rootPath, 'SharedContent', 'BeatLeader');
+      expect(await readFile(join(sharedFolder, 'settings.json'), 'utf8')).toBe('{"enabled":true}');
+      expect(linkTarget(await readlink(linkedFolder))).toBe(sharedFolder);
+      expect(linkTarget(await readlink(sourceFolder))).toBe(sharedFolder);
    });
 });
 

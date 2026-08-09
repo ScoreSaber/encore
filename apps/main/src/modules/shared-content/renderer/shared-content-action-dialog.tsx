@@ -16,6 +16,7 @@ import {
    type SharedContentsMode
 } from '@/modules/shared-content/contract';
 import { sharedContentIssueKeys } from '@/modules/shared-content/renderer/shared-folder-actions';
+import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedContentActions } from '@/modules/shared-content/renderer/use-shared-content-actions';
 import { useFormatters } from '@/renderer/i18n/formatters';
 
@@ -115,8 +116,8 @@ export function SharedContentActionDialog({ request, actions }: { request: Targe
 
 function ActionPreview({ preview }: { preview: ReadySharedContentPreview | null }) {
    const t = useTranslations('sharedContent.actions');
-   const shared = useTranslations('sharedContent');
    const warnings = useTranslations('sharedContent.warnings');
+   const folderLabel = useSharedFolderLabel();
    const format = useFormatters();
 
    if (!preview) return null;
@@ -130,7 +131,7 @@ function ActionPreview({ preview }: { preview: ReadySharedContentPreview | null 
    return (
       <div className="flex flex-col gap-3">
          <div className="flex flex-col gap-3 rounded-lg border p-4">
-            <div className="font-medium">{shared(`folders.${preview.folderId}`)}</div>
+            <div className="font-medium">{folderLabel(preview.folderId, preview.relativePath)}</div>
             <dl className="grid grid-cols-2 gap-3">
                <div>
                   <dt className="text-muted-foreground text-xs">{t('installContents')}</dt>

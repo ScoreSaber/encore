@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { IpcResult } from '@/ipc/core';
 import type { InstallId } from '@/modules/installs/contract';
 import type { OperationSnapshot } from '@/modules/operations/contract';
-import type { SharedFolderId, SharedFolderLinkState } from '@/modules/shared-content/contract';
+import type { CustomSharedFolder, SharedFolderId, SharedFolderLinkState } from '@/modules/shared-content/contract';
 import type { StoreKind } from '@/modules/stores/contract';
 import type { TargetId } from '@/modules/targets/contract';
 
@@ -56,6 +56,7 @@ export type ReadyBSManagerPlan = {
    currentSharedRootPath: string;
    sharedRootAdopted: boolean;
    useSymlinks: boolean;
+   customFolders: CustomSharedFolder[];
    versions: BSManagerVersion[];
 };
 

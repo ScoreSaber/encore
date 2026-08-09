@@ -13,6 +13,7 @@ import {
    type AppSettings,
    type LibrarySettings
 } from '@/modules/settings/contract';
+import { customSharedFolderSchema } from '@/modules/shared-content/contract';
 import { localeSchema } from '@/renderer/i18n/config';
 
 export const storedSettingsFileSchema = z.object({
@@ -58,6 +59,7 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          installRoot: z.string().trim().min(1).catch(defaults.library.installRoot),
          sharedRoot: z.union([z.string().trim().min(1), z.null()]).catch(defaults.library.sharedRoot),
          sharedRoots: z.array(z.string().trim().min(1)).catch(defaults.library.sharedRoots),
+         customFolders: z.array(customSharedFolderSchema).catch(defaults.library.customFolders),
          protonPath: z.union([z.string().trim().min(1), z.null()]).catch(defaults.library.protonPath),
          useSymlinks: z.boolean().catch(defaults.library.useSymlinks),
          launchOptions: z.record(z.string().min(1), launchOptionsSchema).catch(defaults.library.launchOptions),

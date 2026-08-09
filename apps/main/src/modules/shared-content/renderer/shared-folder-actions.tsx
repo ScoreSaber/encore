@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 
 import type { SharedContentIssue, SharedFolderLinkState, SharedFolderStatus } from '@/modules/shared-content/contract';
+import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedContentActions } from '@/modules/shared-content/renderer/use-shared-content-actions';
 import type { MessageKey } from '@/renderer/i18n/keys';
 
@@ -51,11 +52,11 @@ export function SharedFolderActionButtons({
    linkable: boolean;
 }) {
    const t = useTranslations('sharedContent.actions');
-   const shared = useTranslations('sharedContent');
+   const folderLabel = useSharedFolderLabel();
    const linked = linkedStates.has(folder.state);
 
    return (
-      <ButtonGroup aria-label={shared(`folders.${folder.id}`)}>
+      <ButtonGroup aria-label={folderLabel(folder.id, folder.relativePath)}>
          {linked ? null : (
             <Button
                type="button"

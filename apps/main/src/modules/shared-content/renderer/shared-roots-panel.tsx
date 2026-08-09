@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 
 import type { SharedRootOverview } from '@/modules/shared-content/contract';
+import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedRoots } from '@/modules/shared-content/renderer/use-shared-roots';
 
 export function SharedRootsPanel({
@@ -163,8 +164,8 @@ function AddRootDialog({ manager }: { manager: SharedRoots }) {
 
 function OpenAddRootDialog({ manager }: { manager: SharedRoots }) {
    const t = useTranslations('sharedContent.roots');
-   const shared = useTranslations('sharedContent');
    const common = useTranslations('common');
+   const folderLabel = useSharedFolderLabel();
    const [path, setPath] = useState('');
    const { state } = manager;
    const candidate = state.status === 'confirming' ? state.candidate : state.status === 'saving' ? state.candidate : null;
@@ -215,7 +216,9 @@ function OpenAddRootDialog({ manager }: { manager: SharedRoots }) {
                   {!candidate.exists ? <p className="text-muted-foreground text-xs">{t('willCreate')}</p> : null}
                   {candidate.foldersFound.length > 0 ? (
                      <p className="text-muted-foreground text-xs">
-                        {t('foundFolders', { folders: candidate.foldersFound.map((id) => shared(`folders.${id}`)).join(', ') })}
+                        {t('foundFolders', {
+                           folders: candidate.foldersFound.map((folder) => folderLabel(folder.id, folder.relativePath)).join(', ')
+                        })}
                      </p>
                   ) : null}
                </div>

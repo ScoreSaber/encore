@@ -14,11 +14,11 @@ afterEach(async () => {
 });
 
 describe('settings store', () => {
-   test('enables the ScoreSaber source when loading settings written before it existed', async () => {
+   test('defaults fields added after an existing settings file was written', async () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);
       const { scoreSaberModSourceEnabled: _scoreSaberModSourceEnabled, ...app } = createDefaultAppSettings();
-      const { launchOptions: _launchOptions, ...library } = createDefaultLibrarySettings('/games/encore');
+      const { customFolders: _customFolders, launchOptions: _launchOptions, ...library } = createDefaultLibrarySettings('/games/encore');
       await writeFile(join(dataPath, 'settings.json'), JSON.stringify({ app, library }), 'utf8');
 
       const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
@@ -27,6 +27,7 @@ describe('settings store', () => {
       expect(snapshot.status).toBe('ready');
       expect(snapshot.app.scoreSaberModSourceEnabled).toBe(true);
       expect(snapshot.library.launchOptions).toEqual({});
+      expect(snapshot.library.customFolders).toEqual([]);
    });
 
    test('persists the default folder used by new installs', async () => {

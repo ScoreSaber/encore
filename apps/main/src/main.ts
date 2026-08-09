@@ -274,7 +274,7 @@ function registerIpcHandlers() {
       }),
       locations: bsmanagerLocations
    });
-   void bsmanagerAdoption.migrateInstallStores();
+   void bsmanagerAdoption.migrateAdoptedSetup();
    const targetRegistry = createTargetRegistry({ remote: remoteReceiver });
    const getInstall = async ({ targetId, installId }: InstallDetailRequest) => {
       const result = await targetRegistry.callTarget(installApi, 'getDetail', targetId, { installId });

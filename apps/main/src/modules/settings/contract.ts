@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { launchOptionsSchema, launchRecordSchema } from '@/modules/launch/contract';
 import { defaultModSourceResolutionSettings, modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
+import { customSharedFolderSchema } from '@/modules/shared-content/contract';
 import { localTargetId } from '@/modules/targets/contract';
 import { defaultLocale, localeSchema } from '@/renderer/i18n/config';
 
@@ -77,6 +78,7 @@ export const librarySettingsSchema = z.object({
    sharedRoot: z.string().trim().min(1).nullable(),
    // other shared content roots installs may stay linked to (the active one lives in sharedRoot)
    sharedRoots: z.array(z.string().trim().min(1)).default([]),
+   customFolders: z.array(customSharedFolderSchema).default([]),
    protonPath: z.string().trim().min(1).nullable(),
    useSymlinks: z.boolean().default(false),
    launchOptions: z.record(z.string().min(1), launchOptionsSchema).default({}),
@@ -102,6 +104,7 @@ export const librarySettingsPatchSchema = z.object({
    installRoot: z.string().trim().min(1).optional(),
    sharedRoot: z.union([z.string().trim().min(1), z.null()]).optional(),
    sharedRoots: z.array(z.string().trim().min(1)).optional(),
+   customFolders: z.array(customSharedFolderSchema).optional(),
    protonPath: z.union([z.string().trim().min(1), z.null()]).optional(),
    useSymlinks: z.boolean().optional(),
    launchOptions: z.record(z.string().min(1), launchOptionsSchema).optional(),
@@ -171,6 +174,7 @@ export function createDefaultLibrarySettings(installRoot: string): LibrarySettin
       installRoot,
       sharedRoot: null,
       sharedRoots: [],
+      customFolders: [],
       protonPath: null,
       useSymlinks: false,
       launchOptions: {},
@@ -208,6 +212,7 @@ export function applyLibrarySettingsPatch(settings: LibrarySettings, patch: Libr
       installRoot: patch.installRoot ?? settings.installRoot,
       sharedRoot: patch.sharedRoot === undefined ? settings.sharedRoot : patch.sharedRoot,
       sharedRoots: patch.sharedRoots ?? settings.sharedRoots,
+      customFolders: patch.customFolders ?? settings.customFolders,
       protonPath: patch.protonPath === undefined ? settings.protonPath : patch.protonPath,
       useSymlinks: patch.useSymlinks ?? settings.useSymlinks,
       launchOptions: { ...settings.launchOptions, ...patch.launchOptions },

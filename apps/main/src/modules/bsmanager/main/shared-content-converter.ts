@@ -17,7 +17,7 @@ import { bsmanagerAppConfigPath, type BSManagerLocations } from '@/modules/bsman
 import type { OperationId, OperationSnapshot } from '@/modules/operations/contract';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 import {
-   findSharedFolderDefinition,
+   configuredSharedFolderDefinitions,
    sharedFolderRelativePath,
    type SharedFolderDefinition,
    type SharedLinkMode
@@ -251,11 +251,12 @@ export function createBSManagerSharedContentConverter(options: ConverterOptions)
 
 function conversionGroups(plan: ReadyBSManagerPlan, versions: BSManagerVersion[]) {
    const groups = new Map<string, ConversionGroup>();
+   const definitions = new Map(configuredSharedFolderDefinitions(plan.customFolders).map((definition) => [definition.id, definition]));
 
    for (const version of versions) {
       for (const folder of version.folders) {
          if (folder.state !== 'foreign' || !folder.linkTargetPath) continue;
-         const definition = findSharedFolderDefinition(folder.id);
+         const definition = definitions.get(folder.id);
          if (!definition) continue;
 
          const sourcePath = resolveFilesystemPath(folder.linkTargetPath);

@@ -88,6 +88,52 @@ describe('shared content service', () => {
       expect(await readdir(join(harness.sharedRoot, 'UserData'))).toEqual(['settings.json']);
    });
 
+   test('manages a nested custom folder without also managing its parent', async () => {
+      const harness = await createHarness();
+      const install = await harness.install('Beat Saber');
+      const customPath = join(install.path, 'UserData', 'BeatLeader');
+      await mkdir(customPath, { recursive: true });
+      await writeFile(join(customPath, 'settings.json'), '{"enabled":true}', 'utf8');
+
+      const added = await harness.shared.addCustomFolder({ installId: install.id, relativePath: 'UserData/BeatLeader' });
+      if (added.status !== 'ok') throw new Error('expected the custom folder to be added');
+
+      const before = await harness.shared.rescan({ installId: install.id });
+      expect(before.folders.some((folder) => folder.id === 'user-data')).toBe(false);
+
+      await harness.run({ folderId: added.folder.id, action: 'link' });
+      expect(await readFile(join(harness.sharedRoot, 'UserData', 'BeatLeader', 'settings.json'), 'utf8')).toBe('{"enabled":true}');
+      expect(await harness.shared.forgetCustomFolder({ folderId: added.folder.id })).toMatchObject({
+         status: 'invalid',
+         issue: 'folder-linked'
+      });
+
+      await harness.run({ folderId: added.folder.id, action: 'unlink', contents: 'keep' });
+      await harness.shared.forgetCustomFolder({ folderId: added.folder.id });
+      expect((await harness.shared.rescan({ installId: install.id })).folders.some((folder) => folder.id === 'user-data')).toBe(true);
+   });
+
+   test('rejects custom folders outside the install and overlapping custom entries', async () => {
+      const harness = await createHarness();
+      const install = await harness.install('Beat Saber');
+      await mkdir(join(install.path, 'UserData', 'BeatLeader', 'Cache'), { recursive: true });
+
+      expect(await harness.shared.addCustomFolder({ installId: install.id, relativePath: '../elsewhere' })).toMatchObject({
+         status: 'invalid',
+         issue: 'outside-install'
+      });
+      expect(await harness.shared.addCustomFolder({ installId: install.id, relativePath: 'Beat Saber_Data' })).toMatchObject({
+         status: 'invalid',
+         issue: 'unsafe-folder'
+      });
+
+      expect(await harness.shared.addCustomFolder({ installId: install.id, relativePath: 'UserData/BeatLeader' })).toMatchObject({ status: 'ok' });
+      expect(await harness.shared.addCustomFolder({ installId: install.id, relativePath: 'UserData/BeatLeader/Cache' })).toMatchObject({
+         status: 'invalid',
+         issue: 'overlapping-folder'
+      });
+   });
+
    test('repairs a link that points somewhere else without touching what it pointed at', async () => {
       const harness = await createHarness();
       const install = await harness.install('Beat Saber');
@@ -172,7 +218,11 @@ describe('shared content service', () => {
       });
 
       const candidate = await harness.shared.chooseRootCandidate({ path: rootB });
-      expect(candidate).toMatchObject({ exists: true, alreadyKnown: false, foldersFound: ['playlists'] });
+      expect(candidate).toMatchObject({
+         exists: true,
+         alreadyKnown: false,
+         foldersFound: [{ id: 'playlists', relativePath: 'Playlists' }]
+      });
 
       expect(await harness.shared.addRoot({ path: rootB, activate: true })).toMatchObject({ status: 'ok' });
       const overview = await harness.shared.getOverview();

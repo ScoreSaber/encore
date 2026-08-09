@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { Box, ChevronDown, FolderOpen, Link2, Link2Off, Repeat } from 'lucide-react';
+import { Box, ChevronDown, FolderOpen, Link2, Link2Off, Plus, Repeat, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { CopyPathContextMenu } from '@/components/copy-path-context-menu';
@@ -11,9 +11,11 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import { cn } from '@/components/utils';
 
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
-import type { SharedFolderId, SharedInstallOverview } from '@/modules/shared-content/contract';
+import { isCustomSharedFolderId, type SharedFolderId, type SharedInstallOverview } from '@/modules/shared-content/contract';
 import { SharedContentActionDialog } from '@/modules/shared-content/renderer/shared-content-action-dialog';
 import { SharedFolderActionButtons, SharedFolderStateBadge } from '@/modules/shared-content/renderer/shared-folder-actions';
+import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
+import { useCustomSharedFolders } from '@/modules/shared-content/renderer/use-custom-shared-folders';
 import { useInstallSharedContent } from '@/modules/shared-content/renderer/use-install-shared-content';
 import type { SharedConnect } from '@/modules/shared-content/renderer/use-shared-connect';
 import { useSharedContentActions } from '@/modules/shared-content/renderer/use-shared-content-actions';
@@ -162,12 +164,15 @@ function InstallRow({
 
 function InstallFolderDetail({ request, canManage, isLocal }: { request: TargetSharedContentRequest; canManage: boolean; isLocal: boolean }) {
    const shared = useTranslations('sharedContent');
+   const custom = useTranslations('sharedContent.customFolders');
    const common = useTranslations('common');
+   const folderLabel = useSharedFolderLabel();
    const sharedContent = useInstallSharedContent(request);
    const actions = useSharedContentActions(request);
+   const customFolders = useCustomSharedFolders(request, actions);
    const [folderResult, setFolderResult] = useState<'failed' | 'unsupported' | null>(null);
    const { snapshot } = sharedContent;
-   const busy = sharedContent.status === 'loading';
+   const busy = sharedContent.status === 'loading' || customFolders.state.status === 'choosing' || customFolders.state.status === 'saving';
    const linkable = snapshot.linkSupport?.supported === true;
 
    const openFolder = async (folderId: SharedFolderId) => {
@@ -190,8 +195,13 @@ function InstallFolderDetail({ request, canManage, isLocal }: { request: TargetS
                   >
                      <div className="flex min-w-0 flex-1 flex-col gap-1">
                         <div className="flex flex-wrap items-center gap-2">
-                           <span className="font-medium">{shared(`folders.${folder.id}`)}</span>
+                           <span className="font-medium">{folderLabel(folder.id, folder.relativePath)}</span>
                            <SharedFolderStateBadge state={folder.state} />
+                           {isCustomSharedFolderId(folder.id) ? (
+                              <Badge className="px-1.5 py-0 text-[10px] leading-4" variant="outline">
+                                 {custom('custom')}
+                              </Badge>
+                           ) : null}
                            {folder.risky ? (
                               <Badge className="px-1.5 py-0 text-[10px] leading-4" variant="secondary">
                                  {shared('risky')}
@@ -208,6 +218,19 @@ function InstallFolderDetail({ request, canManage, isLocal }: { request: TargetS
                      {canManage || isLocal ? (
                         <div className="flex shrink-0 items-center gap-2 opacity-0 transition-opacity group-focus-within/folder:opacity-100 group-hover/folder:opacity-100">
                            {canManage ? <SharedFolderActionButtons folder={folder} actions={actions} disabled={busy} linkable={linkable} /> : null}
+                           {canManage && isCustomSharedFolderId(folder.id) && (folder.state === 'absent' || folder.state === 'unlinked') ? (
+                              <Button
+                                 type="button"
+                                 variant="ghost"
+                                 size="icon"
+                                 disabled={busy}
+                                 aria-label={custom('forget')}
+                                 title={custom('forget')}
+                                 onClick={() => void customFolders.forget(folder.id)}
+                              >
+                                 <Trash2 />
+                              </Button>
+                           ) : null}
                            {isLocal ? (
                               <CopyPathContextMenu pathType="path" value={folder.installFolderPath}>
                                  <Button
@@ -225,6 +248,23 @@ function InstallFolderDetail({ request, canManage, isLocal }: { request: TargetS
                      ) : null}
                   </div>
                ))}
+            </div>
+         ) : null}
+
+         {customFolders.state.status === 'invalid' ? (
+            <WarningLine className="border-t px-3 py-2 text-sm">
+               {custom(`issues.${customFolders.state.issue}`)}
+               {customFolders.state.detail ? ` (${customFolders.state.detail})` : ''}
+            </WarningLine>
+         ) : null}
+
+         {canManage && isLocal ? (
+            <div className="flex items-center justify-between gap-3 border-t px-3 py-2 pl-10">
+               <p className="text-muted-foreground text-xs">{custom('hint')}</p>
+               <Button type="button" variant="ghost" size="sm" disabled={busy || !linkable} onClick={() => void customFolders.add()}>
+                  <Plus data-icon="inline-start" />
+                  {custom('add')}
+               </Button>
             </div>
          ) : null}
 
