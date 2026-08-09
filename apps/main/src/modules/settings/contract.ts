@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { launchRecordSchema } from '@/modules/launch/contract';
+import { launchOptionsSchema, launchRecordSchema } from '@/modules/launch/contract';
 import { defaultModSourceResolutionSettings, modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
 import { localTargetId } from '@/modules/targets/contract';
 import { defaultLocale, localeSchema } from '@/renderer/i18n/config';
@@ -79,6 +79,7 @@ export const librarySettingsSchema = z.object({
    sharedRoots: z.array(z.string().trim().min(1)).default([]),
    protonPath: z.string().trim().min(1).nullable(),
    useSymlinks: z.boolean().default(false),
+   launchOptions: z.record(z.string().min(1), launchOptionsSchema).default({}),
    lastLaunch: launchRecordSchema.nullable()
 });
 
@@ -103,6 +104,7 @@ export const librarySettingsPatchSchema = z.object({
    sharedRoots: z.array(z.string().trim().min(1)).optional(),
    protonPath: z.union([z.string().trim().min(1), z.null()]).optional(),
    useSymlinks: z.boolean().optional(),
+   launchOptions: z.record(z.string().min(1), launchOptionsSchema).optional(),
    lastLaunch: launchRecordSchema.nullable().optional()
 });
 
@@ -171,6 +173,7 @@ export function createDefaultLibrarySettings(installRoot: string): LibrarySettin
       sharedRoots: [],
       protonPath: null,
       useSymlinks: false,
+      launchOptions: {},
       lastLaunch: null
    };
 }
@@ -207,6 +210,7 @@ export function applyLibrarySettingsPatch(settings: LibrarySettings, patch: Libr
       sharedRoots: patch.sharedRoots ?? settings.sharedRoots,
       protonPath: patch.protonPath === undefined ? settings.protonPath : patch.protonPath,
       useSymlinks: patch.useSymlinks ?? settings.useSymlinks,
+      launchOptions: { ...settings.launchOptions, ...patch.launchOptions },
       lastLaunch: patch.lastLaunch === undefined ? settings.lastLaunch : patch.lastLaunch
    };
 }

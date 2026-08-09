@@ -7,6 +7,7 @@ import type { InstallDetail } from '@/modules/installs/contract';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
    beatSaberExecutableName,
+   createDefaultLaunchOptions,
    launchOptionsSchema,
    launchFlags,
    launchFlagsFor,
@@ -14,6 +15,8 @@ import {
    unavailableLaunchPreview,
    type LaunchIssue,
    type LaunchOptions,
+   type LaunchOptionsRequest,
+   type LaunchOptionsResult,
    type LaunchPreview,
    type LaunchRequestBody,
    type LaunchResult,
@@ -69,17 +72,29 @@ export function createLaunchService(options: LaunchServiceOptions) {
       };
    }
 
+   async function getOptions({ installId }: LaunchOptionsRequest): Promise<LaunchOptions> {
+      const settings = await options.settingsStore.getSnapshot();
+      const saved = settings.library.launchOptions[installId];
+      const legacy = settings.library.lastLaunch?.installId === installId ? settings.library.lastLaunch.options : null;
+
+      return supportedLaunchOptions(saved ?? legacy ?? createDefaultLaunchOptions());
+   }
+
+   async function updateOptions(request: LaunchRequestBody): Promise<LaunchOptionsResult> {
+      const launchOptions = supportedLaunchOptions(request.options);
+      const written = await options.settingsStore.updateLibrarySettings({ launchOptions: { [request.installId]: launchOptions } });
+      if (!written.ok) return written;
+
+      return { ok: true, value: written.value.library.launchOptions[request.installId] ?? launchOptions };
+   }
+
    async function preview(request: LaunchRequestBody): Promise<LaunchPreview> {
       if (platform === 'other') return invalid(request.installId, 'unsupported-platform');
 
       const parsed = launchOptionsSchema.safeParse(request.options);
       if (!parsed.success) return invalid(request.installId, 'invalid-options');
 
-      const supportedFlags = launchFlagsFor(platform);
-      const launchOptions = {
-         ...parsed.data,
-         flags: launchFlags.filter((flag) => supportedFlags.includes(flag) && parsed.data.flags.includes(flag))
-      };
+      const launchOptions = supportedLaunchOptions(parsed.data);
       const install = await options.registry.get(request.installId);
       if (!install) return invalid(request.installId, 'not-found');
 
@@ -275,5 +290,14 @@ export function createLaunchService(options: LaunchServiceOptions) {
       };
    }
 
-   return { getState, preview, start };
+   function supportedLaunchOptions(launchOptions: LaunchOptions): LaunchOptions {
+      const supportedFlags = launchFlagsFor(platform);
+
+      return {
+         ...launchOptions,
+         flags: launchFlags.filter((flag) => supportedFlags.includes(flag) && launchOptions.flags.includes(flag))
+      };
+   }
+
+   return { getState, getOptions, updateOptions, preview, start };
 }

@@ -1,18 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { queryOptions, useQuery } from '@tanstack/react-query';
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Result } from 'better-result';
 
 import type { IpcError } from '@/ipc/core';
 import { createTargetIpcDescriptor } from '@/ipc/target-api';
+import { causeFailure } from '@/lib/errors';
 import type { InstallActionRequest } from '@/modules/installs/contract';
 import { launchApi as launchContract } from '@/modules/launch/api';
 import {
+   createDefaultLaunchOptions,
    formatLaunchArgs,
    parseLaunchArgs,
    type LaunchFlag,
    type LaunchOptions,
    type LaunchPlatform,
-   type LaunchRecord,
    type TargetLaunchPreview,
    type TargetReadyLaunchPreview,
    type TargetUnavailableLaunchPreview
@@ -36,6 +38,17 @@ function launchStateQueryOptions(targetId: TargetId) {
    });
 }
 
+function launchOptionsQueryOptions(request: InstallActionRequest) {
+   return queryOptions({
+      queryKey: ipcQueryKey(launchIpc.getOptions, request.targetId, request.installId),
+      queryFn: async () => {
+         const response = await window.encore.launch.getOptions(request);
+         return response.status === 'ok' ? response.value : null;
+      },
+      staleTime: Infinity
+   });
+}
+
 type InstallLaunchState =
    | { status: 'checking' }
    | { status: 'unavailable'; preview: TargetUnavailableLaunchPreview }
@@ -45,50 +58,111 @@ type InstallLaunchState =
 
 export type InstallLaunch = ReturnType<typeof useInstallLaunch>;
 
+type LaunchOptionsDraft = {
+   requestKey: string;
+   options: LaunchOptions;
+   argsInput: string;
+};
+
 export function useInstallLaunch(request: InstallActionRequest) {
    const launchApi = window.encore.launch;
+   const queryClient = useQueryClient();
    const { operations, cancelOperation } = useOperations(request.targetId);
-   const [flags, setFlags] = useState<LaunchFlag[]>([]);
-   const [argsInput, setArgsInput] = useState('');
-   const [runAsAdmin, setRunAsAdmin] = useState(false);
-   const [closeEncore, setCloseEncore] = useState(false);
    const launchState = useQuery(launchStateQueryOptions(request.targetId));
+   const optionsQueryDefinition = launchOptionsQueryOptions(request);
+   const optionsQuery = useQuery(optionsQueryDefinition);
+   const optionsQueryKey = optionsQueryDefinition.queryKey;
+   const requestKey = `${request.targetId}\0${request.installId}`;
+   const [draft, setDraft] = useState<LaunchOptionsDraft | null>(null);
+   const optionsWriteQueue = useRef(Promise.resolve());
+   const latestOptionsWrite = useRef(0);
    const [activeRequest, setActiveRequest] = useState(request);
    const [state, setState] = useState<InstallLaunchState>({
       status: 'checking'
    });
    const [failure, setFailure] = useState<string | null>(null);
+   const [optionsFailure, setOptionsFailure] = useState<{ requestKey: string; message: string } | null>(null);
    const [previewNonce, setPreviewNonce] = useState(0);
 
    if (activeRequest.targetId !== request.targetId || activeRequest.installId !== request.installId) {
       setActiveRequest(request);
-      setFlags([]);
-      setArgsInput('');
-      setRunAsAdmin(false);
-      setCloseEncore(false);
       setState({ status: 'checking' });
       setFailure(null);
+      setOptionsFailure(null);
    }
 
-   const options = useMemo<LaunchOptions>(
-      () => ({ flags, args: parseLaunchArgs(argsInput), runAsAdmin, closeEncore }),
-      [argsInput, closeEncore, flags, runAsAdmin]
+   const record = launchState.data?.lastLaunch ?? null;
+   const legacyOptions = record?.installId === request.installId ? record.options : null;
+   const storedOptions = optionsQuery.data ?? legacyOptions ?? createDefaultLaunchOptions();
+   const activeDraft = draft?.requestKey === requestKey ? draft : null;
+   const options = activeDraft?.options ?? storedOptions;
+   const flags = options.flags;
+   const argsInput = activeDraft?.argsInput ?? formatLaunchArgs(options.args);
+   const runAsAdmin = options.runAsAdmin;
+   const closeEncore = options.closeEncore;
+   const optionsReady = !optionsQuery.isPending;
+
+   const persistOptions = useCallback(
+      (next: LaunchOptions) => {
+         const write = ++latestOptionsWrite.current;
+         setOptionsFailure(null);
+         optionsWriteQueue.current = optionsWriteQueue.current.then(async () => {
+            const response = await Result.tryPromise({
+               try: () => launchApi.updateOptions({ ...request, options: next }),
+               catch: (cause): IpcError => ({
+                  code: 'launch.options.write-failed',
+                  message: causeFailure('failed to save launch settings', cause)
+               })
+            });
+
+            if (Result.isError(response)) {
+               if (write === latestOptionsWrite.current) setOptionsFailure({ requestKey, message: response.error.message });
+               return;
+            }
+
+            const result = response.value.status === 'ok' ? response.value.value : null;
+            if (!result?.ok) {
+               if (write === latestOptionsWrite.current) {
+                  setOptionsFailure({ requestKey, message: result?.error.message ?? 'the target did not save the launch settings' });
+               }
+               return;
+            }
+
+            queryClient.setQueryData(optionsQueryKey, result.value);
+            if (write === latestOptionsWrite.current) setOptionsFailure(null);
+         });
+      },
+      [launchApi, optionsQueryKey, queryClient, request, requestKey]
+   );
+
+   const updateOptions = useCallback(
+      (next: LaunchOptions, nextArgsInput = formatLaunchArgs(next.args)) => {
+         setDraft({ requestKey, options: next, argsInput: nextArgsInput });
+         persistOptions(next);
+      },
+      [persistOptions, requestKey]
+   );
+
+   const updateArgsInput = useCallback(
+      (input: string) => updateOptions({ ...options, args: parseLaunchArgs(input) }, input),
+      [options, updateOptions]
+   );
+
+   const updateRunAsAdmin = useCallback((enabled: boolean) => updateOptions({ ...options, runAsAdmin: enabled }), [options, updateOptions]);
+
+   const updateCloseEncore = useCallback((enabled: boolean) => updateOptions({ ...options, closeEncore: enabled }), [options, updateOptions]);
+
+   const toggleFlag = useCallback(
+      (flag: LaunchFlag, enabled: boolean) => {
+         const nextFlags = enabled ? [...new Set([...flags, flag])] : flags.filter((candidate) => candidate !== flag);
+         updateOptions({ ...options, flags: nextFlags });
+      },
+      [flags, options, updateOptions]
    );
 
    const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
 
    const platform: LaunchPlatform = launchState.data?.platform ?? 'other';
-   const record = launchState.data?.lastLaunch ?? null;
-   const lastLaunch: LaunchRecord | null = record?.installId === request.installId ? record : null;
-
-   useEffect(() => {
-      if (!lastLaunch) return;
-
-      setFlags(lastLaunch.options.flags);
-      setArgsInput(formatLaunchArgs(lastLaunch.options.args));
-      setRunAsAdmin(lastLaunch.options.runAsAdmin);
-      setCloseEncore(lastLaunch.options.closeEncore);
-   }, [lastLaunch]);
 
    useEffect(() => {
       if (state.status !== 'running' || !operation || !isOperationFinished(operation)) return;
@@ -98,6 +172,8 @@ export function useInstallLaunch(request: InstallActionRequest) {
    }, [operation, state]);
 
    useEffect(() => {
+      if (!optionsReady) return;
+
       let disposed = false;
       const timer = setTimeout(() => {
          void launchApi
@@ -123,13 +199,9 @@ export function useInstallLaunch(request: InstallActionRequest) {
          disposed = true;
          clearTimeout(timer);
       };
-   }, [launchApi, options, request, previewNonce]);
+   }, [launchApi, options, optionsReady, request, previewNonce]);
 
    const recheck = useCallback(() => setPreviewNonce((current) => current + 1), []);
-
-   const toggleFlag = useCallback((flag: LaunchFlag, enabled: boolean) => {
-      setFlags((current) => (enabled ? [...current, flag] : current.filter((candidate) => candidate !== flag)));
-   }, []);
 
    const launch = useCallback(async () => {
       if (state.status !== 'ready') return;
@@ -156,14 +228,16 @@ export function useInstallLaunch(request: InstallActionRequest) {
       platform,
       localTarget: request.targetId === localTargetId,
       options,
+      optionsReady,
       flags,
       argsInput,
       runAsAdmin,
       closeEncore,
       failure,
-      setArgsInput,
-      setRunAsAdmin,
-      setCloseEncore,
+      optionsFailure: optionsFailure?.requestKey === requestKey ? optionsFailure.message : null,
+      setArgsInput: updateArgsInput,
+      setRunAsAdmin: updateRunAsAdmin,
+      setCloseEncore: updateCloseEncore,
       toggleFlag,
       recheck,
       launch,

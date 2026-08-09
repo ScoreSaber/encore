@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { launchRecordSchema } from '@/modules/launch/contract';
+import { launchOptionsSchema, launchRecordSchema } from '@/modules/launch/contract';
 import { modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
 import {
    accentColorSchema,
@@ -60,6 +60,7 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          sharedRoots: z.array(z.string().trim().min(1)).catch(defaults.library.sharedRoots),
          protonPath: z.union([z.string().trim().min(1), z.null()]).catch(defaults.library.protonPath),
          useSymlinks: z.boolean().catch(defaults.library.useSymlinks),
+         launchOptions: z.record(z.string().min(1), launchOptionsSchema).catch(defaults.library.launchOptions),
          lastLaunch: launchRecordSchema.nullable().catch(defaults.library.lastLaunch)
       })
       .catch(defaults.library);

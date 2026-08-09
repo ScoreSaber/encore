@@ -129,7 +129,7 @@ export function LaunchProgress({ launch }: { launch: InstallLaunch }) {
 }
 
 export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
-   const starting = isStarting(launch);
+   const disabled = isStarting(launch) || !launch.optionsReady;
    const supportedFlags = launchFlagsFor(launch.platform);
    const options = launchOptionOrder.filter((option) => {
       if (option === 'run-as-admin') return launch.platform !== 'linux';
@@ -147,7 +147,7 @@ export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
                   labelKey="runAsAdmin.label"
                   descriptionKey="runAsAdmin.description"
                   pressed={launch.runAsAdmin}
-                  disabled={starting}
+                  disabled={disabled}
                   onPressedChange={launch.setRunAsAdmin}
                />
             ) : option === 'close-encore' ? (
@@ -157,7 +157,7 @@ export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
                   labelKey="closeEncore.label"
                   descriptionKey="closeEncore.description"
                   pressed={launch.closeEncore}
-                  disabled={starting}
+                  disabled={disabled}
                   onPressedChange={launch.setCloseEncore}
                />
             ) : (
@@ -167,7 +167,7 @@ export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
                   labelKey={flagKeys[option].label}
                   descriptionKey={flagKeys[option].description}
                   pressed={launch.flags.includes(option)}
-                  disabled={starting}
+                  disabled={disabled}
                   onPressedChange={(enabled) => launch.toggleFlag(option, enabled)}
                />
             )
@@ -193,7 +193,7 @@ export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
    const t = useTranslations('launch');
    const preview =
       launch.state.status === 'ready' || launch.state.status === 'starting' || launch.state.status === 'running' ? launch.state.preview : null;
-   const starting = isStarting(launch);
+   const disabled = isStarting(launch) || !launch.optionsReady;
 
    return (
       <CollapsibleContent className="flex flex-col gap-3 pb-1">
@@ -205,7 +205,7 @@ export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
                id="launch-args"
                className="max-w-md"
                value={launch.argsInput}
-               disabled={starting}
+               disabled={disabled}
                placeholder={t('args.placeholder')}
                onChange={(event) => launch.setArgsInput(event.target.value)}
             />
@@ -224,7 +224,7 @@ export function LaunchProton({ launch }: { launch: InstallLaunch }) {
 
 export function LaunchNotices({ launch }: { launch: InstallLaunch }) {
    const t = useTranslations('launch');
-   const { state, failure } = launch;
+   const { state, failure, optionsFailure } = launch;
    const problem =
       state.status === 'unavailable'
          ? {
@@ -235,7 +235,9 @@ export function LaunchNotices({ launch }: { launch: InstallLaunch }) {
            ? { text: t('issues.inspectFailed'), detail: state.error.message }
            : failure
              ? { text: t('result.failed'), detail: failure }
-             : null;
+             : optionsFailure
+               ? { text: t('issues.settingsWriteFailed'), detail: optionsFailure }
+               : null;
    const warnings = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.preview.warnings : [];
 
    if (!problem && warnings.length === 0) return null;

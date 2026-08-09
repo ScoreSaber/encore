@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import type { IpcResult } from '@/ipc/core';
-import type { InstallId } from '@/modules/installs/contract';
+import { installIdSchema, type InstallId } from '@/modules/installs/contract';
 import { operationSnapshotSchema, type OperationSnapshot } from '@/modules/operations/contract';
 import { storeKindSchema } from '@/modules/stores/contract';
 import type { TargetId } from '@/modules/targets/contract';
@@ -85,8 +85,11 @@ export const launchOptionsSchema = z.object({
    closeEncore: z.boolean().default(false)
 });
 
-export const launchRequestBodySchema = z.object({
-   installId: z.string().min(1),
+export const launchOptionsRequestSchema = z.object({
+   installId: installIdSchema
+});
+
+export const launchRequestBodySchema = launchOptionsRequestSchema.extend({
    options: launchOptionsSchema
 });
 
@@ -151,9 +154,15 @@ export const launchResultSchema = z.union([
    z.object({ ok: z.literal(false), error: z.object({ code: z.string(), message: z.string() }) })
 ]);
 
+export const launchOptionsResultSchema = z.union([
+   z.object({ ok: z.literal(true), value: launchOptionsSchema }),
+   z.object({ ok: z.literal(false), error: z.object({ code: z.string(), message: z.string() }) })
+]);
+
 export type LaunchPlatform = z.infer<typeof launchPlatformSchema>;
 export type LaunchFlag = z.infer<typeof launchFlagSchema>;
 export type LaunchOptions = z.infer<typeof launchOptionsSchema>;
+export type LaunchOptionsRequest = z.infer<typeof launchOptionsRequestSchema>;
 export type LaunchRequestBody = z.infer<typeof launchRequestBodySchema>;
 export type LaunchIssue = z.infer<typeof launchIssueSchema>;
 export type LaunchWarning = z.infer<typeof launchWarningSchema>;
@@ -166,6 +175,7 @@ export type TargetLaunchPreview = { targetId: TargetId } & LaunchPreview;
 export type TargetUnavailableLaunchPreview = { targetId: TargetId } & UnavailableLaunchPreview;
 export type TargetReadyLaunchPreview = { targetId: TargetId } & ReadyLaunchPreview;
 export type LaunchResult = IpcResult<OperationSnapshot>;
+export type LaunchOptionsResult = IpcResult<LaunchOptions>;
 
 export type LaunchRequest = {
    targetId: TargetId;
@@ -181,6 +191,10 @@ export function launchPlatformFor(platform: NodeJS.Platform): LaunchPlatform {
 
 export function launchFlagsFor(platform: LaunchPlatform): readonly LaunchFlag[] {
    return platformLaunchFlags[platform];
+}
+
+export function createDefaultLaunchOptions(): LaunchOptions {
+   return { flags: [], args: [], runAsAdmin: false, closeEncore: false };
 }
 
 export function unavailableLaunchPreview(request: { installId: InstallId }, issue: LaunchIssue, detail?: string): UnavailableLaunchPreview {

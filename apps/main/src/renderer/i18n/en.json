@@ -980,6 +980,7 @@
          "inspectFailed": "This install folder could not be read",
          "invalidOptions": "These launch options are not something Encore can pass to Beat Saber",
          "notFound": "This install is not in the registry anymore",
+         "settingsWriteFailed": "These launch settings could not be saved",
          "storeClientMissing": "The store client this install needs is not installed on that device",
          "unsupportedPlatform": "Encore starts Beat Saber on Windows and Linux only for now",
          "unsupportedTarget": "This device cannot launch installs from Encore",

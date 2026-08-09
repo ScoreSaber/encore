@@ -18,13 +18,15 @@ describe('settings store', () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);
       const { scoreSaberModSourceEnabled: _scoreSaberModSourceEnabled, ...app } = createDefaultAppSettings();
-      await writeFile(join(dataPath, 'settings.json'), JSON.stringify({ app, library: createDefaultLibrarySettings('/games/encore') }), 'utf8');
+      const { launchOptions: _launchOptions, ...library } = createDefaultLibrarySettings('/games/encore');
+      await writeFile(join(dataPath, 'settings.json'), JSON.stringify({ app, library }), 'utf8');
 
       const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
       const snapshot = await store.getSnapshot();
 
       expect(snapshot.status).toBe('ready');
       expect(snapshot.app.scoreSaberModSourceEnabled).toBe(true);
+      expect(snapshot.library.launchOptions).toEqual({});
    });
 
    test('persists the default folder used by new installs', async () => {
