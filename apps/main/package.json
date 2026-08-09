@@ -4,6 +4,7 @@
    "description": "A lightweight desktop companion for managing Beat Saber installs, mods and other user generated content",
    "author": "ScoreSaber",
    "license": "GPL-2.0-only",
+   "homepage": "https://encore.scoresaber.com",
    "desktopName": "com.scoresaber.encore",
    "private": true,
    "type": "module",
@@ -151,6 +152,7 @@
             "rpm",
             "flatpak"
          ],
+         "executableName": "encore",
          "category": "Utility",
          "maintainer": "ScoreSaber <contact@scoresaber.com>",
          "vendor": "ScoreSaber",
@@ -172,9 +174,11 @@
          "artifactName": "${productName}-${version}-linux-x86_64.${ext}"
       },
       "deb": {
+         "packageName": "encore",
          "artifactName": "${productName}-${version}-linux-amd64.${ext}"
       },
       "rpm": {
+         "packageName": "encore",
          "artifactName": "${productName}-${version}-linux-x86_64.${ext}"
       },
       "flatpak": {
