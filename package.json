@@ -13,7 +13,7 @@
       "build:watchdog": "bun run --cwd apps/main build:watchdog",
       "build:all": "turbo run build",
       "build:web": "bun run --cwd apps/web build",
-      "deploy:web": "bun run build:web && bun run --cwd apps/web pages:deploy",
+      "deploy:web": "bun run build:web && bun run --cwd apps/web wrangler pages deploy --branch main",
       "start": "bun run --cwd apps/main start",
       "typecheck": "bun run --cwd apps/main typecheck",
       "typecheck:all": "turbo run typecheck",

@@ -8,9 +8,7 @@
     "start": "serve out",
     "typecheck": "fumadocs-mdx && next typegen && tsc --noEmit",
     "lint": "oxlint src source.config.ts next.config.mjs postcss.config.mjs",
-    "postinstall": "fumadocs-mdx",
-    "pages:preview": "wrangler pages dev out",
-    "pages:deploy": "wrangler pages deploy --branch main"
+    "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
     "@orama/orama": "3.1.18",
