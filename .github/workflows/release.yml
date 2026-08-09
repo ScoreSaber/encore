@@ -160,20 +160,13 @@ jobs:
          - name: Cache package downloads
            uses: actions/cache@v4
            with:
-              path: |
-                 ~/.bun/install/cache
-                 ~/.cache/electron
-                 ~/.cache/electron-builder
-                 ~/Library/Caches/electron
-                 ~/Library/Caches/electron-builder
-                 ~/AppData/Local/electron/Cache
-                 ~/AppData/Local/electron-builder/Cache
-              key: release-build-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+              path: ~/.bun/install/cache
+              key: release-build-v2-${{ runner.os }}-${{ hashFiles('bun.lock') }}
               restore-keys: |
-                 release-build-${{ runner.os }}-
+                 release-build-v2-${{ runner.os }}-
 
          - name: Install dependencies
-           run: bun install --frozen-lockfile
+           run: bun install --frozen-lockfile --ignore-scripts
 
          - name: Build app
            run: bun run build
@@ -268,10 +261,10 @@ jobs:
               key: release-package-${{ runner.os }}-${{ hashFiles('bun.lock') }}
               restore-keys: |
                  release-package-${{ runner.os }}-
-                 release-build-${{ runner.os }}-
+                 release-build-v2-${{ runner.os }}-
 
          - name: Install dependencies
-           run: bun install --frozen-lockfile
+           run: bun install --frozen-lockfile --ignore-scripts
 
          - name: Download app build
            uses: actions/download-artifact@v4
@@ -314,7 +307,7 @@ jobs:
            shell: bash
            env:
               APPIMAGE_EXTRACT_AND_RUN: '1'
-           run: bunx electron-builder --projectDir apps/main ${{ matrix.package_args }} --publish never
+           run: bun run --cwd apps/main electron-builder ${{ matrix.package_args }} --publish never
 
          - name: Upload release asset
            uses: actions/upload-artifact@v4

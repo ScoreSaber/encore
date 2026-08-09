@@ -175,10 +175,12 @@
       },
       "deb": {
          "packageName": "encore",
+         "compression": "gz",
          "artifactName": "${productName}-${version}-linux-amd64.${ext}"
       },
       "rpm": {
          "packageName": "encore",
+         "compression": "gzip",
          "artifactName": "${productName}-${version}-linux-x86_64.${ext}"
       },
       "flatpak": {
