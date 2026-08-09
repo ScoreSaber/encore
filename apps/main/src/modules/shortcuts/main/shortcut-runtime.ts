@@ -32,7 +32,7 @@ export function createShortcutRuntime(): ShortcutRuntime {
       writeWindowsShortcut: (shortcutPath, link) =>
          Result.try({
             try: () => {
-               const written = shell.writeShortcutLink(shortcutPath, 'replace', {
+               const written = shell.writeShortcutLink(shortcutPath, 'create', {
                   target: link.target,
                   args: link.args,
                   cwd: link.workingDirectory,
