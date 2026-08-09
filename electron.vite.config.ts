@@ -4,8 +4,6 @@ import viteReact from '@vitejs/plugin-react';
 import { defineConfig } from 'electron-vite';
 import { createLogger } from 'vite';
 
-import packageJson from './package.json' with { type: 'json' };
-
 import { fileURLToPath } from 'node:url';
 
 const logger = createLogger();
@@ -67,17 +65,14 @@ export default defineConfig({
    },
    renderer: {
       customLogger: logger,
-      root: fileURLToPath(new URL('.', import.meta.url)),
+      root: fileURLToPath(new URL('./src/app/renderer', import.meta.url)),
       publicDir: false,
       envPrefix: ['VITE_', 'RENDERER_VITE_'],
-      define: {
-         __ENCORE_VERSION__: JSON.stringify(packageJson.version)
-      },
       resolve: commonResolve,
       plugins: [
          tanstackRouter({
-            routesDirectory: './src/routes',
-            generatedRouteTree: './src/routeTree.gen.ts',
+            routesDirectory: fileURLToPath(new URL('./src/routes', import.meta.url)),
+            generatedRouteTree: fileURLToPath(new URL('./src/routeTree.gen.ts', import.meta.url)),
             routeFileIgnorePrefix: '-',
             quoteStyle: 'single',
             semicolons: true,
@@ -91,7 +86,7 @@ export default defineConfig({
       },
       build: {
          rollupOptions: {
-            input: fileURLToPath(new URL('./index.html', import.meta.url))
+            input: fileURLToPath(new URL('./src/app/renderer/index.html', import.meta.url))
          },
          chunkSizeWarningLimit: 1600
       }

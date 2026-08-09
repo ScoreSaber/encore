@@ -1,6 +1,6 @@
 # Contributing
 
-For local setup, start with [SETUP.md](SETUP.md)
+For local setup, start with the [setup guide](setup.md)
 
 ## Package Management
 
@@ -28,7 +28,7 @@ Do not use npm, pnpm or yarn in this repo
 - Prefer existing shared ScoreSaber UI components when they fit Encore without dragging in website-only behavior
 - Use the existing shadcn/ui components in `src/components/ui` before creating raw controls
 - Use semantic design tokens and helpers instead of hardcoded colors
-- Put user facing text in `messages` and read it with `useTranslations`
+- Put user facing text in the renderer message catalogue and read it with `useTranslations`
 
 ## Desktop UX
 

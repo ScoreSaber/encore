@@ -1,4 +1,4 @@
-import en from '../../../../messages/en.json';
+import en from './en.json';
 
 import type { Locale } from '@/app/renderer/i18n/config';
 
