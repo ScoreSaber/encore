@@ -5,33 +5,19 @@
          "dependsOn": ["^build"],
          "outputs": [".next/**", "!.next/cache/**", "out/**"]
       },
-      "//#build": {
-         "outputs": ["out/**"]
-      },
       "dev": {
-         "cache": false,
-         "persistent": true
-      },
-      "//#dev": {
          "cache": false,
          "persistent": true
       },
       "lint": {
          "dependsOn": ["^lint"]
       },
-      "//#lint": {},
       "test": {
          "dependsOn": ["^test"],
          "outputs": []
       },
-      "//#test": {
-         "outputs": []
-      },
       "typecheck": {
          "dependsOn": ["^typecheck"],
-         "outputs": []
-      },
-      "//#typecheck": {
          "outputs": []
       }
    }

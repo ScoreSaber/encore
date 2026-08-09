@@ -26,7 +26,7 @@ Do not use npm, pnpm or yarn in this repo
 ## React & UI
 
 - Prefer existing shared ScoreSaber UI components when they fit Encore without dragging in website-only behavior
-- Use the existing shadcn/ui components in `src/components/ui` before creating raw controls
+- Use the existing shadcn/ui components in `apps/main/src/components/ui` before creating raw controls
 - Use semantic design tokens and helpers instead of hardcoded colors
 - Put user facing text in the renderer message catalogue and read it with `useTranslations`
 

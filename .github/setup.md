@@ -67,9 +67,9 @@ bun run package:dir
 IDE extensions and pre-commit hooks should handle most formatting and linting for you. If you want to run the same checks manually:
 
 ```sh
-bun run lint
+bun run lint:all
 bun run format:check
-bun run typecheck
+bun run typecheck:all
 ```
 
 For behavior, Electron, packaging, filesystem, dependency or install detection changes, a production build is also useful:

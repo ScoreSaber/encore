@@ -1,7 +1,7 @@
 {
    "$schema": "./node_modules/oxlint/configuration_schema.json",
    "plugins": ["typescript", "unicorn", "oxc"],
-   "ignorePatterns": ["out/**", "dist/**", "release/**", "node_modules/**", "src/routeTree.gen.ts", "src/web/**"],
+   "ignorePatterns": ["out/**", "dist/**", "release/**", "build/**", "node_modules/**", "apps/main/src/routeTree.gen.ts"],
    "categories": {
       "correctness": "error"
    },
@@ -22,17 +22,17 @@
    },
    "overrides": [
       {
-         "files": ["src/app/main.ts", "src/app/preload.ts", "src/modules/*/main/**/*.{ts,tsx}"],
+         "files": ["apps/main/src/main.ts", "apps/main/src/preload.ts", "apps/main/src/modules/*/main/**/*.{ts,tsx}"],
          "rules": {
             "no-restricted-globals": "off"
          }
       },
       {
          "files": [
-            "src/app/renderer/**/*.{ts,tsx}",
-            "src/routes/**/*.{ts,tsx}",
-            "src/components/**/*.{ts,tsx}",
-            "src/modules/*/renderer/**/*.{ts,tsx}"
+            "apps/main/src/renderer/**/*.{ts,tsx}",
+            "apps/main/src/routes/**/*.{ts,tsx}",
+            "apps/main/src/components/**/*.{ts,tsx}",
+            "apps/main/src/modules/*/renderer/**/*.{ts,tsx}"
          ],
          "rules": {
             "no-restricted-imports": [

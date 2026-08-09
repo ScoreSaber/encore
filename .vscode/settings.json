@@ -25,10 +25,11 @@
    "prettier.enable": false,
    "tailwindCSS.classFunctions": ["clsx", "cva", "twMerge"],
    "tailwindCSS.experimental.configFile": {
-      "src/styles/globals.css": "src/**/*.{css,ts,tsx}"
+      "apps/main/src/renderer/styles/globals.css": "apps/main/src/**/*.{css,ts,tsx}",
+      "apps/web/src/app/global.css": "apps/web/src/**/*.{css,ts,tsx}"
    },
    "tailwindCSS.files.exclude": ["**/.git/**", "**/node_modules/**", "**/out/**", "**/release/**"],
    "i18n-ally.enabledFrameworks": ["next-intl"],
-   "i18n-ally.localesPaths": ["messages"],
+   "i18n-ally.localesPaths": ["apps/main/src/renderer/i18n"],
    "i18n-ally.sourceLanguage": "en"
 }
