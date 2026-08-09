@@ -157,7 +157,9 @@ export function createModService(options: ModServiceOptions) {
       if (plan.missingDependencies) warnings.push('missing-dependency');
       if (plan.mods.some((planned) => scan.installed.has(planned.entry.modId))) warnings.push('replaces-installed');
       if (plan.mods.some((planned) => planned.entry.sourceKind === 'unofficial')) warnings.push('unofficial-source');
-      if (plan.mods.some((planned) => planned.entry.claimedIdentity !== null)) warnings.push('claimed-identity');
+      if (plan.mods.some((planned) => planned.entry.sourceKind === 'unofficial' && planned.entry.claimedIdentity !== null)) {
+         warnings.push('claimed-identity');
+      }
 
       return {
          status: 'ok',

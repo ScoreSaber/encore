@@ -3,7 +3,15 @@ import { z } from 'zod';
 
 import { readJsonFileOrDefault, writeJsonFileAtomic } from '@/lib/filesystem/json';
 import type { JsonDocumentFetch } from '@/lib/http/json';
-import { beatModsOrigin, officialModSourceId, officialModSourceName, type ModPlatform } from '@/modules/mods/contract';
+import {
+   beatModsOrigin,
+   officialModSourceId,
+   officialModSourceName,
+   scoreSaberModSourceId,
+   scoreSaberModSourceName,
+   scoreSaberModSourceUrl,
+   type ModPlatform
+} from '@/modules/mods/contract';
 import {
    modRepositoryLimits,
    modRepositoryProblem,
@@ -44,6 +52,7 @@ import { join } from 'node:path';
 const cacheFileName = 'mod-repositories.json';
 const modRepositoryCacheVersion = 1;
 const listingTtlMs = 30 * 60 * 1000;
+const scoreSaberRepository = { id: scoreSaberModSourceId, listingUrl: scoreSaberModSourceUrl };
 
 const cachedListingSchema = z.object({
    id: z.string(),
@@ -89,12 +98,15 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       const policy = await policyService.get();
       await loadCache();
 
-      return describeSnapshot(policy, await readRecords(), await isOfficialEnabled());
+      return describeSnapshot(policy, await readRecords());
    }
 
    async function refresh(): Promise<ModRepositoriesSnapshot> {
       const policy = await policyService.refresh();
       const records = await enforcePolicy(policy, await readRecords());
+      const official = await readOfficialSources();
+
+      if (official.scoreSaberEnabled) await loadListing(scoreSaberRepository, { force: true });
 
       for (const record of records) {
          if (!record.enabled || isBlocked(policy, record)) continue;
@@ -102,7 +114,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          await loadListing(record, { force: true });
       }
 
-      return describeSnapshot(policy, records, await isOfficialEnabled());
+      return describeSnapshot(policy, records);
    }
 
    async function preview(input: { url: string }): Promise<ModRepositoryPreview> {
@@ -114,6 +126,8 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       if (fetched.value.status !== 'ok') return modRepositoryProblem('fetch-failed', 'the listing did not answer with a document');
 
       const listing = fetched.value.listing;
+      if (isScoreSaberRepositoryId(listing.id)) return modRepositoryProblem('duplicate', scoreSaberModSourceUrl);
+
       const policy = await policyService.get();
       const denied = findDenylistEntry(policy.entries, { id: listing.id, listingUrl: resolved.value });
       if (denied) return modRepositoryProblem('denylisted', denied.reason);
@@ -138,7 +152,9 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       if (fetched.value.status !== 'ok') return modRepositoryProblem('fetch-failed', 'the listing did not answer with a document');
 
       const listing = fetched.value.listing;
-      if (records.some((record) => record.id === listing.id)) return modRepositoryProblem('duplicate', listing.id);
+      if (isScoreSaberRepositoryId(listing.id) || records.some((record) => record.id === listing.id)) {
+         return modRepositoryProblem('duplicate', listing.id);
+      }
 
       const denied = findDenylistEntry(policy.entries, { id: listing.id, listingUrl: resolved.value });
       if (denied) return modRepositoryProblem('denylisted', denied.reason);
@@ -169,15 +185,19 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          listing
       });
 
-      return { status: 'ok', snapshot: await describeSnapshot(policy, await readRecords(), await isOfficialEnabled()) };
+      return { status: 'ok', snapshot: await describeSnapshot(policy, await readRecords()) };
    }
 
    async function setEnabled(input: ModRepositoryToggleRequest): Promise<ModRepositoryResult> {
-      if (input.id === officialModSourceId) {
-         const written = await options.settingsStore.updateAppSettings({ officialModSourceEnabled: input.enabled });
+      if (input.id === officialModSourceId || input.id === scoreSaberModSourceId) {
+         const written = await options.settingsStore.updateAppSettings(
+            input.id === officialModSourceId ? { officialModSourceEnabled: input.enabled } : { scoreSaberModSourceEnabled: input.enabled }
+         );
          if (!written.ok) return modRepositoryProblem('write-failed');
 
-         return { status: 'ok', snapshot: await describeSnapshot(await policyService.get(), await readRecords(), input.enabled) };
+         if (input.id === scoreSaberModSourceId && input.enabled) await loadListing(scoreSaberRepository, { force: true });
+
+         return { status: 'ok', snapshot: await describeSnapshot(await policyService.get(), await readRecords()) };
       }
 
       const records = await readRecords();
@@ -197,9 +217,9 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       );
       if (!written) return modRepositoryProblem('write-failed');
 
-      if (input.enabled) await loadListing({ ...record, enabled: true }, { force: true });
+      if (input.enabled) await loadListing(record, { force: true });
 
-      return { status: 'ok', snapshot: await describeSnapshot(policy, await readRecords(), await isOfficialEnabled()) };
+      return { status: 'ok', snapshot: await describeSnapshot(policy, await readRecords()) };
    }
 
    async function remove(input: ModRepositoryIdRequest): Promise<ModRepositoryResult> {
@@ -212,7 +232,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       states.delete(input.id);
       await saveCache();
 
-      return { status: 'ok', snapshot: await describeSnapshot(await policyService.get(), await readRecords(), await isOfficialEnabled()) };
+      return { status: 'ok', snapshot: await describeSnapshot(await policyService.get(), await readRecords()) };
    }
 
    async function setSourceResolution(input: ModSourceResolutionRequest): Promise<ModRepositoryResult> {
@@ -228,9 +248,17 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       if (resolution.status === 'invalid') {
          failures.push({ listingUrl: beatModsOrigin, issue: resolution.issue, ...(resolution.detail ? { detail: resolution.detail } : {}) });
       }
-      const official = await setEnabled({ id: officialModSourceId, enabled: input.officialEnabled });
-      if (official.status === 'invalid')
-         failures.push({ listingUrl: beatModsOrigin, issue: official.issue, ...(official.detail ? { detail: official.detail } : {}) });
+
+      for (const desired of input.official) {
+         const result = await setEnabled(desired);
+         if (result.status === 'invalid') {
+            failures.push({
+               listingUrl: officialSourceUrl(desired.id),
+               issue: result.issue,
+               ...(result.detail ? { detail: result.detail } : {})
+            });
+         }
+      }
 
       for (const desired of input.repositories) {
          const records = await readRecords();
@@ -266,6 +294,33 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       const sources: ModSourceStatus[] = [];
       const entries: ModIndexEntry[] = [];
       const fileMatches: ModIndexFileMatch[] = [];
+      const official = await readOfficialSources();
+
+      if (official.scoreSaberEnabled) {
+         const state = await loadListing(scoreSaberRepository, { force: false });
+         if (!state.cached) {
+            sources.push({
+               id: scoreSaberModSourceId,
+               name: scoreSaberModSourceName,
+               kind: 'official',
+               state: 'unavailable',
+               modCount: 0,
+               issue: state.issue ?? 'fetch-failed',
+               ...(state.detail ? { detail: state.detail } : {})
+            });
+         } else {
+            const selected = selectRepositoryEntries(state.cached.listing, request, 'official');
+            entries.push(...selected.entries);
+            fileMatches.push(...selected.fileMatches);
+            sources.push({
+               id: scoreSaberModSourceId,
+               name: scoreSaberModSourceName,
+               kind: 'official',
+               state: 'ready',
+               modCount: selected.entries.length
+            });
+         }
+      }
 
       for (const record of records) {
          if (!record.enabled) continue;
@@ -301,22 +356,23 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       return { sources, entries, fileMatches, resolution: await readSourceResolution() };
    }
 
-   async function loadListing(record: ModRepositoryRecord, input: { force: boolean }): Promise<RepositoryState> {
+   async function loadListing(record: Pick<ModRepositoryRecord, 'id' | 'listingUrl'>, input: { force: boolean }): Promise<RepositoryState> {
       await loadCache();
       const state = states.get(record.id) ?? { cached: null };
-      const fresh = state.cached && state.cached.listingUrl === record.listingUrl && now() - Date.parse(state.cached.fetchedAt) < listingTtlMs;
-      if (!input.force && fresh) return state;
+      const current = state.cached?.listingUrl === record.listingUrl ? state.cached : null;
+      const fresh = current && now() - Date.parse(current.fetchedAt) < listingTtlMs;
+      if (!input.force && fresh) return { cached: current };
 
       const fetched = await fetchRepositoryListing({
          url: record.listingUrl,
-         etag: state.cached?.etag,
-         lastModified: state.cached?.lastModified,
+         etag: current?.etag,
+         lastModified: current?.lastModified,
          fetchJson: options.fetchJson
       });
 
       if (Result.isError(fetched)) {
          const next: RepositoryState = {
-            cached: state.cached,
+            cached: current,
             issue: fetched.error.issue,
             ...(fetched.error.detail ? { detail: fetched.error.detail } : {})
          };
@@ -326,11 +382,18 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       }
 
       const fetchedAt = new Date(now()).toISOString();
-      if (fetched.value.status === 'not-modified' && state.cached) {
-         return storeListing({ ...state.cached, listingUrl: record.listingUrl, fetchedAt });
+      if (fetched.value.status === 'not-modified' && current) {
+         return storeListing({ ...current, fetchedAt });
       }
       if (fetched.value.status === 'not-modified') {
          const next: RepositoryState = { cached: null, issue: 'fetch-failed', detail: 'the listing answered as unchanged with nothing cached' };
+         states.set(record.id, next);
+
+         return next;
+      }
+
+      if (fetched.value.listing.id !== record.id) {
+         const next: RepositoryState = { cached: current, issue: 'invalid-listing', detail: 'the repository ID changed' };
          states.set(record.id, next);
 
          return next;
@@ -378,13 +441,19 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       return denied ? { issue: 'denylisted', detail: denied.reason } : null;
    }
 
-   async function describeSnapshot(
-      policy: ModRepositoryPolicySnapshot,
-      records: ModRepositoryRecord[],
-      officialEnabled: boolean
-   ): Promise<ModRepositoriesSnapshot> {
+   async function describeSnapshot(policy: ModRepositoryPolicySnapshot, records: ModRepositoryRecord[]): Promise<ModRepositoriesSnapshot> {
+      const official = await readOfficialSources();
+
       return {
-         official: [{ id: officialModSourceId, name: officialModSourceName, listingUrl: beatModsOrigin, enabled: officialEnabled }],
+         official: [
+            { id: officialModSourceId, name: officialModSourceName, listingUrl: beatModsOrigin, enabled: official.beatModsEnabled },
+            {
+               id: scoreSaberModSourceId,
+               name: scoreSaberModSourceName,
+               listingUrl: scoreSaberModSourceUrl,
+               enabled: official.scoreSaberEnabled
+            }
+         ],
          repositories: records.map((record) => describeRepository(policy, record)),
          resolution: await readSourceResolution()
       };
@@ -416,14 +485,26 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
    async function readRecords() {
       const snapshot = await options.settingsStore.getSnapshot();
+      const records = snapshot.app.modRepositories;
+      const migrated = records.filter((record) => !isScoreSaberRepositoryId(record.id));
+      if (migrated.length === records.length) return records;
 
-      return snapshot.app.modRepositories;
+      await writeRecords(migrated);
+
+      return migrated;
    }
 
-   async function isOfficialEnabled() {
+   async function readOfficialSources() {
       const snapshot = await options.settingsStore.getSnapshot();
 
-      return snapshot.app.officialModSourceEnabled;
+      return {
+         beatModsEnabled: snapshot.app.officialModSourceEnabled,
+         scoreSaberEnabled: snapshot.app.scoreSaberModSourceEnabled
+      };
+   }
+
+   async function isBeatModsEnabled() {
+      return (await readOfficialSources()).beatModsEnabled;
    }
 
    async function readSourceResolution() {
@@ -445,10 +526,19 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       const read = await readJsonFileOrDefault(cachePath, listingCacheFileSchema, {
          defaultValue: { schemaVersion: modRepositoryCacheVersion, repositories: [] }
       });
+      let migrated = false;
 
       for (const cached of read.repositories) {
-         if (cached) states.set(cached.id, { cached });
+         if (!cached) continue;
+         if (isScoreSaberRepositoryId(cached.id) && (cached.id !== scoreSaberModSourceId || cached.listingUrl !== scoreSaberModSourceUrl)) {
+            migrated = true;
+            continue;
+         }
+
+         states.set(cached.id, { cached });
       }
+
+      if (migrated) await saveCache();
    }
 
    async function saveCache() {
@@ -460,7 +550,18 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       });
    }
 
-   return { getSnapshot, refresh, preview, add, setEnabled, setSourceResolution, remove, sync, listEntries, isOfficialEnabled };
+   return { getSnapshot, refresh, preview, add, setEnabled, setSourceResolution, remove, sync, listEntries, isBeatModsEnabled };
+}
+
+function isScoreSaberRepositoryId(id: string) {
+   return id.trim().toLowerCase() === scoreSaberModSourceId;
+}
+
+function officialSourceUrl(id: string) {
+   if (id === officialModSourceId) return beatModsOrigin;
+   if (id === scoreSaberModSourceId) return scoreSaberModSourceUrl;
+
+   return id;
 }
 
 function describePreview(listing: ModRepositoryListing, listingUrl: string): ModRepositoryPreview {

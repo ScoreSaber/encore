@@ -23,7 +23,11 @@ export function SupportLinksCard({ support }: { support: Support }) {
                      {section.links.map((id) => (
                         <CopyPathContextMenu key={id} pathType="url" value={supportLinkUrls[id]}>
                            <Button type="button" variant="outline" size="sm" className="cursor-pointer" onClick={() => void support.openLink(id)}>
-                              {id === 'support-encore' ? <Heart data-icon="inline-start" /> : <ExternalLink data-icon="inline-start" />}
+                              {id === 'support-encore' ? (
+                                 <Heart className="fill-pink-300 text-pink-400" data-icon="inline-start" />
+                              ) : (
+                                 <ExternalLink data-icon="inline-start" />
+                              )}
                               {t(id)}
                            </Button>
                         </CopyPathContextMenu>

@@ -28,6 +28,9 @@ export function githubRepositoryFromUrl(value: string): GitHubRepository | null 
 
 export const modRepositoryPolicyUrl = 'https://encore.scoresaber.com/policy/mod-repositories.json';
 export const modRepositoryPolicyHost = 'encore.scoresaber.com';
+export const scoreSaberModSourceId = 'com.scoresaber.latest';
+export const scoreSaberModSourceName = 'ScoreSaber Official';
+export const scoreSaberModSourceUrl = 'https://encore.scoresaber.com/repos/scoresaber.json';
 export const modRepositoryListingSchemaVersion = 1;
 export const modRepositoryPolicySchemaVersion = 1;
 export const modRepositoryLinkAction = 'add-source';
@@ -130,7 +133,7 @@ export const modRepositoriesSnapshotSchema = z.object({
 });
 
 export const modRepositorySyncRequestSchema = z.object({
-   officialEnabled: z.boolean(),
+   official: z.array(z.object({ id: z.string().min(1), enabled: z.boolean() })),
    repositories: z.array(z.object({ listingUrl: z.string().min(1), enabled: z.boolean() })),
    resolution: modSourceResolutionSettingsSchema
 });

@@ -14,6 +14,19 @@ afterEach(async () => {
 });
 
 describe('settings store', () => {
+   test('enables the ScoreSaber source when loading settings written before it existed', async () => {
+      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
+      tempRoots.push(dataPath);
+      const { scoreSaberModSourceEnabled: _scoreSaberModSourceEnabled, ...app } = createDefaultAppSettings();
+      await writeFile(join(dataPath, 'settings.json'), JSON.stringify({ app, library: createDefaultLibrarySettings('/games/encore') }), 'utf8');
+
+      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+      const snapshot = await store.getSnapshot();
+
+      expect(snapshot.status).toBe('ready');
+      expect(snapshot.app.scoreSaberModSourceEnabled).toBe(true);
+   });
+
    test('persists the default folder used by new installs', async () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);

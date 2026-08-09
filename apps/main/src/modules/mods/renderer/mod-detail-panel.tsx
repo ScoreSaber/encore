@@ -154,7 +154,7 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
 
          {mods.linkBlocked ? <p className="text-muted-foreground text-xs">{t('detail.linkBlocked')}</p> : null}
 
-         {mod.claimedIdentity ? (
+         {mod.sourceKind === 'unofficial' && mod.claimedIdentity ? (
             <WarningLine>{t('detail.claimedIdentity', { source: mod.sourceName, identity: mod.claimedIdentity })}</WarningLine>
          ) : null}
 

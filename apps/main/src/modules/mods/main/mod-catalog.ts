@@ -49,7 +49,7 @@ export type ModRepositoryEntries = {
       fileMatches: ModIndexFileMatch[];
       resolution: ModSourceResolutionSettings;
    }>;
-   isOfficialEnabled: () => Promise<boolean>;
+   isBeatModsEnabled: () => Promise<boolean>;
 };
 
 export type ModCatalogOptions = {
@@ -81,7 +81,7 @@ export function createModCatalogService(options: ModCatalogOptions) {
    let lookupBudget = maxHashLookups;
 
    async function get(request: ModCatalogRequest): Promise<Result<ModIndex, BeatModsProblem>> {
-      if (!((await options.repositories?.isOfficialEnabled()) ?? true)) return build(request, [], [], 'remote', Date.now());
+      if (!((await options.repositories?.isBeatModsEnabled()) ?? true)) return build(request, [], [], 'remote', Date.now());
 
       const key = `${request.platform}::${request.gameVersion}`;
       let cached = readRecent(catalogs, key);
@@ -115,7 +115,7 @@ export function createModCatalogService(options: ModCatalogOptions) {
    }
 
    async function runRefresh(request: ModCatalogRequest, key: string): Promise<Result<ModIndex, BeatModsProblem>> {
-      if (!((await options.repositories?.isOfficialEnabled()) ?? true)) return build(request, [], [], 'remote', Date.now());
+      if (!((await options.repositories?.isBeatModsEnabled()) ?? true)) return build(request, [], [], 'remote', Date.now());
 
       const status = await api.checkStatus();
       if (Result.isError(status)) return Result.err<ModIndex, BeatModsProblem>(status.error);
@@ -155,15 +155,15 @@ export function createModCatalogService(options: ModCatalogOptions) {
       source: ModCatalogSource,
       fetchedAt: number
    ): Promise<Result<ModIndex, BeatModsProblem>> {
-      const unofficial = (await options.repositories?.listEntries(request)) ?? {
+      const repositories = (await options.repositories?.listEntries(request)) ?? {
          sources: [],
          entries: [],
          fileMatches: [],
          resolution: defaultModSourceResolutionSettings
       };
       const resolved = resolveModIdentities(
-         { entries: [...official, ...unofficial.entries], fileMatches: unofficial.fileMatches },
-         unofficial.resolution
+         { entries: [...official, ...repositories.entries], fileMatches: repositories.fileMatches },
+         repositories.resolution
       );
 
       return Result.ok<ModIndex, BeatModsProblem>(
@@ -172,7 +172,7 @@ export function createModCatalogService(options: ModCatalogOptions) {
             platform: request.platform,
             source,
             updatedAt: new Date(fetchedAt).toISOString(),
-            sources: [...officialSources, ...unofficial.sources],
+            sources: [...officialSources, ...repositories.sources],
             entries: resolved.entries,
             fileMatches: resolved.fileMatches
          })
@@ -186,7 +186,7 @@ export function createModCatalogService(options: ModCatalogOptions) {
          return cached;
       }
 
-      if (lookupBudget <= 0 || !((await options.repositories?.isOfficialEnabled()) ?? true)) return null;
+      if (lookupBudget <= 0 || !((await options.repositories?.isBeatModsEnabled()) ?? true)) return null;
       lookupBudget -= 1;
 
       const looked = await api.lookupHash(key);

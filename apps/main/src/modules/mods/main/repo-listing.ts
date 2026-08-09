@@ -7,7 +7,7 @@ import { causeMessage } from '@/lib/errors';
 import { fetchJsonDocument, type JsonDocumentFetch } from '@/lib/http/json';
 import { resolveHttpsUrl } from '@/lib/http/url';
 import { evaluateHttpsUrl } from '@/lib/security/external-url';
-import { modCategorySchema, modPlatformSchema, officialModSourceId, type ModPlatform } from '@/modules/mods/contract';
+import { modCategorySchema, modPlatformSchema, officialModSourceId, type ModPlatform, type ModSourceKind } from '@/modules/mods/contract';
 import { modRepositoryLimits, modRepositoryListingSchemaVersion, modRepositoryProblem, type ModRepositoryProblem } from '@/modules/mods/contract';
 import { modIndexKey, toModLinks, type ModIndexEntry, type ModIndexFileMatch } from '@/modules/mods/main/mod-index';
 import { modFolders } from '@/modules/mods/main/mod-paths';
@@ -185,7 +185,8 @@ export function listingPackageCount(listing: ModRepositoryListing) {
 
 export function selectRepositoryEntries(
    listing: ModRepositoryListing,
-   request: { gameVersion: string; platform: ModPlatform }
+   request: { gameVersion: string; platform: ModPlatform },
+   sourceKind: ModSourceKind = 'unofficial'
 ): { entries: ModIndexEntry[]; fileMatches: ModIndexFileMatch[]; downloadHosts: string[] } {
    const entries: ModIndexEntry[] = [];
    const fileMatches: ModIndexFileMatch[] = [];
@@ -209,7 +210,7 @@ export function selectRepositoryEntries(
          packageId: listed.id,
          sourceId: listing.id,
          sourceName: listing.name,
-         sourceKind: 'unofficial',
+         sourceKind,
          name: listed.name,
          summary: listed.summary,
          description: listed.description,

@@ -46,6 +46,7 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          receiver,
          modRepositories: z.array(modRepositoryRecordSchema).catch(defaults.app.modRepositories),
          officialModSourceEnabled: z.boolean().catch(defaults.app.officialModSourceEnabled),
+         scoreSaberModSourceEnabled: z.boolean().catch(defaults.app.scoreSaberModSourceEnabled),
          modSourceResolution: modSourceResolutionSettingsSchema.catch(defaults.app.modSourceResolution),
          alphaWarningAccepted: z.boolean().catch(defaults.app.alphaWarningAccepted),
          bsmanagerPromptDismissed: z.boolean().catch(defaults.app.bsmanagerPromptDismissed),

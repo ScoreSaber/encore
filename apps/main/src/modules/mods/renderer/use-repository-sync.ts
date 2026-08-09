@@ -15,7 +15,7 @@ export function useRepositorySync() {
       if (!repositories.data) return;
 
       const input = {
-         officialEnabled: repositories.data.official.every((source) => source.enabled),
+         official: repositories.data.official.map(({ id, enabled }) => ({ id, enabled })),
          repositories: repositories.data.repositories.map((repository) => ({ listingUrl: repository.listingUrl, enabled: repository.enabled })),
          resolution: repositories.data.resolution
       };
