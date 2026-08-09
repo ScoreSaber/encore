@@ -13,7 +13,7 @@
       },
     },
     "apps/main": {
-      "name": "@encore/main",
+      "name": "encore",
       "version": "0.1.8",
       "dependencies": {
         "@peculiar/x509": "1.14.3",
@@ -177,7 +177,7 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@1.2.2", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA=="],
 
-    "@encore/main": ["@encore/main@workspace:apps/main"],
+    "encore": ["encore@workspace:apps/main"],
 
     "@encore/web": ["@encore/web@workspace:apps/web"],
 

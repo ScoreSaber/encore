@@ -1,5 +1,5 @@
 {
-   "name": "@encore/main",
+   "name": "encore",
    "version": "0.1.9",
    "description": "A lightweight desktop companion for managing Beat Saber installs, mods and other user generated content",
    "author": "ScoreSaber",
