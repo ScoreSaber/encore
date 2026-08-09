@@ -50,8 +50,7 @@ export function registerDeepLinkIntake(schemes: readonly string[] = [encoreProto
 
    app.on('second-instance', (_event, argv) => {
       focusExistingWindow();
-      queueLinkFromArgv(argv);
-      queueFileFromArgv(argv);
+      queueOpenFromArgv(argv);
    });
 
    app.on('open-url', (event, url) => {
@@ -65,8 +64,7 @@ export function registerDeepLinkIntake(schemes: readonly string[] = [encoreProto
       queueOpenedFile(path);
    });
 
-   queueLinkFromArgv(process.argv);
-   queueFileFromArgv(process.argv);
+   queueOpenFromArgv(process.argv);
 }
 
 export function queueDeepLink(link: string) {
@@ -131,12 +129,13 @@ function readScheme(link: string) {
    return new URL(link).protocol.slice(0, -1).toLowerCase();
 }
 
-function queueLinkFromArgv(argv: readonly string[]) {
+function queueOpenFromArgv(argv: readonly string[]) {
    const link = argv.find((argument) => knownSchemes.some((scheme) => argument.toLowerCase().startsWith(`${scheme}://`)));
-   if (link) queueDeepLink(link);
-}
+   if (link) {
+      queueDeepLink(link);
+      return;
+   }
 
-function queueFileFromArgv(argv: readonly string[]) {
    const path = argv.find((argument) => !argument.startsWith('-') && knownExtensions.includes(readExtension(argument) ?? ''));
    if (path) queueOpenedFile(path);
 }
