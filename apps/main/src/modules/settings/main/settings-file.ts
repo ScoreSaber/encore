@@ -58,6 +58,7 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
          modSourceResolution: modSourceResolutionSettingsSchema.catch(defaults.app.modSourceResolution),
          alphaWarningAccepted: z.boolean().catch(defaults.app.alphaWarningAccepted),
          bsmanagerPromptDismissed: z.boolean().catch(defaults.app.bsmanagerPromptDismissed),
+         telemetryEnabled: z.boolean().catch(defaults.app.telemetryEnabled),
          modGroups: modGroupSettingsSchema.catch(defaults.app.modGroups),
          linkHandling
       })

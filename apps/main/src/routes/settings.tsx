@@ -15,6 +15,7 @@ import { InstallationSection } from '@/modules/settings/renderer/installation-se
 import { ModRepositoriesSection } from '@/modules/settings/renderer/mod-repositories-section';
 import { SettingsLoading, SettingsPageShell } from '@/modules/settings/renderer/settings-layout';
 import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { TelemetrySection } from '@/modules/settings/renderer/telemetry-section';
 import { useSelectedTarget } from '@/modules/targets/renderer/use-selected-target';
 
 export const Route = createFileRoute('/settings')({
@@ -105,6 +106,8 @@ function SettingsRoute() {
             />
 
             <AdvancedSection disabled={controlsDisabled} />
+
+            <TelemetrySection disabled={controlsDisabled} />
          </div>
       </SettingsPageShell>
    );

@@ -22,15 +22,11 @@ export function redactSupportText(input: string, options: { homePath?: string | 
 
    const homePath = options.homePath?.trim();
    if (homePath) {
-      const homePattern = new RegExp(escapeForRegExp(homePath), 'gi');
+      const homePattern = new RegExp(homePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
       text = text.replace(homePattern, '~');
    }
 
    for (const rule of rules) text = text.replace(rule.pattern, rule.replace);
 
    return text;
-}
-
-function escapeForRegExp(input: string) {
-   return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

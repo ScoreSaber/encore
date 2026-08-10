@@ -169,6 +169,9 @@ jobs:
            run: bun install --frozen-lockfile --ignore-scripts
 
          - name: Build app
+           env:
+              VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}
+              VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
            run: bun run build
 
          - name: Archive app build

@@ -5,7 +5,7 @@ export function getMDXComponents(components?: MDXComponents) {
   return {
     ...defaultMdxComponents,
     ...components,
-  } satisfies MDXComponents;
+  };
 }
 
 export const useMDXComponents = getMDXComponents;

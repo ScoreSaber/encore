@@ -103,8 +103,9 @@ export async function fetchRepositoryListing(request: FetchListingRequest): Prom
       fetchJson: request.fetchJson
    });
    if (Result.isError(document)) {
+      const detail = document.error.detail ? `${document.error.message} (${document.error.detail})` : document.error.message;
       return Result.err<FetchedListing, ModRepositoryProblem>(
-         modRepositoryProblem(document.error.code === 'json.unsupported-url' ? 'invalid-url' : 'fetch-failed', describeProblem(document.error))
+         modRepositoryProblem(document.error.code === 'json.unsupported-url' ? 'invalid-url' : 'fetch-failed', detail)
       );
    }
 
@@ -195,7 +196,16 @@ export function selectRepositoryEntries(
    for (const listed of listing.packages) {
       if (!listed) continue;
 
-      const versions = matchingVersions(listed, request).sort((first, second) => compareVersions(first.version, second.version));
+      const versions = listed.versions
+         .filter((version) => version !== null)
+         .filter((version) => {
+            const fitsVersion = version.gameVersions.length === 0 || version.gameVersions.includes(request.gameVersion);
+            const fitsPlatform =
+               version.platforms.length === 0 || version.platforms.includes(request.platform) || version.platforms.includes('universalpc');
+
+            return fitsVersion && fitsPlatform;
+         })
+         .sort((first, second) => compareVersions(first.version, second.version));
       const version = versions.at(-1);
       if (!version) continue;
 
@@ -225,7 +235,9 @@ export function selectRepositoryEntries(
          sizeBytes: version.fileSizeBytes ?? null,
          isBsipa: false,
          claimedIdentity: listed.identity ?? null,
-         dependencies: version.dependencies.map((dependencyId) => resolveDependencyId(listing.id, dependencyId)),
+         dependencies: version.dependencies.map((dependencyId) =>
+            dependencyId.startsWith(`${officialModSourceId}:`) ? dependencyId : modIndexKey(listing.id, dependencyId)
+         ),
          downloadUrl: download.url,
          downloadHost: download.host,
          archiveHash: version.hash,
@@ -241,21 +253,6 @@ export function selectRepositoryEntries(
    }
 
    return { entries, fileMatches, downloadHosts: [...downloadHosts] };
-}
-
-function matchingVersions(listed: ModRepositoryPackage, request: { gameVersion: string; platform: ModPlatform }) {
-   return listed.versions.filter((version) => version !== null).filter((version) => fitsInstall(version, request));
-}
-
-function resolveDependencyId(listingId: string, dependencyId: string) {
-   return dependencyId.startsWith(`${officialModSourceId}:`) ? dependencyId : modIndexKey(listingId, dependencyId);
-}
-
-function fitsInstall(version: ModRepositoryVersion, request: { gameVersion: string; platform: ModPlatform }) {
-   const fitsVersion = version.gameVersions.length === 0 || version.gameVersions.includes(request.gameVersion);
-   const fitsPlatform = version.platforms.length === 0 || version.platforms.includes(request.platform) || version.platforms.includes('universalpc');
-
-   return fitsVersion && fitsPlatform;
 }
 
 function compareVersions(first: string, second: string) {
@@ -293,8 +290,4 @@ function readHttpsUrl(input: string | null | undefined) {
    const decision = evaluateHttpsUrl(input?.trim() ?? '');
 
    return decision.allowed ? decision.url : null;
-}
-
-function describeProblem(problem: { message: string; detail?: string }) {
-   return problem.detail ? `${problem.message} (${problem.detail})` : problem.message;
 }

@@ -81,6 +81,7 @@ export const appSettingsSchema = z.object({
    modSourceResolution: modSourceResolutionSettingsSchema.default(defaultModSourceResolutionSettings),
    alphaWarningAccepted: z.boolean().default(false),
    bsmanagerPromptDismissed: z.boolean().default(false),
+   telemetryEnabled: z.boolean().default(true),
    modGroups: modGroupSettingsSchema.default(createDefaultModGroupSettings()),
    linkHandling: linkHandlingSettingsSchema.default({ launchWithoutAsking: false, downloadInstall: null })
 });
@@ -109,6 +110,7 @@ export const appSettingsPatchSchema = z.object({
    modSourceResolution: modSourceResolutionSettingsSchema.optional(),
    alphaWarningAccepted: z.boolean().optional(),
    bsmanagerPromptDismissed: z.boolean().optional(),
+   telemetryEnabled: z.boolean().optional(),
    modGroups: modGroupSettingsSchema.optional(),
    linkHandling: linkHandlingSettingsSchema.partial().optional()
 });
@@ -178,6 +180,7 @@ export function createDefaultAppSettings(): AppSettings {
       modSourceResolution: defaultModSourceResolutionSettings,
       alphaWarningAccepted: false,
       bsmanagerPromptDismissed: false,
+      telemetryEnabled: true,
       modGroups: createDefaultModGroupSettings(),
       linkHandling: { launchWithoutAsking: false, downloadInstall: null }
    };
@@ -217,6 +220,7 @@ export function applyAppSettingsPatch(settings: AppSettings, patch: AppSettingsP
       modSourceResolution: patch.modSourceResolution ?? settings.modSourceResolution,
       alphaWarningAccepted: patch.alphaWarningAccepted ?? settings.alphaWarningAccepted,
       bsmanagerPromptDismissed: patch.bsmanagerPromptDismissed ?? settings.bsmanagerPromptDismissed,
+      telemetryEnabled: patch.telemetryEnabled ?? settings.telemetryEnabled,
       modGroups: patch.modGroups ?? settings.modGroups,
       linkHandling: { ...settings.linkHandling, ...patch.linkHandling }
    };

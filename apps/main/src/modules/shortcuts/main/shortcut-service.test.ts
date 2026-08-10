@@ -58,7 +58,8 @@ describe('shortcut service', () => {
          ['Exe', '"/games/another"'],
          ['SomeFutureField', 'kept']
       ]);
-      await writeFile(steamShortcutsPath, serializeBinaryVdf(new Map([['shortcuts', new Map([['0', other]]) as BinaryVdfMap]])));
+      const shortcutFile = new Map<string, BinaryVdfValue>([['shortcuts', new Map<string, BinaryVdfValue>([['0', other]])]]);
+      await writeFile(steamShortcutsPath, serializeBinaryVdf(shortcutFile));
       const options: LaunchOptions = {
          flags: ['fpfc'],
          args: ['--room', 'my room'],

@@ -17,7 +17,12 @@ describe('settings store', () => {
    test('defaults fields added after an existing settings file was written', async () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);
-      const { scoreSaberModSourceEnabled: _scoreSaberModSourceEnabled, linkHandling: _linkHandling, ...app } = createDefaultAppSettings();
+      const {
+         scoreSaberModSourceEnabled: _scoreSaberModSourceEnabled,
+         linkHandling: _linkHandling,
+         telemetryEnabled: _telemetryEnabled,
+         ...app
+      } = createDefaultAppSettings();
       const { customFolders: _customFolders, launchOptions: _launchOptions, ...library } = createDefaultLibrarySettings('/games/encore');
       await writeFile(join(dataPath, 'settings.json'), JSON.stringify({ app, library }), 'utf8');
 
@@ -27,6 +32,7 @@ describe('settings store', () => {
       expect(snapshot.status).toBe('ready');
       expect(snapshot.app.scoreSaberModSourceEnabled).toBe(true);
       expect(snapshot.app.linkHandling).toEqual({ launchWithoutAsking: false, downloadInstall: null });
+      expect(snapshot.app.telemetryEnabled).toBe(true);
       expect(snapshot.library.launchOptions).toEqual({});
       expect(snapshot.library.customFolders).toEqual([]);
    });

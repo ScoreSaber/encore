@@ -252,8 +252,10 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       for (const desired of input.official) {
          const result = await setEnabled(desired);
          if (result.status === 'invalid') {
+            const listingUrl =
+               desired.id === officialModSourceId ? beatModsOrigin : desired.id === scoreSaberModSourceId ? scoreSaberModSourceUrl : desired.id;
             failures.push({
-               listingUrl: officialSourceUrl(desired.id),
+               listingUrl,
                issue: result.issue,
                ...(result.detail ? { detail: result.detail } : {})
             });
@@ -555,13 +557,6 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
 function isScoreSaberRepositoryId(id: string) {
    return id.trim().toLowerCase() === scoreSaberModSourceId;
-}
-
-function officialSourceUrl(id: string) {
-   if (id === officialModSourceId) return beatModsOrigin;
-   if (id === scoreSaberModSourceId) return scoreSaberModSourceUrl;
-
-   return id;
 }
 
 function describePreview(listing: ModRepositoryListing, listingUrl: string): ModRepositoryPreview {

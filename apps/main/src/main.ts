@@ -73,6 +73,8 @@ import { createSupportService } from '@/modules/support/main/support-service';
 import { detectLocalStores } from '@/modules/targets/main/local-target';
 import { createTargetsIpcModule } from '@/modules/targets/main/register-ipc';
 import { createTargetRegistry } from '@/modules/targets/main/target-registry';
+import { createPostHogTelemetryClient } from '@/modules/telemetry/main/posthog-client';
+import { createTelemetryService, describeOperatingSystem } from '@/modules/telemetry/main/telemetry-service';
 import { createUpdateIpcModule } from '@/modules/updates/main/register-ipc';
 import { initializeAutoUpdates, startDownloadedUpdateInstall } from '@/modules/updates/main/updater';
 
@@ -120,12 +122,13 @@ function getAppLog() {
 function registerIpcHandlers() {
    const dataPath = app.getPath('userData');
    const homePath = app.getPath('home');
+   const appVersion = app.getVersion();
    const appLog = getAppLog();
    const operationRegistry = createOperationRegistry();
    const contentStaging = createContentStaging({ dataPath });
    const settingsStore = createSettingsStore({
       dataPath,
-      appVersion: app.getVersion(),
+      appVersion,
       platform: process.platform,
       arch: process.arch
    });
@@ -139,6 +142,27 @@ function registerIpcHandlers() {
       settingsStore,
       detectStores: detectLocalStores
    });
+   const postHogApiKey = import.meta.env.VITE_POSTHOG_PROJECT_TOKEN?.trim() ?? '';
+   const postHogHost = import.meta.env.VITE_POSTHOG_HOST?.trim() || 'https://us.i.posthog.com';
+   const telemetry = postHogApiKey
+      ? createPostHogTelemetryClient({ apiKey: postHogApiKey, host: postHogHost }).match({
+           ok: (client) =>
+              createTelemetryService({
+                 dataPath,
+                 appVersion,
+                 operatingSystem: describeOperatingSystem(process.platform, process.getSystemVersion()),
+                 platform: process.platform,
+                 settings: settingsStore,
+                 installs: installRegistry,
+                 client
+              }),
+           err: (error) => {
+              void appLog.warn(`${error.message}: ${error.detail}`);
+              return null;
+           }
+        })
+      : null;
+   void telemetry?.start();
    const versionCatalog = createVersionCatalog({ dataPath });
    const steamDownloader = createSteamDownloader({
       settingsStore,
@@ -314,7 +338,7 @@ function registerIpcHandlers() {
       remoteReceiver.dispose();
 
       const deadline = new Promise((resolve) => setTimeout(resolve, 3_000));
-      void Promise.race([Promise.allSettled([teardown, receiver.stop()]), deadline]).then(() => {
+      void Promise.race([Promise.allSettled([teardown, receiver.stop(), telemetry?.dispose()]), deadline]).then(() => {
          if (startDownloadedUpdateInstall()) return;
          app.quit();
       });

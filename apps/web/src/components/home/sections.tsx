@@ -166,6 +166,9 @@ export function HomeFooter() {
           <Link className="transition hover:text-white/70" href="/docs">
             Docs
           </Link>
+          <Link className="transition hover:text-white/70" href="/privacy">
+            Privacy
+          </Link>
         </div>
       </div>
     </footer>

@@ -27,7 +27,8 @@ import { useTargets } from '@/modules/targets/renderer/use-targets';
 import { PageBody } from '@/renderer/shell/page-body';
 
 const tabBodyClassName = 'flex min-h-0 flex-1 flex-col overflow-hidden px-8 pt-4 pb-6';
-type InstallTab = 'mods' | 'maps' | 'models' | 'playlists';
+const installTabSchema = z.enum(['mods', 'maps', 'models', 'playlists']);
+type InstallTab = z.infer<typeof installTabSchema>;
 
 const InstallModsTab = lazy(() => import('@/modules/mods/renderer/install-mods-tab').then((module) => ({ default: module.InstallModsTab })));
 const InstallMapsTab = lazy(() => import('@/modules/maps/renderer/install-maps-tab').then((module) => ({ default: module.InstallMapsTab })));
@@ -102,12 +103,6 @@ function InstallDetailRoute() {
       setFolderFailed(opened?.status !== 'opened');
    };
 
-   const selectTab = (value: string) => {
-      const tab = value as InstallTab;
-      setActiveTab(tab);
-      setLoadedTabs((current) => (current.has(tab) ? current : new Set([...current, tab])));
-   };
-
    if (actions.removed) return <Navigate to="/" replace />;
 
    if (!detail) {
@@ -124,7 +119,17 @@ function InstallDetailRoute() {
 
    return (
       <>
-         <Tabs value={activeTab} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col gap-0">
+         <Tabs
+            value={activeTab}
+            onValueChange={(value) => {
+               const tab = installTabSchema.safeParse(value);
+               if (!tab.success) return;
+
+               setActiveTab(tab.data);
+               setLoadedTabs((current) => (current.has(tab.data) ? current : new Set([...current, tab.data])));
+            }}
+            className="flex min-h-0 flex-1 flex-col gap-0"
+         >
             <InstallTopBar
                detail={detail}
                launch={launch}

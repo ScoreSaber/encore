@@ -130,11 +130,9 @@ export function createSupportLogService(options: {
 }
 
 function newestFiles<File extends SupportLogFile>(files: File[]) {
-   return sortNewestFirst(files).slice(0, maxListedFiles);
-}
-
-function sortNewestFirst<File extends SupportLogFile>(files: File[]) {
-   return files.sort((first, second) => second.modifiedAt.localeCompare(first.modifiedAt) || second.id.localeCompare(first.id));
+   return files
+      .sort((first, second) => second.modifiedAt.localeCompare(first.modifiedAt) || second.id.localeCompare(first.id))
+      .slice(0, maxListedFiles);
 }
 
 function unavailableAppLogGroup(rootPath: string, detail: string): SupportAppLogGroup {

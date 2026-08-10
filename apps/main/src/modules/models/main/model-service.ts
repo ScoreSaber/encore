@@ -121,7 +121,6 @@ export function createModelService(options: ModelServiceOptions) {
    const catalog = options.catalog ?? createModelSaberCatalog();
    const modelIndex = options.index ?? createModelIndex({ dataPath: options.dataPath });
    const events = createContentEvents<ModelCollectionSnapshot>();
-   const invalid = (installId: InstallId, issue: ModelActionIssue, detail?: string) => invalidModelAction({ installId }, issue, detail);
    const failure = createContentFailure<ModelActionIssue>('models', actionIssueMessages);
    const failOperation = createOperationFailure(options.operations);
    const reportInstallProgress = createInstallProgress(options.operations);
@@ -204,7 +203,7 @@ export function createModelService(options: ModelServiceOptions) {
 
    async function previewDelete(request: ModelSelectionRequest): Promise<ModelDeletePreview> {
       const selected = await resolveSelection(request);
-      if (selected.status === 'invalid') return invalid(request.installId, selected.issue);
+      if (selected.status === 'invalid') return invalidModelAction({ installId: request.installId }, selected.issue);
 
       const folders = [...new Set(selected.models.map((model) => model.type))].sort();
 

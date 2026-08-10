@@ -1318,6 +1318,14 @@
             "description": "Use directory symlinks instead of junctions when connecting shared content"
          }
       },
+      "telemetry": {
+         "title": "Privacy",
+         "description": "Anonymous usage data helps us build a census of the state and health of the Beat Saber community.",
+         "disclosure": "Click here to see what data is collected",
+         "share": {
+            "title": "Share anonymous usage data"
+         }
+      },
       "appearance": {
          "title": "Appearance"
       },

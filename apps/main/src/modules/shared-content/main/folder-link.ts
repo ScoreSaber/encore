@@ -32,7 +32,8 @@ export async function readFolderLink(folderPath: string, sharedFolderPath: strin
 
    if (!info.value.isLink) return { state: info.value.kind === 'directory' ? 'unlinked' : 'blocked', linkTargetPath: null };
 
-   const linkTargetPath = info.value.targetPath ? stripWindowsPrefix(info.value.targetPath) : null;
+   const targetPath = info.value.targetPath;
+   const linkTargetPath = targetPath ? (targetPath.startsWith('\\\\?\\') ? targetPath.slice(4) : targetPath) : null;
    if (!info.value.targetKind) return { state: 'broken', linkTargetPath };
    if (!linkTargetPath || !isSamePath(linkTargetPath, sharedFolderPath)) return { state: 'foreign', linkTargetPath };
 
@@ -100,8 +101,4 @@ async function attemptLink(rootPath: string, mode: SharedLinkMode): Promise<Resu
    return Result.andThen(linked, (stats) =>
       stats.isSymbolicLink() ? Result.ok<void, string>(undefined) : Result.err<void, string>('the link was not created as a link')
    );
-}
-
-function stripWindowsPrefix(targetPath: string) {
-   return targetPath.startsWith('\\\\?\\') ? targetPath.slice(4) : targetPath;
 }

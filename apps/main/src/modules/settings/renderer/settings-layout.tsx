@@ -35,7 +35,7 @@ export function SettingsRow({
    children
 }: {
    label: string;
-   description?: string;
+   description?: React.ReactNode;
    htmlFor?: string;
    id?: string;
    className?: string;

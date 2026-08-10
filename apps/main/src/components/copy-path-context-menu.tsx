@@ -12,7 +12,6 @@ type CopyPathContextMenuProps = {
 
 export function CopyPathContextMenu({ children, pathType, value, onCopy }: CopyPathContextMenuProps) {
    const t = useTranslations('common');
-   const copy = () => (value === undefined ? onCopy() : window.encore.app.copyText({ text: value }));
 
    return (
       <ContextMenu.Root>
@@ -21,7 +20,7 @@ export function CopyPathContextMenu({ children, pathType, value, onCopy }: CopyP
             <ContextMenu.Content className="bg-popover text-popover-foreground z-50 min-w-32 rounded-md border p-1 shadow-md">
                <ContextMenu.Item
                   className="focus:bg-accent focus:text-accent-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none"
-                  onSelect={() => void copy()}
+                  onSelect={() => void (value === undefined ? onCopy() : window.encore.app.copyText({ text: value }))}
                >
                   <ClipboardCopy className="size-4 shrink-0" />
                   {t(pathType === 'path' ? 'copyPath' : 'copyUrl')}

@@ -32,11 +32,20 @@ const commonResolve = {
       '@': srcPath
    }
 };
+const mainResolve = process.env.VITE_POSTHOG_PROJECT_TOKEN?.trim()
+   ? commonResolve
+   : {
+        ...commonResolve,
+        alias: {
+           ...commonResolve.alias,
+           'posthog-node': fileURLToPath(new URL('./src/modules/telemetry/main/posthog-unconfigured.ts', import.meta.url))
+        }
+     };
 
 export default defineConfig({
    main: {
       customLogger: logger,
-      resolve: commonResolve,
+      resolve: mainResolve,
       build: {
          externalizeDeps: false,
          rollupOptions: {

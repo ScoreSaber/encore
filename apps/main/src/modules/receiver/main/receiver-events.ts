@@ -6,12 +6,12 @@ export const receiverBackpressureTimeoutMs = 5_000;
 type ReceiverEventResponse = {
    destroyed: boolean;
    writableEnded: boolean;
-   writeHead(status: number, headers: Record<string, string>): unknown;
+   writeHead(status: number, headers: Record<string, string>): void;
    write(frame: string): boolean;
-   end(): unknown;
-   destroy(): unknown;
-   once(event: 'close' | 'drain' | 'error', listener: () => void): unknown;
-   off(event: 'close' | 'drain' | 'error', listener: () => void): unknown;
+   end(): void;
+   destroy(): void;
+   once(event: 'close' | 'drain' | 'error', listener: () => void): void;
+   off(event: 'close' | 'drain' | 'error', listener: () => void): void;
 };
 
 type StreamSubscriber = {

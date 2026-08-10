@@ -18,7 +18,7 @@ import { RemoteImage } from '@/components/ui/remote-image';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import type { TargetModelCollectionRequest } from '@/modules/models/api';
-import { isCatalogModelType, modelSharedFolderIds, modelTypes, type LocalModelSummary, type ModelType } from '@/modules/models/contract';
+import { isCatalogModelType, modelSharedFolderIds, modelTypeSchema, modelTypes, type LocalModelSummary } from '@/modules/models/contract';
 import { ModelActionDialog } from '@/modules/models/renderer/model-action-dialog';
 import { ModelSearchDialog } from '@/modules/models/renderer/model-search-dialog';
 import type { InstallModels } from '@/modules/models/renderer/use-install-models';
@@ -149,7 +149,14 @@ export function InstallModelsPanel({ request, models }: { request: TargetModelCo
 
    return (
       <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
-         <Tabs value={type} onValueChange={(value) => models.selectType(value as ModelType)} className="shrink-0">
+         <Tabs
+            value={type}
+            onValueChange={(value) => {
+               const nextType = modelTypeSchema.safeParse(value);
+               if (nextType.success) models.selectType(nextType.data);
+            }}
+            className="shrink-0"
+         >
             <TabsList variant="line">
                {modelTypes.map((modelType) => (
                   <TabsTrigger key={modelType} value={modelType}>
