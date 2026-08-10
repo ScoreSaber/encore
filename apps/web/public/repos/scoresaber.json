@@ -19,6 +19,191 @@
       "issuesUrl": "https://github.com/ScoreSaber/pc-mod/issues",
       "versions": [
         {
+          "version": "3.4.2",
+          "gameVersions": ["1.29.0", "1.29.1"],
+          "platforms": ["universalpc"],
+          "downloadUrl": "https://github.com/ScoreSaber/pc-mod/releases/download/v3.4.2/ScoreSaber-v3.4.2-bs1.29.0-to-1.29.1-9b90ec3.zip",
+          "fileSizeBytes": 709152,
+          "hash": {
+            "algorithm": "sha256",
+            "value": "231aa45e51dfbb9442df472ca2552c5d0d23da253c15650aab5521b29336f9cb"
+          },
+          "dependencies": [
+            "beatmods:1",
+            "beatmods:96",
+            "beatmods:130",
+            "beatmods:58",
+            "beatmods:194",
+            "beatmods:243"
+          ],
+          "files": [
+            {
+              "path": "Plugins/ScoreSaber.dll",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "cc38c8f6193b3919bfa9252105274d9d1169ab2355672ee715845ea78a629261"
+              }
+            },
+            {
+              "path": "Plugins/ScoreSaber.pdb",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "f11736d0b9379a2383dccd2135f5a7ad4b9b6ff54f45df7ec2a141ec03c60410"
+              }
+            }
+          ]
+        },
+        {
+          "version": "3.4.2",
+          "gameVersions": ["1.37.1", "1.37.2"],
+          "platforms": ["universalpc"],
+          "downloadUrl": "https://github.com/ScoreSaber/pc-mod/releases/download/v3.4.2/ScoreSaber-v3.4.2-bs1.37.1-to-1.37.2-9b90ec3.zip",
+          "fileSizeBytes": 707815,
+          "hash": {
+            "algorithm": "sha256",
+            "value": "cdb70c63314361a2dd03354aa1b1ab79d39a7a7c4a249d59f9f10e63edc69786"
+          },
+          "dependencies": [
+            "beatmods:1",
+            "beatmods:96",
+            "beatmods:130",
+            "beatmods:58",
+            "beatmods:194",
+            "beatmods:243"
+          ],
+          "files": [
+            {
+              "path": "Plugins/ScoreSaber.dll",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "ffeb36eb567db28bfb4bf08ca16b90998a6352108033ed9b4c024e2ef0ac087f"
+              }
+            },
+            {
+              "path": "Plugins/ScoreSaber.pdb",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "8ded72cf7bfe48276c1bc988a127f95192ef6662e5f2e2337fc000b1871bc059"
+              }
+            }
+          ]
+        },
+        {
+          "version": "3.4.2",
+          "gameVersions": ["1.38.0", "1.39.0", "1.39.1"],
+          "platforms": ["universalpc"],
+          "downloadUrl": "https://github.com/ScoreSaber/pc-mod/releases/download/v3.4.2/ScoreSaber-v3.4.2-bs1.38.0-to-1.39.1-9b90ec3.zip",
+          "fileSizeBytes": 707669,
+          "hash": {
+            "algorithm": "sha256",
+            "value": "f22a160522bd68d6a72b203c375a2d7be08f34c2a3cb908b2275aa740df44b6c"
+          },
+          "dependencies": [
+            "beatmods:1",
+            "beatmods:96",
+            "beatmods:130",
+            "beatmods:58",
+            "beatmods:194",
+            "beatmods:243"
+          ],
+          "files": [
+            {
+              "path": "Plugins/ScoreSaber.dll",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "112ed4441b4d8d369652b4bfcff7d9cd36d8f44feb7cc4071f1c513a1ac4b8ba"
+              }
+            },
+            {
+              "path": "Plugins/ScoreSaber.pdb",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "3f195af6140619f2c35090b354d99bea0251b582f3ad60f34b6583e4f0cc71cd"
+              }
+            }
+          ]
+        },
+        {
+          "version": "3.4.2",
+          "gameVersions": [
+            "1.40.0",
+            "1.40.1",
+            "1.40.2",
+            "1.40.3",
+            "1.40.4",
+            "1.40.5",
+            "1.40.6",
+            "1.40.7",
+            "1.40.8"
+          ],
+          "platforms": ["universalpc"],
+          "downloadUrl": "https://github.com/ScoreSaber/pc-mod/releases/download/v3.4.2/ScoreSaber-v3.4.2-bs1.40.0-to-1.40.8-9b90ec3.zip",
+          "fileSizeBytes": 706936,
+          "hash": {
+            "algorithm": "sha256",
+            "value": "0f486a81df1b2dd5e78ad1b41cefa6142fb19031fd96b96681419b5849f18b2c"
+          },
+          "dependencies": [
+            "beatmods:1",
+            "beatmods:96",
+            "beatmods:130",
+            "beatmods:58",
+            "beatmods:194",
+            "beatmods:243"
+          ],
+          "files": [
+            {
+              "path": "Plugins/ScoreSaber.dll",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "3992353d7a71b3a8b13bdc63f6905f3ce6337f8fff423352657a03d19a331bc7"
+              }
+            },
+            {
+              "path": "Plugins/ScoreSaber.pdb",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "3009b5c97e536ae5fc8f80b07429571b6e3c687677ac0d71a37a8ed1f3940e58"
+              }
+            }
+          ]
+        },
+        {
+          "version": "3.4.2",
+          "gameVersions": ["1.42.0", "1.42.1", "1.42.2", "1.42.3", "1.43.0", "1.44.0", "1.44.1"],
+          "platforms": ["universalpc"],
+          "downloadUrl": "https://github.com/ScoreSaber/pc-mod/releases/download/v3.4.2/ScoreSaber-v3.4.2-bs1.42.0-to-1.44.1-9b90ec3.zip",
+          "fileSizeBytes": 706490,
+          "hash": {
+            "algorithm": "sha256",
+            "value": "2161db29305cdc0bf320e734defb55d54c3a8b9b91dcdfa4a261efdd2d788591"
+          },
+          "dependencies": [
+            "beatmods:1",
+            "beatmods:96",
+            "beatmods:130",
+            "beatmods:58",
+            "beatmods:194",
+            "beatmods:243"
+          ],
+          "files": [
+            {
+              "path": "Plugins/ScoreSaber.dll",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "05e024b7f025d813799a700bbbb8dca305d43fc96b738bba9fed1b82e1ef3d9b"
+              }
+            },
+            {
+              "path": "Plugins/ScoreSaber.pdb",
+              "hash": {
+                "algorithm": "sha256",
+                "value": "ef44a8393b9a936bb0dae97fec082ea8eab9bcff3b470990e76a244e2c18c086"
+              }
+            }
+          ]
+        },
+        {
           "version": "3.4.1",
           "gameVersions": ["1.29.0", "1.29.1"],
           "platforms": ["universalpc"],
