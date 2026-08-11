@@ -61,10 +61,17 @@ jobs:
               fi
 
               version="$current_version"
-              tag="v$version"
 
               if [[ "$BUMP" != "none" ]]; then
-                 IFS=. read -r major minor patch <<< "$current_version"
+                 latest_release_version="$(
+                    gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                       --jq '.[] | select(.draft == false) | .tag_name' |
+                       sed -nE 's/^v([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' |
+                       sort -V |
+                       tail -n 1
+                 )"
+                 base_version="$(printf '%s\n' "$current_version" "$latest_release_version" | sed '/^$/d' | sort -V | tail -n 1)"
+                 IFS=. read -r major minor patch <<< "$base_version"
 
                  case "$BUMP" in
                     patch)
@@ -86,52 +93,26 @@ jobs:
                  esac
 
                  version="$major.$minor.$patch"
-                 tag="v$version"
-
-                 if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                    echo "::error::Release $tag already exists. Choose a different bump."
-                    exit 1
-                 fi
-
-                 if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-                    echo "::error::Tag $tag already exists without a GitHub release. Resolve it before releasing."
-                    exit 1
-                 fi
-
-                 VERSION="$version" node --input-type=module <<'NODE'
-              import { readFileSync, writeFileSync } from "node:fs";
-
-              const packagePath = "apps/main/package.json";
-              const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
-              pkg.version = process.env.VERSION;
-              writeFileSync(packagePath, `${JSON.stringify(pkg, null, 3)}\n`);
-              NODE
-
-                 git config user.name "github-actions[bot]"
-                 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-                 git add apps/main/package.json
-                 git commit -m "release: v$version"
-                 git push origin "HEAD:${GITHUB_REF_NAME}"
-              else
-                 if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                    echo "::error::Release $tag already exists. Update package.json or choose a version bump."
-                    exit 1
-                 fi
-
-                 if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
-                    git fetch --force --tags origin "refs/tags/$tag:refs/tags/$tag"
-
-                    local_tag_sha="$(git rev-list -n 1 "$tag")"
-                    current_sha="$(git rev-parse HEAD)"
-
-                    if [[ "$local_tag_sha" != "$current_sha" ]]; then
-                       echo "::error::Tag $tag exists but does not point at the current commit. Resolve it before releasing."
-                       exit 1
-                    fi
-                 fi
               fi
 
+              tag="v$version"
               sha="$(git rev-parse HEAD)"
+
+              if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                 echo "::error::Release $tag already exists. Choose a different version."
+                 exit 1
+              fi
+
+              if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+                 git fetch --force --tags origin "refs/tags/$tag:refs/tags/$tag"
+
+                 local_tag_sha="$(git rev-list -n 1 "$tag")"
+
+                 if [[ "$local_tag_sha" != "$sha" ]]; then
+                    echo "::error::Tag $tag exists but does not point at the current commit. Resolve it before releasing."
+                    exit 1
+                 fi
+              fi
 
               echo "version=$version" >> "$GITHUB_OUTPUT"
               echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -310,7 +291,8 @@ jobs:
            shell: bash
            env:
               APPIMAGE_EXTRACT_AND_RUN: '1'
-           run: bun run --cwd apps/main electron-builder ${{ matrix.package_args }} --publish never
+              RELEASE_VERSION: ${{ needs.version.outputs.version }}
+           run: bun run --cwd apps/main electron-builder ${{ matrix.package_args }} --config.extraMetadata.version="$RELEASE_VERSION" --publish never
 
          - name: Upload release asset
            uses: actions/upload-artifact@v4
@@ -359,3 +341,78 @@ jobs:
                  --target "$SHA" \
                  --title "Encore v$VERSION" \
                  --notes-file release-notes.md
+
+   finalize:
+      name: Record release version
+      needs:
+         - version
+         - release
+      runs-on: ubuntu-latest
+      steps:
+         - name: Checkout release branch
+           uses: actions/checkout@v4
+           with:
+              ref: ${{ github.ref_name }}
+
+         - name: Setup Node
+           uses: actions/setup-node@v4
+           with:
+              node-version-file: .nvmrc
+
+         - name: Update package version
+           env:
+              VERSION: ${{ needs.version.outputs.version }}
+           run: |
+              node --input-type=module <<'NODE'
+              import { readFileSync, writeFileSync } from "node:fs";
+
+              const packagePath = "apps/main/package.json";
+              const pkg = JSON.parse(readFileSync(packagePath, "utf8"));
+              pkg.version = process.env.VERSION;
+              writeFileSync(packagePath, `${JSON.stringify(pkg, null, 3)}\n`);
+              NODE
+
+         - name: Commit and push version bump
+           env:
+              VERSION: ${{ needs.version.outputs.version }}
+           run: |
+              if git diff --quiet -- apps/main/package.json; then
+                 echo "apps/main/package.json is already at v$VERSION"
+                 exit 0
+              fi
+
+              git config user.name "github-actions[bot]"
+              git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+              git add apps/main/package.json
+              git commit -m "release: v$VERSION"
+              git push origin "HEAD:${GITHUB_REF_NAME}"
+
+   cleanup:
+      name: Remove old release downloads
+      needs: release
+      runs-on: ubuntu-latest
+      steps:
+         - name: Keep downloads for the latest three releases
+           env:
+              GH_TOKEN: ${{ github.token }}
+           run: |
+              set -euo pipefail
+
+              old_releases="$RUNNER_TEMP/encore-old-releases.tsv"
+              gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+                 --jq '.[] | select(.draft == false) | [.published_at, .id, .tag_name] | @tsv' |
+                 sort -r |
+                 tail -n +4 > "$old_releases"
+
+              while IFS=$'\t' read -r _ release_id tag; do
+                 asset_ids="$RUNNER_TEMP/encore-release-$release_id-assets"
+                 gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?per_page=100" --jq '.[].id' > "$asset_ids"
+                 asset_count=0
+
+                 while IFS= read -r asset_id; do
+                    gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+                    asset_count=$((asset_count + 1))
+                 done < "$asset_ids"
+
+                 echo "Removed $asset_count download(s) from $tag"
+              done < "$old_releases"
