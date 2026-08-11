@@ -5,6 +5,8 @@ import { Switch } from '@/components/ui/switch';
 import { SettingsRow, SettingsSection } from '@/modules/settings/renderer/settings-layout';
 import { useSettings } from '@/modules/settings/renderer/settings-provider';
 
+const privacyPolicyUrl = 'https://encore.scoresaber.com/privacy';
+
 export function TelemetrySection({ disabled }: { disabled: boolean }) {
    const t = useTranslations('settings.telemetry');
    const settings = useSettings();
@@ -20,9 +22,13 @@ export function TelemetrySection({ disabled }: { disabled: boolean }) {
                   {t('description')}{' '}
                   <a
                      className="text-foreground underline underline-offset-2"
-                     href="https://encore.scoresaber.com/privacy"
+                     href={privacyPolicyUrl}
                      target="_blank"
                      rel="noreferrer"
+                     onClick={(event) => {
+                        event.preventDefault();
+                        void window.encore.app.openLink({ url: privacyPolicyUrl });
+                     }}
                   >
                      {t('disclosure')}
                   </a>

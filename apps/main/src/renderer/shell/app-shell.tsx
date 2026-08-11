@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { queryOptions, useQuery } from '@tanstack/react-query';
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { FolderPlus, FolderSymlink, Home, Monitor, Pin, PinOff, Plus, RefreshCw, Settings, Wifi } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
@@ -366,6 +366,7 @@ function SidebarInstallRow({
    onMove: (offset: number) => void;
 }) {
    const t = useTranslations('installs.sidebar');
+   const navigate = useNavigate();
 
    return (
       <div
@@ -399,6 +400,15 @@ function SidebarInstallRow({
             className={cn('flex h-full min-w-0 flex-1 cursor-default items-center justify-center gap-3 sm:justify-start', canOrganise && 'sm:pr-6')}
             aria-label={install.name}
             aria-description={canReorder ? t('reorderHint') : undefined}
+            onClick={(event) => {
+               if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) return;
+               event.preventDefault();
+               void navigate({
+                  to: '/installs/$installId',
+                  params: { installId: install.id },
+                  search: { targetId }
+               });
+            }}
             onKeyDown={(event) => {
                if (!canReorder || !event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
                event.preventDefault();
@@ -433,12 +443,31 @@ function SidebarInstallRow({
    );
 }
 
-function SidebarLink({ isActive, className, ...props }: React.ComponentProps<typeof Link> & { isActive?: boolean }) {
+function SidebarLink({
+   to,
+   isActive,
+   className,
+   children
+}: {
+   to: '/' | '/shared' | '/settings';
+   isActive?: boolean;
+   className?: string;
+   children: React.ReactNode;
+}) {
+   const navigate = useNavigate();
+
    return (
       <Link
+         to={to}
          aria-current={isActive ? 'page' : undefined}
          className={cn(sidebarItemClassName, isActive && activeSidebarItemClassName, className)}
-         {...props}
-      />
+         onClick={(event) => {
+            if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) return;
+            event.preventDefault();
+            void navigate({ to });
+         }}
+      >
+         {children}
+      </Link>
    );
 }

@@ -442,6 +442,7 @@ function handleExternalNavigation(url: string) {
 function startEncore() {
    electronApp.setAppUserModelId('com.scoresaber.encore');
    configureSecurityHeaders();
+   session.defaultSession.on('will-download', (event) => event.preventDefault());
    setProtocolRegistered(encoreProtocol, true);
    registerIpcHandlers();
    initializeAutoUpdates();

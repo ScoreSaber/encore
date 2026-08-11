@@ -25,7 +25,16 @@ export function RouteError({ reset }: ErrorComponentProps) {
          actions={
             <>
                <Button asChild size="sm" variant="secondary">
-                  <Link to="/">{common('goHome')}</Link>
+                  <Link
+                     to="/"
+                     onClick={(event) => {
+                        if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) return;
+                        event.preventDefault();
+                        void router.navigate({ to: '/' });
+                     }}
+                  >
+                     {common('goHome')}
+                  </Link>
                </Button>
                <RefreshButton label={common('retry')} variant="default" onClick={handleRetry} />
             </>

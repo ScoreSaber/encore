@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { Cable, Settings } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
@@ -20,6 +20,7 @@ export function ConnectionSetupPrompt({
 }) {
    const home = useTranslations('home.connection');
    const settings = useTranslations('settings');
+   const navigate = useNavigate();
 
    if (context === 'settings') {
       return (
@@ -48,7 +49,14 @@ export function ConnectionSetupPrompt({
          <ButtonGroup className="shrink-0" aria-label={title}>
             {hasSavedPC ? (
                <Button asChild type="button" variant="outline" size="sm">
-                  <Link to="/settings">
+                  <Link
+                     to="/settings"
+                     onClick={(event) => {
+                        if (!event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) return;
+                        event.preventDefault();
+                        void navigate({ to: '/settings' });
+                     }}
+                  >
                      <Settings data-icon="inline-start" />
                      {home('settings')}
                   </Link>
