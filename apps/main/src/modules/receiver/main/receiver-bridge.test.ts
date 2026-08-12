@@ -189,6 +189,18 @@ describe('receiver bridge', () => {
       expect(await readdir(join(install.installPath, 'IPA', 'Pending', 'Plugins'))).toEqual(['Manual.dll']);
    });
 
+   test('keeps a healthy target ready when one remote request fails', async () => {
+      const harness = await createHarness();
+      const paired = await pair(harness);
+
+      const failed = await paired.client.callTarget(paired.targetId, 'missing', 'procedure', operationsApi.procedures.list, {});
+      const subsequent = await paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', operationsApi.procedures.list, {});
+
+      expect(failed).toMatchObject({ status: 'unavailable' });
+      expect(paired.client.listTargets()).toMatchObject([{ id: paired.targetId, status: 'ready' }]);
+      expect(subsequent).toMatchObject({ status: 'ok' });
+   });
+
    test('surfaces auth loss once the receiver revokes the device', async () => {
       const harness = await createHarness();
       const paired = await pair(harness);

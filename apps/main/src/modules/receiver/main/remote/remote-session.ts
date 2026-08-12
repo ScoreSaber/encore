@@ -206,6 +206,8 @@ export function createRemoteSessionManager(options: { store: RemoteTargetStore; 
    }
 
    function applyFailure(session: RemoteSession, failureDetail: ReceiverTransportFailure) {
+      if (failureDetail.kind === 'network' || failureDetail.kind === 'invalid') return;
+
       if (failureDetail.kind === 'auth') {
          session.token = null;
          session.stream?.close();
@@ -220,8 +222,6 @@ export function createRemoteSessionManager(options: { store: RemoteTargetStore; 
          options.events.updateTarget(session, { status: 'incompatible', capabilities: [], message: failureDetail.message });
          return;
       }
-
-      options.events.updateTarget(session, { status: 'disconnected', capabilities: [], message: failureDetail.message });
    }
 
    function dispose() {
