@@ -190,7 +190,7 @@ function registerIpcHandlers() {
    });
    const downloadService = createDownloadService({ steam: steamDownloader, oculus: oculusDownloader });
    const downloadApi = defineApiHandlers(downloadsApi, downloadService);
-   const launchModule = defineApiHandlers(launchApi, launchService);
+   const launchModule = defineApiHandlers(launchApi, launchService, { subscribe: launchService.subscribe });
    const operationApi = defineApiHandlers(operationsApi, operationRegistry, { subscribe: operationRegistry.subscribe });
    const mapService = createMapService({
       registry: installRegistry,

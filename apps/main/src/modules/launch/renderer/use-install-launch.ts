@@ -23,7 +23,7 @@ import type { OperationId } from '@/modules/operations/contract';
 import { isOperationFinished } from '@/modules/operations/renderer/operation-progress';
 import { useOperations } from '@/modules/operations/renderer/use-operations';
 import { localTargetId, type TargetId } from '@/modules/targets/contract';
-import { ipcQueryKey } from '@/renderer/query/utils';
+import { ipcQueryKey, setExistingQueryData } from '@/renderer/query/utils';
 
 const previewDelayMs = 250;
 const launchIpc = createTargetIpcDescriptor(launchContract);
@@ -33,7 +33,7 @@ function launchStateQueryOptions(targetId: TargetId) {
       queryKey: ipcQueryKey(launchIpc.getState, targetId),
       queryFn: async () => {
          const response = await window.encore.launch.getState({ targetId });
-         return response.status === 'ok' && response.value ? { ...response.value, targetId: response.targetId } : null;
+         return response.status === 'ok' ? response.value : null;
       }
    });
 }
@@ -101,6 +101,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
    const runAsAdmin = options.runAsAdmin;
    const closeEncore = options.closeEncore;
    const optionsReady = !optionsQuery.isPending;
+   const gameRunning = launchState.data?.gameRunning ?? false;
 
    const persistOptions = useCallback(
       (next: LaunchOptions) => {
@@ -204,7 +205,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
    const recheck = useCallback(() => setPreviewNonce((current) => current + 1), []);
 
    const launch = useCallback(async () => {
-      if (state.status !== 'ready') return;
+      if (state.status !== 'ready' || gameRunning) return;
 
       const preview = state.preview;
       setFailure(null);
@@ -214,7 +215,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
       const started = response?.status === 'ok' ? response.value : null;
       if (!started?.ok) setFailure(started?.error.message ?? 'Beat Saber could not be started');
       setState(started?.ok ? { status: 'running', preview, operationId: started.value.id } : { status: 'ready', preview });
-   }, [launchApi, options, request, state]);
+   }, [gameRunning, launchApi, options, request, state]);
 
    const cancel = useCallback(() => {
       if (state.status !== 'running') return;
@@ -227,6 +228,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
       operation,
       platform,
       localTarget: request.targetId === localTargetId,
+      gameRunning,
       options,
       optionsReady,
       flags,
@@ -243,6 +245,16 @@ export function useInstallLaunch(request: InstallActionRequest) {
       launch,
       cancel
    };
+}
+
+export function useLaunchEventSync() {
+   const queryClient = useQueryClient();
+
+   useEffect(() => {
+      return window.encore.launch.onSnapshot(({ targetId, snapshot }) => {
+         setExistingQueryData(queryClient, launchStateQueryOptions(targetId).queryKey, snapshot);
+      });
+   }, [queryClient]);
 }
 
 function applyPreview(current: InstallLaunchState, preview: TargetLaunchPreview): InstallLaunchState {

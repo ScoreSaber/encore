@@ -18,6 +18,7 @@ export type LaunchCommand = {
 };
 
 export type SpawnedProcess = { pid: number | null };
+export type SpawnedGameProcess = SpawnedProcess & { exited: Promise<void> };
 
 export type WatchdogCommand = {
    executablePath: string;
@@ -36,7 +37,7 @@ export type LaunchRuntime = {
    prepareProtonCompatData: (compatDataPath: string) => Promise<BetterResult<void, OperationError>>;
    startSteamClient: () => Promise<BetterResult<SpawnedProcess, OperationError>>;
    startOculusClient: () => Promise<BetterResult<SpawnedProcess, OperationError>>;
-   spawn: (command: LaunchCommand) => Promise<BetterResult<SpawnedProcess, OperationError>>;
+   spawn: (command: LaunchCommand) => Promise<BetterResult<SpawnedGameProcess, OperationError>>;
    prepareWatchdog: PrepareLaunchWatchdog;
    spawnWatchdog: (command: WatchdogCommand) => Promise<BetterResult<SpawnedProcess, OperationError>>;
 };
@@ -115,17 +116,18 @@ function spawnDetached(
    env: Record<string, string>,
    error: OperationError
 ) {
-   return new Promise<BetterResult<SpawnedProcess, OperationError>>((resolve) => {
+   return new Promise<BetterResult<SpawnedGameProcess, OperationError>>((resolve) => {
       const child = spawn(executablePath, [...args], {
          cwd: workingDirectory,
          env: { ...process.env, ...env },
          detached: true,
          stdio: 'ignore'
       });
+      const exited = new Promise<void>((resolveExit) => child.once('exit', () => resolveExit()));
 
       child.once('spawn', () => {
          child.unref();
-         resolve(Result.ok({ pid: child.pid ?? null }));
+         resolve(Result.ok({ pid: child.pid ?? null, exited }));
       });
 
       child.once('error', (cause: Error) => {
@@ -142,7 +144,8 @@ function spawnElevated(command: LaunchCommand) {
          `-FilePath ${quoteForPowerShell(command.executablePath)}`,
          `-WorkingDirectory ${quoteForPowerShell(command.workingDirectory)}`,
          command.args.length > 0 ? `-ArgumentList ${command.args.map((arg) => quoteForPowerShell(arg)).join(',')}` : '',
-         '-Verb RunAs'
+         '-Verb RunAs',
+         '-Wait'
       ]
          .filter(Boolean)
          .join(' ')

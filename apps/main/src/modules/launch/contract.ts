@@ -146,6 +146,7 @@ export const launchRecordSchema = z.object({
 export const launchStateSchema = z.object({
    platform: launchPlatformSchema,
    supported: z.boolean(),
+   gameRunning: z.boolean().default(false),
    lastLaunch: launchRecordSchema.nullable()
 });
 

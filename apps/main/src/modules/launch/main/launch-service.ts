@@ -26,7 +26,7 @@ import {
    type ReadyLaunchPreview
 } from '@/modules/launch/contract';
 import { buildLaunchArgs, buildLaunchEnv, buildProtonCommand } from '@/modules/launch/main/launch-options';
-import { createLaunchRuntime, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
+import { createLaunchRuntime, type LaunchRuntime, type SpawnedGameProcess } from '@/modules/launch/main/launch-runtime';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 import type { SettingsSnapshot } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
@@ -61,6 +61,8 @@ export function createLaunchService(options: LaunchServiceOptions) {
    const runtime = options.runtime ?? createLaunchRuntime();
    const storeClientDelayMs = options.storeClientDelayMs ?? 5_000;
    const platform = launchPlatformFor(runtime.platform);
+   const listeners = new Set<(state: LaunchState) => void>();
+   let gameProcess: SpawnedGameProcess | null = null;
 
    async function getState(): Promise<LaunchState> {
       const settings = await options.settingsStore.getSnapshot();
@@ -68,8 +70,21 @@ export function createLaunchService(options: LaunchServiceOptions) {
       return {
          platform,
          supported: platform !== 'other',
+         gameRunning: gameProcess !== null,
          lastLaunch: settings.library.lastLaunch
       };
+   }
+
+   function subscribe(listener: (state: LaunchState) => void) {
+      listeners.add(listener);
+      return () => {
+         listeners.delete(listener);
+      };
+   }
+
+   async function publishState() {
+      const state = await getState();
+      for (const listener of listeners) listener(state);
    }
 
    async function getOptions({ installId }: LaunchOptionsRequest): Promise<LaunchOptions> {
@@ -257,9 +272,19 @@ export function createLaunchService(options: LaunchServiceOptions) {
       });
       if (Result.isError(spawned)) return options.operations.fail(operationId, spawned.error);
 
+      const game = spawned.value;
+      gameProcess = game;
+      void game.exited.then(() => {
+         if (gameProcess !== game) return;
+
+         gameProcess = null;
+         void publishState();
+      });
+
       await options.settingsStore.updateLibrarySettings({
          lastLaunch: { installId: previewed.installId, launchedAt: new Date().toISOString(), options: previewed.options }
       });
+      await publishState();
 
       if (watchdog && Result.isOk(watchdog)) {
          const started = await runtime.spawnWatchdog(watchdog.value);
@@ -299,5 +324,5 @@ export function createLaunchService(options: LaunchServiceOptions) {
       };
    }
 
-   return { getState, getOptions, updateOptions, preview, start };
+   return { getState, getOptions, updateOptions, preview, start, subscribe };
 }

@@ -106,7 +106,7 @@ export function LaunchAction({ launch }: { launch: InstallLaunch }) {
             type="button"
             size="lg"
             className="shadow-primary/20 hover:shadow-primary/30 min-w-52 cursor-pointer gap-2.5 font-semibold shadow-lg"
-            disabled={launch.state.status !== 'ready'}
+            disabled={launch.state.status !== 'ready' || launch.gameRunning}
             onClick={() => void launch.launch()}
          >
             {starting ? <Loader2 className="animate-spin" /> : <Play />}

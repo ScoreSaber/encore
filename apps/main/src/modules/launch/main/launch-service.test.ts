@@ -7,7 +7,7 @@ import { quoteForPowerShell, type LaunchCommand, type LaunchRuntime, type Watchd
 import { createLaunchService } from '@/modules/launch/main/launch-service';
 import { ensureProtonCompatData, validateProtonFolder } from '@/modules/launch/main/proton';
 import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
-import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
+import { waitFor, waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
@@ -76,6 +76,29 @@ describe('launch service', () => {
          }
       ]);
       expect((await harness.launch.getState()).lastLaunch?.options.closeEncore).toBe(true);
+   });
+
+   test('reports Beat Saber as running until the game process exits', async () => {
+      const harness = await createHarness();
+      const install = await harness.createInstall();
+      const snapshots: boolean[] = [];
+      const unsubscribe = harness.launch.subscribe((state) => snapshots.push(state.gameRunning));
+
+      const started = await harness.launch.start({
+         installId: install.id,
+         options: { flags: [], args: [], runAsAdmin: false, closeEncore: false }
+      });
+      expect(started.ok).toBe(true);
+      if (!started.ok) return;
+
+      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
+      expect((await harness.launch.getState()).gameRunning).toBe(true);
+      expect(snapshots.at(-1)).toBe(true);
+
+      harness.exitGame();
+      await waitFor(async () => !(await harness.launch.getState()).gameRunning, 'Beat Saber to stop');
+      expect(snapshots.at(-1)).toBe(false);
+      unsubscribe();
    });
 
    test('does not start Beat Saber when the resource saver is unavailable', async () => {
@@ -239,6 +262,7 @@ async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { 
    const spawned: LaunchCommand[] = [];
    const watchdogs: WatchdogCommand[] = [];
    const events: string[] = [];
+   const gameProcess = Promise.withResolvers<void>();
    let watchdogAvailable = true;
    const watchdogCommand = {
       executablePath: join(dataPath, 'encore-watchdog'),
@@ -257,7 +281,7 @@ async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { 
       spawn: (command) => {
          events.push('game');
          spawned.push(command);
-         return Promise.resolve(Result.ok({ pid: 4_242 }));
+         return Promise.resolve(Result.ok({ pid: 4_242, exited: gameProcess.promise }));
       },
       prepareWatchdog: () => {
          events.push('prepare-watchdog');
@@ -286,6 +310,7 @@ async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { 
       spawned,
       watchdogs,
       events,
+      exitGame: gameProcess.resolve,
       disableWatchdog: () => {
          watchdogAvailable = false;
       },
