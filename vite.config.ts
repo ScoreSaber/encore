@@ -152,7 +152,7 @@ export default {
             cache: false
          },
          'deploy:web': {
-            command: 'pnpm --filter @encore/web deploy',
+            command: 'pnpm --filter @encore/web run deploy',
             cache: false
          },
          verify: {
