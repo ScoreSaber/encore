@@ -35,11 +35,12 @@ export function modelSearchQueryOptions(request: TargetModelCollectionRequest, t
             });
             if (response.status === 'ok') return response.value;
 
-            return {
+            const result: ModelSearchResult = {
                status: 'failed',
-               issue: response.status === 'unsupported' ? 'unsupported' : 'fetch-failed',
-               ...(response.status === 'unavailable' ? { detail: response.error.message } : {})
+               issue: response.status === 'unsupported' ? 'unsupported' : 'fetch-failed'
             };
+            if (response.status === 'unavailable') result.detail = response.error.message;
+            return result;
          }),
       gcTime: 0
    });

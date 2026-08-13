@@ -1,3 +1,5 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { samplePolicy } from '@/modules/mods/main/repo-listing.fixture';
 import {
    createModRepositoryPolicyService,
@@ -7,7 +9,6 @@ import {
    type ModRepositoryPolicy
 } from '@/modules/mods/main/repo-policy';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +25,11 @@ describe('repository policy', () => {
       const dataPath = await createDataPath();
       const policies = createModRepositoryPolicyService({ dataPath, fetchJson: () => Promise.reject(new Error('connect ECONNREFUSED')) });
 
-      expect(await policies.get()).toMatchObject({ state: 'unavailable', version: null, entries: [], detail: expect.any(String) });
+      const policy = await policies.get();
+      expect(policy.state).toBe('unavailable');
+      expect(policy.version).toBeNull();
+      expect(policy.entries).toEqual([]);
+      expect(policy.detail).toEqual(expect.any(String));
    });
 
    test('keeps the copy on disk when the document goes backwards', async () => {
@@ -37,7 +42,8 @@ describe('repository policy', () => {
       document = samplePolicy({ version: 5, entries: [] });
       const replayed = await policies.refresh();
 
-      expect(replayed).toMatchObject({ state: 'ready', version: 7, detail: expect.stringContaining('backwards') });
+      expect(replayed).toMatchObject({ state: 'ready', version: 7 });
+      expect(replayed.detail).toContain('backwards');
       expect(replayed.entries).toHaveLength(1);
    });
 });

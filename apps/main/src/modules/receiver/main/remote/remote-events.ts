@@ -1,17 +1,18 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 
-import type { DomainApi, SnapshotOutput, TargetSnapshot } from '@/lib/api';
+import type { DomainApi, TargetSnapshot } from '@/lib/api';
 import { insecureStorageMessage, type RemoteSession } from '@/modules/receiver/main/remote/remote-session';
 import type { ReceiverStreamEvent } from '@/modules/receiver/protocol';
 import type { Target, TargetEvent } from '@/modules/targets/contract';
 
 export function createRemoteEvents(apis: readonly DomainApi[]) {
+   type SnapshotValue = Extract<ReceiverStreamEvent, { type: 'snapshot' }>['value'];
    const snapshots = new Map<string, NonNullable<DomainApi['snapshot']>>();
    for (const api of apis) {
       if (api.snapshot) snapshots.set(api.namespace, api.snapshot);
    }
    const targetListeners = new Set<(event: TargetEvent) => void>();
-   const snapshotListeners = new Map<string, Set<(event: TargetSnapshot<unknown>) => void>>();
+   const snapshotListeners = new Map<string, Set<(event: TargetSnapshot<SnapshotValue>) => void>>();
 
    function emit(event: TargetEvent) {
       for (const listener of targetListeners) listener(event);
@@ -40,9 +41,11 @@ export function createRemoteEvents(apis: readonly DomainApi[]) {
 
       const snapshot = snapshots.get(event.namespace)?.safeParse(event.value);
       if (!snapshot?.success) return;
+      const value = z.json().safeParse(snapshot.data);
+      if (!value.success) return;
 
       for (const listener of snapshotListeners.get(event.namespace) ?? []) {
-         listener({ targetId: session.record.id, snapshot: snapshot.data });
+         listener({ targetId: session.record.id, snapshot: value.data });
       }
    }
 
@@ -53,17 +56,20 @@ export function createRemoteEvents(apis: readonly DomainApi[]) {
       };
    }
 
-   function subscribeSnapshots<Api extends DomainApi & { snapshot: z.ZodType }>(
-      api: Api,
-      listener: (event: TargetSnapshot<SnapshotOutput<Api>>) => void
+   function subscribeSnapshots<Snapshot extends z.ZodType>(
+      api: { namespace: string; snapshot: Snapshot },
+      listener: (event: TargetSnapshot<z.output<Snapshot>>) => void
    ) {
-      const listeners = snapshotListeners.get(api.namespace) ?? new Set();
-      const erasedListener = listener as (event: TargetSnapshot<unknown>) => void;
-      listeners.add(erasedListener);
+      const listeners = snapshotListeners.get(api.namespace) ?? new Set<(event: TargetSnapshot<SnapshotValue>) => void>();
+      const parsedListener = (event: TargetSnapshot<SnapshotValue>) => {
+         const snapshot = z.safeParse(api.snapshot, event.snapshot);
+         if (snapshot.success) listener({ targetId: event.targetId, snapshot: snapshot.data });
+      };
+      listeners.add(parsedListener);
       snapshotListeners.set(api.namespace, listeners);
 
       return () => {
-         listeners.delete(erasedListener);
+         listeners.delete(parsedListener);
          if (listeners.size === 0) snapshotListeners.delete(api.namespace);
       };
    }

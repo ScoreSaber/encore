@@ -39,12 +39,12 @@ const documentSchema = z.object({
    playlistAuthor: z.string().optional(),
    playlistDescription: z.string().optional(),
    customData: z.object({ syncURL: z.string().optional() }).nullable().optional().catch(null),
-   songs: z.unknown().optional()
+   songs: z.json().optional()
 });
 
 export function parsePlaylistDocument(raw: string, fileName: string): PlaylistResult<ParsedPlaylist> {
    const json = Result.try({
-      try: (): unknown => JSON.parse(raw),
+      try: () => z.json().parse(JSON.parse(raw)),
       catch: (cause): PlaylistProblem => createPlaylistProblem('playlists.file.invalid', 'this file is not readable json', { fileName, cause })
    });
    if (Result.isError(json)) return Result.err<ParsedPlaylist, PlaylistProblem>(json.error);
@@ -73,7 +73,7 @@ export function parsePlaylistDocument(raw: string, fileName: string): PlaylistRe
    });
 }
 
-function parseSongs(value: unknown, fileName: string): PlaylistResult<z.infer<typeof songSchema>[]> {
+function parseSongs(value: z.infer<ReturnType<typeof z.json>> | undefined, fileName: string): PlaylistResult<z.infer<typeof songSchema>[]> {
    if (value === undefined) return Result.ok<z.infer<typeof songSchema>[], PlaylistProblem>([]);
    if (!Array.isArray(value)) {
       return Result.err<z.infer<typeof songSchema>[], PlaylistProblem>(

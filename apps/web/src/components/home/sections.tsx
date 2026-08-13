@@ -1,10 +1,11 @@
-import Link from "next/link";
 import { ChevronDown } from "lucide-react";
+import { Link } from "react-router";
+
+import scoreSaberLogoUrl from "../../../../../assets/scoresaber.svg?url";
 
 import { ContentSection } from "@/components/home/content-section";
 import { RepositorySection } from "@/components/home/repository-section";
 import { SharedContentSection } from "@/components/home/shared-content-section";
-import scoreSaberLogo from "../../../../../assets/scoresaber.svg";
 
 const faq = [
   {
@@ -79,7 +80,7 @@ function Faq() {
           There&apos;s probably more to read{" "}
           <Link
             className="text-white/72 underline decoration-white/20 underline-offset-4 transition hover:text-white"
-            href="/docs"
+            to="/docs"
           >
             on the docs
           </Link>{" "}
@@ -102,7 +103,7 @@ export function HomeFooter() {
             rel="noreferrer"
             aria-label="ScoreSaber"
           >
-            <img className="size-7" src={scoreSaberLogo.src} width={28} height={28} alt="" />
+            <img className="size-7" src={scoreSaberLogoUrl} width={28} height={28} alt="" />
           </a>
           <p>
             © 2026{" "}
@@ -163,10 +164,10 @@ export function HomeFooter() {
           >
             GitHub
           </a>
-          <Link className="transition hover:text-white/70" href="/docs">
+          <Link className="transition hover:text-white/70" to="/docs">
             Docs
           </Link>
-          <Link className="transition hover:text-white/70" href="/privacy">
+          <Link className="transition hover:text-white/70" to="/privacy">
             Privacy
           </Link>
         </div>

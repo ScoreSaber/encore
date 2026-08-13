@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { ContentFetch } from '@/lib/content/content-download';
 import { createContentIngestionService } from '@/lib/content/content-ingestion';
@@ -6,7 +7,6 @@ import { buildZipArchive } from '@/lib/content/zip-archive.fixture';
 import type { ModIndexEntry } from '@/modules/mods/main/mod-index';
 import { installModVersion } from '@/modules/mods/main/mod-install';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

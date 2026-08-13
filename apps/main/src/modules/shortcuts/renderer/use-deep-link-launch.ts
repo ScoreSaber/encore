@@ -133,11 +133,9 @@ export function useDeepLinkLaunch() {
 
       const { event } = state;
       if (event.status === 'rejected') {
-         setState({
-            status: 'rejected',
-            issue: event.issue,
-            ...(event.detail ? { detail: event.detail } : {})
-         });
+         const rejected: DeepLinkLaunchState = { status: 'rejected', issue: event.issue };
+         if (event.detail) rejected.detail = event.detail;
+         setState(rejected);
          return;
       }
 

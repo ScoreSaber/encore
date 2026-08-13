@@ -1,0 +1,25 @@
+packages:
+   - apps/*
+
+autoInstallPeers: false
+
+allowBuilds:
+   electron: true
+   esbuild: true
+   sharp: true
+   workerd: true
+catalog:
+   vite: npm:@voidzero-dev/vite-plus-core@0.2.8
+   vite-plus: 0.2.8
+
+overrides:
+   vite: 'catalog:'
+   vitest: 4.1.10
+
+peerDependencyRules:
+   allowAny:
+      - vite
+   allowedVersions:
+      vite: '*'
+   ignoreMissing:
+      - electron-builder-squirrel-windows

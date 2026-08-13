@@ -107,7 +107,9 @@ export function useContentLinkDownload<Source, Issue>(capability: TargetCapabili
    }, []);
    const reject = useCallback((issue: Issue, detail?: string) => {
       setRemember(false);
-      setState({ status: 'rejected', issue, ...(detail ? { detail } : {}) });
+      const rejected: ContentLinkState<Source, Issue> = { status: 'rejected', issue };
+      if (detail) rejected.detail = detail;
+      setState(rejected);
    }, []);
    const fail = useCallback((error: IpcError) => {
       setRemember(false);

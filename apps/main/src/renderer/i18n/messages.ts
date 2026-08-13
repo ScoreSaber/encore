@@ -1,9 +1,7 @@
 import en from './en.json';
 
-import type { Locale } from '@/renderer/i18n/config';
-
 export type Messages = typeof en;
 
-export const messagesByLocale: Record<Locale, Messages> = {
+export const messagesByLocale = {
    en
 };

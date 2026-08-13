@@ -1,7 +1,7 @@
+import { describe, expect, test } from 'vite-plus/test';
+
 import type { ContentScanCache } from '@/lib/content/content-cache';
 import { createScanStates } from '@/lib/content/scan-states';
-
-import { describe, expect, test } from 'bun:test';
 
 type Snapshot = { status: 'missing' | 'ready' | 'scanning'; value: number };
 
@@ -69,7 +69,9 @@ describe('content scan states', () => {
          { status: 'ready', value: 2 }
       ]);
       expect(states.get('install')).toMatchObject({ installPath: '/game/second', extra: ['/game/second'] });
-      expect([...states.get('install')!.cache.keys()]).toEqual(['/game/second']);
+      const state = states.get('install');
+      if (!state) throw new Error('scan state was not created');
+      expect([...state.cache.keys()]).toEqual(['/game/second']);
    });
 
    test('evicts old idle install state', async () => {

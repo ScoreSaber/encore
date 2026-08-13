@@ -136,10 +136,9 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
 function toBeatSaverProblem(problem: JsonDocumentProblem): BeatSaverProblem {
    const failed = problem.code === 'json.unreachable' || problem.code === 'json.fetch-failed' || problem.code === 'json.not-found';
 
-   return {
-      issue: failed ? 'fetch-failed' : 'invalid-response',
-      ...(problem.detail ? { detail: problem.detail } : {})
-   };
+   const catalogProblem: BeatSaverProblem = { issue: failed ? 'fetch-failed' : 'invalid-response' };
+   if (problem.detail) catalogProblem.detail = problem.detail;
+   return catalogProblem;
 }
 
 function toRecord(document: BeatSaverDocument, hash?: string): BeatSaverMapRecord | null {

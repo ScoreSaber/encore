@@ -35,10 +35,11 @@ jobs:
            with:
               fetch-depth: 0
 
-         - name: Setup Node
-           uses: actions/setup-node@v4
+         - name: Setup Vite+
+           uses: voidzero-dev/setup-vp@v1.17.0
            with:
-              node-version-file: .nvmrc
+              node-version-file: .node-version
+              run-install: false
 
          - name: Resolve release version
            id: version
@@ -130,30 +131,21 @@ jobs:
            with:
               ref: ${{ needs.version.outputs.sha }}
 
-         - name: Setup Node
-           uses: actions/setup-node@v4
+         - name: Setup Vite+
+           uses: voidzero-dev/setup-vp@v1.17.0
            with:
-              node-version-file: .nvmrc
-
-         - name: Setup Bun
-           uses: oven-sh/setup-bun@v2
-
-         - name: Cache package downloads
-           uses: actions/cache@v4
-           with:
-              path: ~/.bun/install/cache
-              key: release-build-v2-${{ runner.os }}-${{ hashFiles('bun.lock') }}
-              restore-keys: |
-                 release-build-v2-${{ runner.os }}-
+              node-version-file: .node-version
+              cache: true
+              run-install: false
 
          - name: Install dependencies
-           run: bun install --frozen-lockfile --ignore-scripts
+           run: vp install --frozen-lockfile --ignore-scripts
 
          - name: Build app
            env:
               VITE_POSTHOG_PROJECT_TOKEN: ${{ secrets.VITE_POSTHOG_PROJECT_TOKEN }}
               VITE_POSTHOG_HOST: ${{ secrets.VITE_POSTHOG_HOST }}
-           run: bun run build
+           run: vp run build
 
          - name: Archive app build
            run: tar -C apps/main -czf encore-out.tar.gz out
@@ -223,32 +215,29 @@ jobs:
            with:
               ref: ${{ needs.version.outputs.sha }}
 
-         - name: Setup Node
-           uses: actions/setup-node@v4
+         - name: Setup Vite+
+           uses: voidzero-dev/setup-vp@v1.17.0
            with:
-              node-version-file: .nvmrc
-
-         - name: Setup Bun
-           uses: oven-sh/setup-bun@v2
+              node-version-file: .node-version
+              cache: true
+              run-install: false
 
          - name: Cache package downloads
            uses: actions/cache@v4
            with:
               path: |
-                 ~/.bun/install/cache
                  ~/.cache/electron
                  ~/.cache/electron-builder
                  ~/Library/Caches/electron
                  ~/Library/Caches/electron-builder
                  ~/AppData/Local/electron/Cache
                  ~/AppData/Local/electron-builder/Cache
-              key: release-package-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+              key: release-package-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
               restore-keys: |
                  release-package-${{ runner.os }}-
-                 release-build-v2-${{ runner.os }}-
 
          - name: Install dependencies
-           run: bun install --frozen-lockfile --ignore-scripts
+           run: vp install --frozen-lockfile --ignore-scripts
 
          - name: Download app build
            uses: actions/download-artifact@v4
@@ -285,14 +274,14 @@ jobs:
                  org.electronjs.Electron2.BaseApp//25.08
 
          - name: Build launch watchdog
-           run: bun run --cwd apps/main build:watchdog
+           run: vp run build:watchdog
 
          - name: Package app
            shell: bash
            env:
               APPIMAGE_EXTRACT_AND_RUN: '1'
               RELEASE_VERSION: ${{ needs.version.outputs.version }}
-           run: bun run --cwd apps/main electron-builder ${{ matrix.package_args }} --config.extraMetadata.version="$RELEASE_VERSION" --publish never
+           run: pnpm --filter encore exec electron-builder ${{ matrix.package_args }} --config.extraMetadata.version="$RELEASE_VERSION" --publish never
 
          - name: Upload release asset
            uses: actions/upload-artifact@v4
@@ -354,10 +343,11 @@ jobs:
            with:
               ref: ${{ github.ref_name }}
 
-         - name: Setup Node
-           uses: actions/setup-node@v4
+         - name: Setup Vite+
+           uses: voidzero-dev/setup-vp@v1.17.0
            with:
-              node-version-file: .nvmrc
+              node-version-file: .node-version
+              run-install: false
 
          - name: Update package version
            env:

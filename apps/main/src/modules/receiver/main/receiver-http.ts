@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import { causeMessage } from '@/lib/errors';
 import { receiverOperations } from '@/modules/receiver/operations';
@@ -31,7 +32,8 @@ export function checkProtocolVersion(request: IncomingMessage, path: string): Ht
    if (path === receiverOperations.health.path) return null;
 
    const header = request.headers[receiverProtocolVersionHeader];
-   const version = typeof header === 'string' ? Number.parseInt(header, 10) : Number.NaN;
+   const parsedHeader = z.string().safeParse(header);
+   const version = parsedHeader.success ? Number.parseInt(parsedHeader.data, 10) : Number.NaN;
    if (Number.isInteger(version) && isSupportedReceiverProtocolVersion(version)) return null;
 
    return {
@@ -43,12 +45,12 @@ export function checkProtocolVersion(request: IncomingMessage, path: string): Ht
 
 export function readJsonBody(request: IncomingMessage) {
    return Result.tryPromise({
-      try: async (): Promise<unknown> => {
+      try: async () => {
          const chunks: Buffer[] = [];
          let size = 0;
 
          for await (const chunk of request) {
-            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            const buffer = Buffer.from(z.instanceof(Uint8Array).parse(chunk));
             size += buffer.byteLength;
             if (size > maxJsonBodyBytes) {
                throw new Error('request body is too large');
@@ -57,7 +59,7 @@ export function readJsonBody(request: IncomingMessage) {
             chunks.push(buffer);
          }
 
-         return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+         return z.json().parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       },
       catch: (cause): HttpFailure => ({
          status: 400,
@@ -67,7 +69,7 @@ export function readJsonBody(request: IncomingMessage) {
    });
 }
 
-export function writeJson(response: ServerResponse, status: number, body: object) {
+export function writeJson(response: ServerResponse, status: number, body: z.infer<ReturnType<typeof z.json>>) {
    response.writeHead(status, {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store'

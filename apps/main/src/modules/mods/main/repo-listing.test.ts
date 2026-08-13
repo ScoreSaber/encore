@@ -1,6 +1,8 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { z } from 'zod';
 
-import type { ModPlatform } from '@/modules/mods/contract';
+import { modPlatformSchema } from '@/modules/mods/contract';
 import {
    fetchRepositoryListing,
    parseRepositoryListing,
@@ -10,13 +12,12 @@ import {
 } from '@/modules/mods/main/repo-listing';
 import { samplePackage, sampleListing, sampleVersion } from '@/modules/mods/main/repo-listing.fixture';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const install: { gameVersion: string; platform: ModPlatform } = { gameVersion: '1.37.0', platform: 'steampc' };
+const install = { gameVersion: '1.37.0', platform: modPlatformSchema.enum.steampc };
 const tempRoots: string[] = [];
 
 afterEach(async () => {
@@ -128,7 +129,7 @@ describe('repository listing', () => {
    });
 });
 
-function parse(value: unknown): ModRepositoryListing {
+function parse(value: z.infer<ReturnType<typeof z.json>>): ModRepositoryListing {
    const parsed = parseRepositoryListing(value);
    if (Result.isError(parsed)) throw new Error(`the sample listing did not parse: ${parsed.error.issue}`);
 

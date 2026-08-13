@@ -63,7 +63,7 @@ export const beatSaberExecutableName = 'Beat Saber.exe';
 export const launchFlagSchema = z.enum(['oculus-mode', 'fpfc', 'debug', 'skip-steam', 'editor', 'proton-logs']);
 export const launchFlags = launchFlagSchema.options;
 
-const platformLaunchFlags: Record<LaunchPlatform, readonly LaunchFlag[]> = {
+const platformLaunchFlags = {
    windows: launchFlags.filter((flag) => flag !== 'proton-logs'),
    linux: launchFlags.filter((flag) => flag !== 'skip-steam'),
    other: launchFlags
@@ -199,12 +199,9 @@ export function createDefaultLaunchOptions(): LaunchOptions {
 }
 
 export function unavailableLaunchPreview(request: { installId: InstallId }, issue: LaunchIssue, detail?: string): UnavailableLaunchPreview {
-   return {
-      status: 'unavailable',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const preview: UnavailableLaunchPreview = { status: 'unavailable', installId: request.installId, issue };
+   if (detail) preview.detail = detail;
+   return preview;
 }
 
 export function parseLaunchArgs(input: string): string[] {

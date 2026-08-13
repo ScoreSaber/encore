@@ -78,14 +78,15 @@ export async function detectOculusStore(targetId: TargetId): Promise<OculusDetec
       const installPath = await findOculusInstallPath(library.path);
       const executablePath = installPath ? await findOculusExecutable(installPath) : null;
 
-      summaries.push({
+      const summary: StoreLibrarySummary = {
          id: library.id,
          store: oculusStore,
          path: library.path,
          isDefault: library.isDefault,
-         hasBeatSaber: Boolean(installPath),
-         ...(installPath ? { installPath } : {})
-      });
+         hasBeatSaber: Boolean(installPath)
+      };
+      if (installPath) summary.installPath = installPath;
+      summaries.push(summary);
 
       if (!installPath) continue;
 
@@ -94,9 +95,9 @@ export async function detectOculusStore(targetId: TargetId): Promise<OculusDetec
          targetId,
          store: oculusStore,
          path: installPath,
-         libraryPath: library.path,
-         ...(executablePath ? { executablePath } : {})
+         libraryPath: library.path
       };
+      if (executablePath) candidate.executablePath = executablePath;
 
       candidates.push(candidate);
       diagnostics.push(oculusDiagnostic('oculus.detected', 'info', installPath));
@@ -224,12 +225,13 @@ function oculusDiagnostic(
    path?: string,
    detail?: string
 ): StoreDetectionDiagnostic {
-   return {
+   const diagnostic: StoreDetectionDiagnostic = {
       id: [oculusStore, code, path].filter(Boolean).join(':'),
       store: oculusStore,
       code,
-      severity,
-      ...(path ? { path } : {}),
-      ...(detail ? { detail } : {})
+      severity
    };
+   if (path) diagnostic.path = path;
+   if (detail) diagnostic.detail = detail;
+   return diagnostic;
 }

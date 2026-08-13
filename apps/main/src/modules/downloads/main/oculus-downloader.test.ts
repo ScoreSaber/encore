@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { createOculusDownloader } from '@/modules/downloads/main/oculus-downloader';
 import { createZipArchive } from '@/modules/downloads/main/oculus-manifest.fixture';
@@ -9,7 +10,6 @@ import { waitFor, waitForOperation } from '@/modules/operations/main/operation-w
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

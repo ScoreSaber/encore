@@ -33,20 +33,19 @@ export function useCustomSharedFolders(request: TargetSharedContentRequest, acti
 
          const response = answered.value;
          if (response.status !== 'ok') {
-            setState({
+            const invalid: CustomSharedFoldersState = {
                status: 'invalid',
-               issue: response.status === 'unsupported' ? 'unsupported-target' : 'write-failed',
-               ...(response.status === 'unavailable' ? { detail: response.error.message } : {})
-            });
+               issue: response.status === 'unsupported' ? 'unsupported-target' : 'write-failed'
+            };
+            if (response.status === 'unavailable') invalid.detail = response.error.message;
+            setState(invalid);
             return;
          }
 
          if (response.value.status === 'invalid') {
-            setState({
-               status: 'invalid',
-               issue: response.value.issue,
-               ...(response.value.detail ? { detail: response.value.detail } : {})
-            });
+            const invalid: CustomSharedFoldersState = { status: 'invalid', issue: response.value.issue };
+            if (response.value.detail) invalid.detail = response.value.detail;
+            setState(invalid);
             return;
          }
 
@@ -82,7 +81,9 @@ export function useCustomSharedFolders(request: TargetSharedContentRequest, acti
          return;
       }
       if (choice.status === 'invalid') {
-         setState({ status: 'invalid', issue: choice.issue, ...(choice.detail ? { detail: choice.detail } : {}) });
+         const invalid: CustomSharedFoldersState = { status: 'invalid', issue: choice.issue };
+         if (choice.detail) invalid.detail = choice.detail;
+         setState(invalid);
          return;
       }
 

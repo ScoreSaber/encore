@@ -1,12 +1,12 @@
 import { Result } from 'better-result';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { IpcError, IpcFailureResult } from '@/ipc/core';
-import type { ProcedureInput, ProcedureOutput, TargetCallResult, TargetProcedure, TargetUpload, UploadInput } from '@/lib/api';
+import type { TargetCallResult, TargetUpload, UploadInput } from '@/lib/api';
 import { requestReceiverJson, uploadReceiverFile, type ReceiverTransportFailure } from '@/modules/receiver/main/remote-receiver-transport';
 import type { RemoteSessionManager } from '@/modules/receiver/main/remote/remote-session';
 import { receiverProcedureEnvelopeSchema, receiverProcedurePath, receiverUploadPath } from '@/modules/receiver/main/target-api';
-import type { TargetCapability, TargetId } from '@/modules/targets/contract';
+import { targetCapabilitySchema, type TargetCapability, type TargetId } from '@/modules/targets/contract';
 
 export function createRemoteRequest(manager: RemoteSessionManager) {
    function requireCapability(targetId: TargetId, capability: TargetCapability) {
@@ -16,22 +16,17 @@ export function createRemoteRequest(manager: RemoteSessionManager) {
       return { session, token: session.token };
    }
 
-   function targetProcedure<Procedure extends TargetProcedure>(
-      targetId: TargetId,
-      namespace: string,
-      method: string,
-      procedure: Procedure,
-      input: ProcedureInput<Procedure>
-   ): Promise<TargetCallResult<ProcedureOutput<Procedure>>>;
    async function targetProcedure(
       targetId: TargetId,
       namespace: string,
       method: string,
-      procedure: { capability: TargetCapability; output: z.ZodType },
-      input: unknown
-   ): Promise<TargetCallResult<unknown>> {
-      const authorised = requireCapability(targetId, procedure.capability);
-      if (!authorised) return { status: 'unsupported', targetId, capability: procedure.capability };
+      authorisation: TargetCapability | { capability: TargetCapability },
+      input: z.infer<ReturnType<typeof z.json>>
+   ): Promise<TargetCallResult<z.infer<ReturnType<typeof z.json>>>> {
+      const wrappedCapability = z.object({ capability: targetCapabilitySchema }).safeParse(authorisation);
+      const capability = wrappedCapability.success ? wrappedCapability.data.capability : targetCapabilitySchema.parse(authorisation);
+      const authorised = requireCapability(targetId, capability);
+      if (!authorised) return { status: 'unsupported', targetId, capability };
 
       const response = await requestReceiverJson({
          endpoint: authorised.session.endpoint,
@@ -50,16 +45,7 @@ export function createRemoteRequest(manager: RemoteSessionManager) {
          };
       }
 
-      const value = procedure.output.safeParse(response.value.value);
-      if (!value.success) {
-         return {
-            status: 'unavailable',
-            targetId,
-            error: { code: 'receiver.remote.response.invalid', message: 'Receiver response did not match the procedure output' }
-         };
-      }
-
-      return { status: 'ok', targetId, value: value.data };
+      return { status: 'ok', targetId, value: response.value.value };
    }
 
    async function targetUpload<Upload extends TargetUpload>(

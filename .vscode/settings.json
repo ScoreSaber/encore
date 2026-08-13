@@ -1,35 +1,38 @@
 {
    "files.exclude": {
+      ".react-router": true,
+      ".source": true,
       "node_modules": true,
       "out": true,
       "release": true
    },
    "search.exclude": {
+      ".react-router": true,
+      ".source": true,
       "node_modules": true,
       "out": true,
       "release": true
    },
+   "editor.defaultFormatter": "oxc.oxc-vscode",
+   "[javascript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+   "[javascriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+   "[typescript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+   "[typescriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
    "editor.codeActionsOnSave": {
-      "source.format.oxc": "always",
-      "source.fixAll.oxc": "always"
+      "source.fixAll.oxc": "explicit"
    },
-   "editor.formatOnSave": false,
+   "editor.formatOnSave": true,
    "editor.formatOnSaveMode": "file",
-   "oxc.enable.oxfmt": true,
-   "oxc.enable.oxlint": true,
-   "oxc.lint.run": "onType",
-   "oxc.path.oxfmt": "node_modules/.bin/oxfmt",
-   "oxc.path.oxlint": "node_modules/.bin/oxlint",
-   "oxc.requireConfig": true,
-   "eslint.enable": false,
-   "prettier.enable": false,
+   "npm.scriptRunner": "vp",
+   "oxc.disableNestedConfig": true,
+   "oxc.fmt.disableNestedConfig": true,
    "tailwindCSS.classFunctions": ["clsx", "cva", "twMerge"],
    "tailwindCSS.experimental.configFile": {
       "apps/main/src/renderer/styles/globals.css": "apps/main/src/**/*.{css,ts,tsx}",
-      "apps/web/src/app/global.css": "apps/web/src/**/*.{css,ts,tsx}"
+      "apps/web/src/global.css": "apps/web/src/**/*.{css,ts,tsx}"
    },
    "tailwindCSS.files.exclude": ["**/.git/**", "**/node_modules/**", "**/out/**", "**/release/**"],
-   "i18n-ally.enabledFrameworks": ["next-intl"],
+   "i18n-ally.enabledFrameworks": ["react-i18next"],
    "i18n-ally.localesPaths": ["apps/main/src/renderer/i18n"],
    "i18n-ally.sourceLanguage": "en"
 }

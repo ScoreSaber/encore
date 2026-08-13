@@ -1,10 +1,10 @@
 import { Result } from 'better-result';
 import { unzipSync } from 'fflate';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { LocalMapSummary } from '@/modules/maps/contract';
 import { exportMapsToZip } from '@/modules/maps/main/map-archive';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

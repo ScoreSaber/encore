@@ -3,11 +3,22 @@ import { useTranslations } from 'use-intl';
 import { WarningLine } from '@/components/state/state-panel';
 
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
-import type { SharedFolderId, SharedFolderLinkState } from '@/modules/shared-content/contract';
+import type { SharedFolderId } from '@/modules/shared-content/contract';
 import { useInstallSharedContent } from '@/modules/shared-content/renderer/use-install-shared-content';
 import type { MessageKey } from '@/renderer/i18n/keys';
 
-const noticeKeys: Record<SharedFolderLinkState, MessageKey<'sharedContent'> | null> = {
+type SharedFolderNoticeKey = MessageKey<'sharedContent'> | null;
+
+type SharedFolderNoticeKeys = {
+   absent: SharedFolderNoticeKey;
+   blocked: SharedFolderNoticeKey;
+   broken: SharedFolderNoticeKey;
+   foreign: SharedFolderNoticeKey;
+   linked: SharedFolderNoticeKey;
+   unlinked: SharedFolderNoticeKey;
+};
+
+const noticeKeys: SharedFolderNoticeKeys = {
    absent: null,
    blocked: 'sharedFolder.blocked',
    broken: 'sharedFolder.broken',

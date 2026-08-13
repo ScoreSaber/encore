@@ -278,7 +278,9 @@ function describeAbort(
    if (external?.aborted) return { code: 'content.download.cancelled', message: 'the download was cancelled' };
    if (scope.isTimedOut()) return { code: 'content.download.timed-out', message: 'the download server stopped responding' };
 
-   return { code, message, ...(cause ? { detail: String(cause) } : {}) };
+   const problem: ContentProblem = { code, message };
+   if (cause instanceof Error) problem.detail = cause.message;
+   return problem;
 }
 
 function tooLarge(maxBytes: number): ContentProblem {

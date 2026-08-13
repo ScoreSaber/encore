@@ -1,6 +1,6 @@
-import { parseMapLink } from '@/modules/maps/contract';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { parseMapLink } from '@/modules/maps/contract';
 
 describe('map links', () => {
    test('rejects anything that is not a plain map key', () => {

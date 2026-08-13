@@ -120,7 +120,7 @@ async function readStoredIdentity(secretStore: SecretStore) {
 
    const contents = read.value;
    const decoded = Result.try({
-      try: (): unknown => JSON.parse(contents),
+      try: () => z.json().parse(JSON.parse(contents)),
       catch: () => null
    });
    if (Result.isError(decoded)) return null;

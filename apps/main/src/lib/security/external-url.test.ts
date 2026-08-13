@@ -1,6 +1,6 @@
-import { evaluateHttpsUrl, isTrustedRendererNavigation, openHttpsUrl } from '@/lib/security/external-url';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { evaluateHttpsUrl, isTrustedRendererNavigation, openHttpsUrl } from '@/lib/security/external-url';
 
 describe('external URLs', () => {
    test('accepts plain HTTPS URLs and rejects unsafe URL forms', () => {

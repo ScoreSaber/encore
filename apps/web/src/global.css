@@ -1,11 +1,53 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Geist";
+  src: url("../../../assets/fonts/geist-latin-400-normal.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist";
+  src: url("../../../assets/fonts/geist-latin-500-normal.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist";
+  src: url("../../../assets/fonts/geist-latin-600-normal.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist";
+  src: url("../../../assets/fonts/geist-latin-700-normal.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Pixel";
+  src: url("../../../assets/fonts/GeistPixel-Square.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   color-scheme: dark;
   --background: #00020b;
   --foreground: hsl(60 7% 90%);
   --muted-foreground: hsl(24 5.4% 63.9%);
   --accent: #59b0f4;
+  --font-sans: "Geist", sans-serif;
+  --font-pixel: "Geist Pixel";
   --color-fd-background: var(--background);
   --color-fd-foreground: var(--foreground);
   --color-fd-primary: var(--accent);

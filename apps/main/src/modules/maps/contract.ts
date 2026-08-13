@@ -267,12 +267,9 @@ export function parseMapLink(value: string): MapLinkParse {
 }
 
 export function invalidMapAction(request: MapCollectionRequest, issue: MapActionIssue, detail?: string): MapActionProblem {
-   return {
-      status: 'invalid',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: MapActionProblem = { status: 'invalid', installId: request.installId, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function createEmptyMapCollectionSnapshot(request: MapCollectionRequest, status: MapCollectionStatus = 'scanning'): MapCollectionSnapshot {

@@ -1,4 +1,4 @@
-import { shell, type IpcMainInvokeEvent } from 'electron';
+import { shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron';
 
 import { showOpenDialog } from '@/ipc/dialogs';
 import { defineIpcHandlers } from '@/ipc/main';
@@ -36,12 +36,13 @@ async function chooseInstallLocation(
 
    const install = await installs.get(request.installId);
 
-   const picked = await showOpenDialog(event, {
+   const dialogOptions: OpenDialogOptions = {
       title: 'Choose the Beat Saber install folder',
       buttonLabel: 'Choose folder',
-      properties: ['openDirectory'],
-      ...(install ? { defaultPath: install.path } : {})
-   });
+      properties: ['openDirectory']
+   };
+   if (install) dialogOptions.defaultPath = install.path;
+   const picked = await showOpenDialog(event, dialogOptions);
    const path = picked.filePaths[0];
 
    return picked.canceled || !path ? { status: 'cancelled' } : { status: 'selected', path };

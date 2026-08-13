@@ -1,4 +1,12 @@
-import type { AnyIpcEventDefinition, IpcDescriptor, IpcEventPayload, IpcInvokeArgs, IpcRequestDefinition, IpcResponse } from '@/ipc/core';
+import type {
+   AnyIpcEventDefinition,
+   IpcDescriptor,
+   IpcEventPayload,
+   IpcInvokeArgs,
+   IpcRequestDefinition,
+   IpcResponse,
+   IpcTransportValue
+} from '@/ipc/core';
 import { createTargetIpcDescriptor } from '@/ipc/target-api';
 import { appIpc } from '@/modules/app/ipc';
 import { bsmanagerIpc } from '@/modules/bsmanager/ipc';
@@ -33,12 +41,14 @@ type IpcClient<Descriptor extends IpcDescriptor> = {
         : never;
 };
 
-type IpcInvoke = (channel: string, ...args: unknown[]) => Promise<unknown>;
-type IpcSubscribe = (channel: string, listener: (payload: unknown) => void) => () => void;
+type IpcInvoke = (channel: string, ...args: IpcTransportValue[]) => Promise<IpcTransportValue>;
+type IpcSubscribe = (channel: string, listener: (payload: IpcTransportValue) => void) => () => void;
 
 type IpcClients<Descriptors extends Record<string, IpcDescriptor>> = {
    [Domain in keyof Descriptors]: IpcClient<Descriptors[Domain]>;
 };
+
+type BoundIpcClients = { readonly dynamicIpcClients?: never };
 
 const ipcDescriptors = {
    app: appIpc,
@@ -60,8 +70,12 @@ const ipcDescriptors = {
    operations: createTargetIpcDescriptor(operationsApi)
 };
 
-function bindIpc<Descriptors extends Record<string, IpcDescriptor>>(descriptors: Descriptors, invoke: IpcInvoke, subscribe: IpcSubscribe) {
-   // object iteration erases the descriptor keys; keep the only assertion at this boundary
+function bindIpc<Descriptors extends Record<string, IpcDescriptor>>(
+   descriptors: Descriptors,
+   invoke: IpcInvoke,
+   subscribe: IpcSubscribe
+): IpcClients<Descriptors>;
+function bindIpc(descriptors: Record<string, IpcDescriptor>, invoke: IpcInvoke, subscribe: IpcSubscribe): BoundIpcClients {
    return Object.fromEntries(
       Object.entries(descriptors).map(([domain, descriptor]) => [
          domain,
@@ -69,12 +83,12 @@ function bindIpc<Descriptors extends Record<string, IpcDescriptor>>(descriptors:
             Object.entries(descriptor).map(([method, definition]) => [
                method,
                definition.kind === 'event'
-                  ? (listener: (payload: unknown) => void) => subscribe(definition.channel, listener)
-                  : (...args: unknown[]) => invoke(definition.channel, ...args)
+                  ? (listener: (payload: IpcTransportValue) => void) => subscribe(definition.channel, listener)
+                  : (...args: IpcTransportValue[]) => invoke(definition.channel, ...args)
             ])
          )
       ])
-   ) as IpcClients<Descriptors>;
+   );
 }
 
 export function createEncoreApi(platform: NodeJS.Platform, invoke: IpcInvoke, subscribe: IpcSubscribe) {

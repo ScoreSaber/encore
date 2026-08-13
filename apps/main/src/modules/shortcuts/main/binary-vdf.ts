@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 // Steam shortcut files use this binary VDF tree and must round-trip without changing their shape
 export type BinaryVdfValue = string | number | BinaryVdfMap;
 export type BinaryVdfMap = Map<string, BinaryVdfValue>;
@@ -25,7 +27,8 @@ export function vdfMap(value: BinaryVdfValue | undefined) {
 }
 
 export function vdfText(value: BinaryVdfValue | undefined) {
-   return typeof value === 'string' ? value : null;
+   const text = z.string().safeParse(value);
+   return text.success ? text.data : null;
 }
 
 function readMap(reader: { buffer: Buffer; offset: number }): BinaryVdfMap {
@@ -81,14 +84,15 @@ function writeMapEntries(map: BinaryVdfMap) {
          continue;
       }
 
-      if (typeof value === 'number') {
+      const numeric = z.number().safeParse(value);
+      if (numeric.success) {
          const number = Buffer.alloc(4);
-         number.writeInt32LE(value);
+         number.writeInt32LE(numeric.data);
          chunks.push(Buffer.from([int32Type]), writeString(key), number);
          continue;
       }
 
-      chunks.push(Buffer.from([stringType]), writeString(key), writeString(value));
+      chunks.push(Buffer.from([stringType]), writeString(key), writeString(z.string().parse(value)));
    }
 
    return chunks;

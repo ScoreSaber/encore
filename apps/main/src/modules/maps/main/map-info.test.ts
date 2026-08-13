@@ -1,8 +1,7 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import { parseMapInfo } from '@/modules/maps/main/map-info';
-
-import { describe, expect, test } from 'bun:test';
 
 const legacyInfo = {
    _version: '2.1.0',

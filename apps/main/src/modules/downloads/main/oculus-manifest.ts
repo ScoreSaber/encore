@@ -87,7 +87,7 @@ export function parseOculusManifest(archive: Buffer) {
    if (Result.isError(entry)) return Result.err<OculusManifest, string>(entry.error);
 
    const json = Result.try({
-      try: (): unknown => JSON.parse(entry.value.toString('utf8')),
+      try: () => z.json().parse(JSON.parse(entry.value.toString('utf8'))),
       catch: () => 'the manifest was not valid JSON'
    });
    if (Result.isError(json)) return Result.err<OculusManifest, string>(json.error);

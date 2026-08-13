@@ -26,7 +26,7 @@ export const quickLinkSections: { id: QuickLinkSectionId; links: readonly QuickL
    { id: 'wikis', links: ['encore-docs', 'bsmg-wiki', 'scoresaber-wiki'] }
 ];
 
-export const supportLinkUrls: Record<SupportLinkId, string> = {
+export const supportLinkUrls = {
    'support-encore': 'https://github.com/scoresaber/encore?sponsor=1',
    'give-feedback': 'https://hub.scoresaber.com/',
    'source-code': 'https://github.com/scoresaber/encore',
@@ -157,9 +157,7 @@ export type SupportLogOpenResult = z.infer<typeof supportLogOpenResultSchema>;
 export type SupportLogSelection = SupportLogReadRequest;
 
 export function unavailableSupportLogExcerpt(issue: SupportLogIssue, detail?: string): SupportLogExcerpt {
-   return {
-      status: 'unavailable',
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const excerpt: SupportLogExcerpt = { status: 'unavailable', issue };
+   if (detail) excerpt.detail = detail;
+   return excerpt;
 }

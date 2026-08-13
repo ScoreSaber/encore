@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { InstallDetail } from '@/modules/installs/contract';
 import { createInstallManagementService } from '@/modules/installs/main/install-management';
@@ -8,7 +9,6 @@ import { waitForOperation } from '@/modules/operations/main/operation-waiting.fi
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot, StoreInstallCandidate } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,7 +57,8 @@ describe('install management', () => {
       });
 
       harness.setCandidates([createCandidate(firstPath)]);
-      const store = (await harness.registry.rescan()).installs.find((install) => install.source === 'store')!;
+      const store = (await harness.registry.rescan()).installs.find((install) => install.source === 'store');
+      if (!store) throw new Error('store install was not detected');
       expect(await harness.management.update({ installId: store.id, path: invalidPath })).toMatchObject({
          ok: false,
          error: { code: 'installs.manage.store-owned' }
@@ -91,7 +92,8 @@ describe('install management', () => {
       const importedPath = await createInstallFolder(harness.dataPath, 'Beat Saber', '1.37.0');
       harness.setCandidates([createCandidate(detected)]);
       const imported = await harness.register(importedPath);
-      const store = (await harness.registry.list()).installs.find((install) => install.source === 'store')!;
+      const store = (await harness.registry.list()).installs.find((install) => install.source === 'store');
+      if (!store) throw new Error('store install was not detected');
 
       expect(await harness.management.previewDelete({ installId: store.id })).toMatchObject({ status: 'invalid', issue: 'store-owned' });
       expect(await harness.management.delete({ installId: store.id })).toMatchObject({
@@ -120,7 +122,8 @@ describe('install management', () => {
       const importedPath = await createInstallFolder(harness.dataPath, 'Beat Saber', '1.37.0');
       harness.setCandidates([createCandidate(detected)]);
       const imported = await harness.register(importedPath);
-      const store = (await harness.registry.list()).installs.find((install) => install.source === 'store')!;
+      const store = (await harness.registry.list()).installs.find((install) => install.source === 'store');
+      if (!store) throw new Error('store install was not detected');
 
       expect(await harness.management.previewForget({ installId: store.id })).toMatchObject({ status: 'invalid', issue: 'store-detected' });
       expect(await harness.management.forget({ installId: store.id })).toMatchObject({

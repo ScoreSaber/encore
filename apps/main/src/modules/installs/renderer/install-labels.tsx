@@ -4,9 +4,9 @@ import { WarningLine } from '@/components/state/state-panel';
 import { Badge } from '@/components/ui/badge';
 
 import type { InstallProblem, InstallProblemCode, InstallSummary } from '@/modules/installs/contract';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const problemMessageKeys: Record<InstallProblemCode, MessageKey<'installs'>> = {
+const problemMessageKeys: MessageKeyMap<InstallProblemCode, 'installs'> = {
    'install.path.unreadable': 'problems.pathUnreadable',
    'install.registry.write-failed': 'problems.registryWriteFailed',
    'install.version.unknown': 'problems.versionUnknown'

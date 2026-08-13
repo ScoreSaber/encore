@@ -1,6 +1,6 @@
-import { parseLaunchLink } from '@/modules/shortcuts/contract';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { parseLaunchLink } from '@/modules/shortcuts/contract';
 
 describe('launch links', () => {
    test('accepts only explicit boolean launch options', () => {

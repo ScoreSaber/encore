@@ -160,12 +160,13 @@ export function unavailableShortcutPreview(
    issue: ShortcutIssue,
    detail?: string
 ): UnavailableShortcutPreview {
-   return {
+   const preview: UnavailableShortcutPreview = {
       status: 'unavailable',
       kind: request.kind,
       targetId: request.targetId,
       installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
+      issue
    };
+   if (detail) preview.detail = detail;
+   return preview;
 }

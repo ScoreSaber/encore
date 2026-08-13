@@ -100,11 +100,7 @@ export type BSManagerCleanupRequest = BSManagerCleanupInput & { targetId: Target
 export type BSManagerCleanupResult = IpcResult<OperationSnapshot>;
 
 export function invalidBSManagerPlan(targetId: TargetId, rootPath: string, issue: BSManagerIssue, detail?: string): BSManagerPlanProblem {
-   return {
-      status: 'invalid',
-      targetId,
-      rootPath,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: BSManagerPlanProblem = { status: 'invalid', targetId, rootPath, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }

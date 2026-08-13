@@ -1,4 +1,5 @@
-import { chmod, mkdir } from 'node:fs/promises';
+import { spawn, type SpawnOptions } from 'node:child_process';
+import { access, chmod, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -16,7 +17,7 @@ await mkdir(outputDirectory, { recursive: true });
 
 if (process.platform === 'linux') {
    const outputPath = join(outputDirectory, 'encore-watchdog');
-   const muslCompiler = Bun.which('musl-gcc');
+   const muslCompiler = (await commandExists('musl-gcc')) ? 'musl-gcc' : undefined;
    const compiler = muslCompiler ?? 'cc';
    await run([
       compiler,
@@ -70,7 +71,7 @@ if (await commandExists('cl.exe')) {
 
 const programFiles = process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)';
 const vswherePath = join(programFiles, 'Microsoft Visual Studio', 'Installer', 'vswhere.exe');
-if (!(await Bun.file(vswherePath).exists())) throw new Error('Visual Studio C++ build tools are required to package Encore on Windows');
+if (!(await fileExists(vswherePath))) throw new Error('Visual Studio C++ build tools are required to package Encore on Windows');
 
 const installationPath = (
    await capture([
@@ -87,8 +88,8 @@ const installationPath = (
 if (!installationPath) throw new Error('Visual Studio C++ build tools are required to package Encore on Windows');
 
 const developerShell = join(installationPath, 'Common7', 'Tools', 'VsDevCmd.bat');
-if (!(await Bun.file(developerShell).exists())) throw new Error('Visual Studio C++ build tools are required to package Encore on Windows');
-const compiler = Bun.spawn(
+if (!(await fileExists(developerShell))) throw new Error('Visual Studio C++ build tools are required to package Encore on Windows');
+await run(
    [
       'cmd.exe',
       '/d',
@@ -96,19 +97,19 @@ const compiler = Bun.spawn(
       '/c',
       `call "${developerShell}" -no_logo -arch=x64 -host_arch=x64 && cl.exe ${compilerArguments.map(quoteCommandArgument).join(' ')}`
    ],
-   {
-      cwd: appPath,
-      stdout: 'inherit',
-      stderr: 'inherit',
-      windowsVerbatimArguments: true
-   }
+   { windowsVerbatimArguments: true }
 );
-const compilerExitCode = await compiler.exited;
-if (compilerExitCode !== 0) throw new Error(`cmd.exe exited with code ${compilerExitCode}`);
 
 async function commandExists(command: string) {
-   const process = Bun.spawn(['where.exe', command], { stdout: 'ignore', stderr: 'ignore' });
-   return (await process.exited) === 0;
+   const lookup = process.platform === 'win32' ? ['where.exe', command] : ['sh', '-c', 'command -v -- "$1"', 'sh', command];
+   return (await exitCode(lookup, { stdio: 'ignore' })) === 0;
+}
+
+async function fileExists(path: string) {
+   return access(path).then(
+      () => true,
+      () => false
+   );
 }
 
 function quoteCommandArgument(argument: string) {
@@ -116,15 +117,43 @@ function quoteCommandArgument(argument: string) {
 }
 
 async function capture(command: string[]) {
-   const process = Bun.spawn(command, { stdout: 'pipe', stderr: 'inherit' });
-   const output = await new Response(process.stdout).text();
-   const exitCode = await process.exited;
-   if (exitCode !== 0) throw new Error(`${command[0]} exited with code ${exitCode}`);
+   const [executable, ...arguments_] = command;
+   if (!executable) throw new Error('cannot run an empty command');
+
+   const child = spawn(executable, arguments_, { stdio: ['ignore', 'pipe', 'inherit'] });
+   child.stdout.setEncoding('utf8');
+
+   let output = '';
+   child.stdout.on('data', (chunk: string) => {
+      output += chunk;
+   });
+
+   const code = await waitForExit(child, executable);
+   if (code !== 0) throw new Error(`${executable} exited with code ${code}`);
    return output;
 }
 
-async function run(command: string[]) {
-   const process = Bun.spawn(command, { cwd: appPath, stdout: 'inherit', stderr: 'inherit' });
-   const exitCode = await process.exited;
-   if (exitCode !== 0) throw new Error(`${command[0]} exited with code ${exitCode}`);
+async function run(command: string[], options: Pick<SpawnOptions, 'windowsVerbatimArguments'> = {}) {
+   const code = await exitCode(command, {
+      cwd: appPath,
+      stdio: 'inherit',
+      ...options
+   });
+   if (code !== 0) throw new Error(`${command[0]} exited with code ${code}`);
+}
+
+async function exitCode(command: string[], options: SpawnOptions) {
+   const [executable, ...arguments_] = command;
+   if (!executable) throw new Error('cannot run an empty command');
+   return waitForExit(spawn(executable, arguments_, options), executable);
+}
+
+function waitForExit(child: ReturnType<typeof spawn>, executable: string) {
+   return new Promise<number>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code, signal) => {
+         if (code !== null) resolve(code);
+         else reject(new Error(`${executable} exited from signal ${signal}`));
+      });
+   });
 }

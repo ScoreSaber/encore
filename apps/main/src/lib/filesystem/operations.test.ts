@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 import { z } from 'zod';
 
 import { readJsonFile, writeJsonFileAtomic } from '@/lib/filesystem/json';
@@ -6,7 +7,6 @@ import { copyPathWithProgress, deletePathWithProgress, movePathWithProgress } fr
 import { pathExists, readPathInfo } from '@/lib/filesystem/path';
 import { createMemoryWriteAuditLog } from '@/lib/filesystem/write-audit';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { writeFileSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -392,5 +392,6 @@ async function createTestSymlink(target: string, path: string, type?: 'dir' | 'f
 }
 
 function isSymlinkPrivilegeError(cause: unknown) {
-   return cause instanceof Error && 'code' in cause && typeof cause.code === 'string' && (cause.code === 'EPERM' || cause.code === 'EACCES');
+   const parsed = z.object({ code: z.enum(['EPERM', 'EACCES']) }).safeParse(cause);
+   return parsed.success;
 }

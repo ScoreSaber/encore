@@ -18,7 +18,10 @@ export function createAppIpcModule() {
 
          return { status: decision.allowed ? 'opened' : 'blocked' };
       },
-      quit: () => app.quit()
+      quit: () => {
+         app.quit();
+         return undefined;
+      }
    });
 }
 

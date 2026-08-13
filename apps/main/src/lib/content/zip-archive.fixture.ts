@@ -1,4 +1,5 @@
-import { zipSync, type Zippable } from 'fflate';
+import { zipSync, type Zippable, type ZipOptions } from 'fflate';
+import { z } from 'zod';
 
 export type ZipFixtureEntry = {
    name: string;
@@ -23,14 +24,19 @@ export function buildZipArchive(entries: readonly ZipFixtureEntry[]) {
    const files: Zippable = {};
 
    for (const entry of entries) {
-      files[entry.name] = [
-         typeof entry.data === 'string' ? new TextEncoder().encode(entry.data) : (entry.data ?? new Uint8Array(0)),
-         {
-            level: entry.deflate ? 6 : 0,
-            ...(entry.unixMode === undefined ? {} : { os: unixHostSystem, attrs: (entry.unixMode << 16) >>> 0 }),
-            ...(entry.msdosAttributes === undefined ? {} : { attrs: entry.msdosAttributes })
-         }
-      ];
+      const options: ZipOptions = { level: entry.deflate ? 6 : 0 };
+      if (entry.unixMode !== undefined) {
+         options.os = unixHostSystem;
+         options.attrs = (entry.unixMode << 16) >>> 0;
+      }
+      if (entry.msdosAttributes !== undefined) options.attrs = entry.msdosAttributes;
+
+      const payload = z
+         .union([z.string().transform((text) => new TextEncoder().encode(text)), z.instanceof(Uint8Array)])
+         .optional()
+         .default(new Uint8Array(0))
+         .parse(entry.data);
+      files[entry.name] = [payload, options];
    }
 
    return Buffer.from(zipSync(files));
@@ -57,7 +63,9 @@ export function corruptZipEntryData(archive: Buffer, marker: string) {
    const offset = corrupted.indexOf(marker, 0, 'utf8');
    if (offset === -1) throw new Error(`zip fixture does not hold ${marker}`);
 
-   corrupted[offset] = corrupted[offset]! ^ 0xff;
+   const byte = corrupted[offset];
+   if (byte === undefined) throw new Error(`zip fixture marker ${marker} was empty`);
+   corrupted[offset] = byte ^ 0xff;
    return corrupted;
 }
 

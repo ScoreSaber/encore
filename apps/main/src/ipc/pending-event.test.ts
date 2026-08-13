@@ -1,6 +1,6 @@
-import { createPendingIpcEvent } from '@/ipc/pending-event';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { createPendingIpcEvent } from '@/ipc/pending-event';
 
 describe('pending IPC events', () => {
    test('retains an event opened before the renderer subscribes', () => {

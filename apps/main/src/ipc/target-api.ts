@@ -1,8 +1,7 @@
 import type { IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 
-import type { IpcEventDefinition, IpcRequestDefinition } from '@/ipc/core';
-import type { IpcMainModule } from '@/ipc/main';
+import { ipcTransportValueSchema, type IpcEventDefinition, type IpcRequestDefinition, type IpcTransportValue } from '@/ipc/core';
 import {
    hasSnapshotStream,
    type DomainApi,
@@ -15,7 +14,7 @@ import {
    TargetProcedure,
    TargetSnapshot
 } from '@/lib/api';
-import { localTargetId, targetIdSchema, type TargetId } from '@/modules/targets/contract';
+import { localTargetId, targetIdSchema } from '@/modules/targets/contract';
 
 type TargetIpcProcedure<Procedure extends TargetProcedure> = IpcRequestDefinition<
    TargetCallResult<ProcedureOutput<Procedure>>,
@@ -27,7 +26,8 @@ type TargetIpcDescriptor<Api extends DomainApi> = {
    [Method in keyof Api['procedures']]: TargetIpcProcedure<Api['procedures'][Method]>;
 } & (Api extends { snapshot: z.ZodType } ? { onSnapshot: IpcEventDefinition<TargetSnapshot<SnapshotOutput<Api>>> } : Record<never, never>);
 
-export function createTargetIpcDescriptor<Api extends DomainApi>(api: Api) {
+export function createTargetIpcDescriptor<Api extends DomainApi>(api: Api): TargetIpcDescriptor<Api>;
+export function createTargetIpcDescriptor(api: DomainApi) {
    const descriptor: Record<string, IpcRequestDefinition | IpcEventDefinition> = Object.fromEntries(
       Object.entries(api.procedures).map(([method, procedure]) => [
          method,
@@ -40,12 +40,12 @@ export function createTargetIpcDescriptor<Api extends DomainApi>(api: Api) {
    );
    if (api.snapshot) descriptor.onSnapshot = { kind: 'event', channel: `${api.namespace}:snapshot` };
 
-   return descriptor as TargetIpcDescriptor<Api>;
+   return descriptor;
 }
 
-export type RemoteSnapshotSubscriber = <Api extends DomainApi & { snapshot: z.ZodType }>(
-   api: Api,
-   listener: (event: TargetSnapshot<SnapshotOutput<Api>>) => void
+export type RemoteSnapshotSubscriber = <Snapshot extends z.ZodType>(
+   api: { namespace: string; snapshot: Snapshot },
+   listener: (event: TargetSnapshot<z.output<Snapshot>>) => void
 ) => () => void;
 
 type SnapshotBroadcaster = <Snapshot>(definition: IpcEventDefinition<TargetSnapshot<Snapshot>>, snapshot: TargetSnapshot<Snapshot>) => void;
@@ -65,19 +65,29 @@ function forwardSnapshots(module: TargetApiModule, subscribeRemote: RemoteSnapsh
    if (!hasSnapshotStream(module)) return;
 
    const event = createTargetIpcDescriptor(module.api).onSnapshot;
-   const subscribe = module.subscribe as (listener: (snapshot: unknown) => void) => () => void;
-   subscribe((snapshot) => broadcast(event, { targetId: localTargetId, snapshot }));
+   module.subscribeJson((snapshot) => broadcast(event, { targetId: localTargetId, snapshot }));
    subscribeRemote(module.api, (snapshot) => broadcast(event, snapshot));
 }
 
 function createErasedTargetIpcModule(local: TargetApiModule, dispatch: TargetDispatcher) {
    const descriptor: Record<string, IpcRequestDefinition> = createTargetIpcDescriptor(local.api);
+   const invokeDispatch = z
+      .function({
+         input: [z.custom<TargetApiModule>(), z.string(), targetIdSchema, z.record(z.string(), ipcTransportValueSchema)]
+      })
+      .parse(dispatch);
 
-   return Object.keys(local.api.procedures).map((method) => [
-      descriptor[method],
-      (_event: IpcMainInvokeEvent, call: { targetId: TargetId } & object) => {
-         const { targetId, ...input } = call;
-         return Reflect.apply(dispatch, undefined, [local, method, targetId, input]);
-      }
-   ]) as IpcMainModule;
+   return Object.keys(local.api.procedures).map((method) => {
+      const definition = descriptor[method];
+      if (!definition) throw new Error(`Unknown target IPC procedure: ${local.api.namespace}.${method}`);
+
+      return {
+         definition,
+         handler: async (_event: IpcMainInvokeEvent, ...args: IpcTransportValue[]) => {
+            const call = z.object({ targetId: targetIdSchema }).loose().parse(args[0]);
+            const { targetId, ...input } = call;
+            return ipcTransportValueSchema.parse(await invokeDispatch(local, method, targetId, input));
+         }
+      };
+   });
 }

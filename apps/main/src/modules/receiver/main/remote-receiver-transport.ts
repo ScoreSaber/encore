@@ -1,5 +1,5 @@
 import { Result } from 'better-result';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { causeFailure } from '@/lib/errors';
 import { receiverIpv4AddressSchema } from '@/modules/receiver/main/lan';
@@ -14,8 +14,8 @@ import {
 
 import { createReadStream } from 'node:fs';
 import { request as httpsRequest, type RequestOptions } from 'node:https';
-import type { Readable } from 'node:stream';
-import { connect as tlsConnect } from 'node:tls';
+import { Readable } from 'node:stream';
+import { connect as connectTls, TLSSocket, type PeerCertificate } from 'node:tls';
 
 export const defaultReceiverPort = 38_567;
 export const requestTimeoutMs = 8_000;
@@ -26,6 +26,12 @@ const maxReconnectDelayMs = 30_000;
 const maxResponseBytes = 8 * 1_024 * 1_024;
 const maxStreamBufferCharacters = 4 * 1_024 * 1_024;
 const uploadTimeoutMs = 5 * 60 * 1_000;
+const connectReceiverSocket = z
+   .function({
+      input: [z.object({ host: z.string(), port: z.number(), rejectUnauthorized: z.boolean() })],
+      output: z.instanceof(TLSSocket)
+   })
+   .parse(connectTls);
 
 export type ReceiverEndpoint = {
    host: string;
@@ -33,6 +39,10 @@ export type ReceiverEndpoint = {
    certificatePem: string;
    fingerprint: string;
 };
+
+interface ReceiverHeaders {
+   [name: string]: string;
+}
 
 export type ReceiverTransportFailure = {
    kind: 'network' | 'auth' | 'protocol' | 'identity' | 'invalid';
@@ -111,7 +121,8 @@ function readReceiverCertificate(address: { host: string; port: number }) {
    return Result.tryPromise({
       try: () =>
          new Promise<{ certificatePem: string; fingerprint: string }>((resolve, reject) => {
-            const socket = tlsConnect({ host: address.host, port: address.port, rejectUnauthorized: false }, () => {
+            const socket = connectReceiverSocket({ ...address, rejectUnauthorized: false });
+            socket.once('secureConnect', () => {
                const certificate = socket.getPeerX509Certificate();
                socket.end();
 
@@ -151,7 +162,7 @@ export async function requestReceiverJson<Schema extends z.ZodType>(input: {
    if (Result.isError(response)) return Result.err(response.error);
 
    const decoded = Result.try({
-      try: (): unknown => (response.value.body.length > 0 ? JSON.parse(response.value.body) : null),
+      try: () => z.json().parse(response.value.body.length > 0 ? JSON.parse(response.value.body) : null),
       catch: (cause): ReceiverTransportFailure => ({
          kind: 'invalid',
          code: 'receiver.remote.response.invalid',
@@ -300,15 +311,21 @@ export function openReceiverEventStream(input: {
          idleTimer = null;
          connectTimer = null;
       };
-      const finish = (outcome: ReceiverStreamStatus | string) => {
+      const finishStatus = (outcome: ReceiverStreamStatus) => {
          if (settled) return;
          settled = true;
          clearAttemptTimers();
          if (active === clientRequest) active = null;
          if (closed) return;
 
-         if (typeof outcome === 'string') scheduleReconnect(outcome);
-         else input.onStatus(outcome);
+         input.onStatus(outcome);
+      };
+      const finishFailure = (message: string) => {
+         if (settled) return;
+         settled = true;
+         clearAttemptTimers();
+         if (active === clientRequest) active = null;
+         if (!closed) scheduleReconnect(message);
       };
       const resetIdleTimer = () => {
          if (idleTimer) clearTimeout(idleTimer);
@@ -317,7 +334,7 @@ export function openReceiverEventStream(input: {
             if (active !== clientRequest) return;
 
             clientRequest.destroy();
-            finish('Receiver stopped sending heartbeats');
+            finishFailure('Receiver stopped sending heartbeats');
          }, idleTimeoutMs);
          idleTimer.unref();
       };
@@ -337,13 +354,13 @@ export function openReceiverEventStream(input: {
 
             if (response.statusCode === 401 || response.statusCode === 403) {
                response.destroy();
-               finish({ type: 'auth-lost', message: 'Receiver rejected the pairing token' });
+               finishStatus({ type: 'auth-lost', message: 'Receiver rejected the pairing token' });
                return;
             }
 
             if (response.statusCode !== 200) {
                response.destroy();
-               finish(`Receiver event stream failed (HTTP ${response.statusCode ?? 0})`);
+               finishFailure(`Receiver event stream failed (HTTP ${response.statusCode ?? 0})`);
                return;
             }
 
@@ -360,7 +377,7 @@ export function openReceiverEventStream(input: {
                if (chunk.length > maxStreamBufferCharacters - buffer.length) {
                   buffer = '';
                   response.destroy();
-                  finish('Receiver event stream frame is too large');
+                  finishFailure('Receiver event stream frame is too large');
                   return;
                }
 
@@ -375,28 +392,28 @@ export function openReceiverEventStream(input: {
                   boundary = buffer.indexOf('\n\n');
                }
             });
-            response.on('end', () => finish('Receiver closed the event stream'));
-            response.on('close', () => finish('Receiver closed the event stream'));
-            response.on('error', (cause) => finish(causeFailure('Receiver event stream failed', cause)));
+            response.on('end', () => finishFailure('Receiver closed the event stream'));
+            response.on('close', () => finishFailure('Receiver closed the event stream'));
+            response.on('error', (cause) => finishFailure(causeFailure('Receiver event stream failed', cause)));
          }
       );
 
       active = clientRequest;
       clientRequest.on('socket', (socket) => {
-         socket.on('close', () => finish('Receiver closed the event stream'));
+         socket.on('close', () => finishFailure('Receiver closed the event stream'));
       });
       clientRequest.on('error', (cause) => {
          if (isIdentityFailure(cause)) {
-            finish({ type: 'identity-changed', message: causeFailure('Receiver identity changed', cause) });
+            finishStatus({ type: 'identity-changed', message: causeFailure('Receiver identity changed', cause) });
             return;
          }
 
-         finish(causeFailure('Receiver event stream failed', cause));
+         finishFailure(causeFailure('Receiver event stream failed', cause));
       });
 
       connectTimer = setTimeout(() => {
          clientRequest.destroy();
-         finish('Receiver did not answer the event stream');
+         finishFailure('Receiver did not answer the event stream');
       }, requestTimeoutMs);
       connectTimer.unref();
 
@@ -420,7 +437,7 @@ function parseStreamFrame(frame: string) {
    if (!dataLine) return null;
 
    const decoded = Result.try({
-      try: (): unknown => JSON.parse(dataLine.slice('data: '.length)),
+      try: () => z.json().parse(JSON.parse(dataLine.slice('data: '.length))),
       catch: () => null
    });
    if (Result.isError(decoded)) return null;
@@ -494,14 +511,14 @@ async function sendRequest(input: { options: RequestOptions; body?: string | Rea
             clientRequest.on('close', () => {
                if (!responseStarted) fail(new Error('Receiver request closed before a response arrived'));
             });
-            if (typeof input.body === 'string' || input.body === undefined) {
-               clientRequest.end(input.body);
-            } else {
+            if (input.body instanceof Readable) {
                input.body.on('error', (cause) => {
                   fail(cause);
                   clientRequest.destroy();
                });
                input.body.pipe(clientRequest);
+            } else {
+               clientRequest.end(input.body);
             }
          }),
       catch: (cause): ReceiverTransportFailure =>
@@ -519,13 +536,11 @@ async function sendRequest(input: { options: RequestOptions; body?: string | Rea
    });
 }
 
-function pinnedRequestOptions(
-   endpoint: ReceiverEndpoint,
-   path: string,
-   method: 'GET' | 'POST',
-   token: string | null | undefined,
-   hasBody: boolean
-): RequestOptions {
+function pinnedRequestOptions(endpoint: ReceiverEndpoint, path: string, method: 'GET' | 'POST', token: string | null | undefined, hasBody: boolean) {
+   const headers = baseHeaders();
+   if (hasBody) headers['Content-Type'] = 'application/json';
+   if (token) headers.Authorization = `Bearer ${token}`;
+
    return {
       host: endpoint.host,
       port: endpoint.port,
@@ -533,17 +548,13 @@ function pinnedRequestOptions(
       method,
       agent: false,
       ca: [endpoint.certificatePem],
-      checkServerIdentity: (_host, peer) =>
+      checkServerIdentity: (_host: string, peer: PeerCertificate) =>
          peer.fingerprint256 === endpoint.fingerprint ? undefined : new Error('receiver certificate fingerprint does not match'),
-      headers: {
-         ...baseHeaders(),
-         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-         ...(token ? { Authorization: `Bearer ${token}` } : {})
-      }
+      headers
    };
 }
 
-function baseHeaders() {
+function baseHeaders(): ReceiverHeaders {
    return {
       Accept: 'application/json',
       [receiverProtocolVersionHeader]: String(receiverProtocolVersion)
@@ -553,6 +564,7 @@ function baseHeaders() {
 function isIdentityFailure(cause: unknown) {
    if (!(cause instanceof Error)) return false;
 
-   const code = 'code' in cause && typeof cause.code === 'string' ? cause.code : '';
+   const parsed = z.object({ code: z.string() }).safeParse(cause);
+   const code = parsed.success ? parsed.data.code : '';
    return cause.message.includes('fingerprint does not match') || code.startsWith('ERR_TLS') || code.includes('CERT');
 }

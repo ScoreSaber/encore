@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
@@ -8,7 +9,6 @@ import type { SharedConnectRequest, SharedContentActionRequest } from '@/modules
 import { createSharedContentService } from '@/modules/shared-content/main/shared-content-service';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,7 +39,8 @@ describe('shared content service', () => {
       });
       expect(preview).toMatchObject({ status: 'ok', contents: 'copy' });
       if (preview.status !== 'ok') return;
-      expect(preview.warnings).toEqual(expect.arrayContaining(['move-blocked', 'shared-kept']));
+      expect(preview.warnings).toContain('move-blocked');
+      expect(preview.warnings).toContain('shared-kept');
 
       await harness.run({ folderId: 'playlists', action: 'unlink', contents: 'move' });
 
@@ -82,8 +83,9 @@ describe('shared content service', () => {
       });
       await harness.run({ folderId: 'user-data', action: 'link' });
 
-      expect(preview).toMatchObject({ status: 'ok', warnings: expect.arrayContaining(['risky-folder']) });
+      expect(preview).toMatchObject({ status: 'ok' });
       if (preview.status !== 'ok') return;
+      expect(preview.warnings).toContain('risky-folder');
       expect(await readdir(preview.backupPath ?? '')).toEqual(['settings.json']);
       expect(await readdir(join(harness.sharedRoot, 'UserData'))).toEqual(['settings.json']);
    });
@@ -161,7 +163,7 @@ describe('shared content service', () => {
       const preview = await harness.shared.previewConnect({ installId: install.id, action: 'connect' });
       expect(preview).toMatchObject({ status: 'ok', action: 'connect', contents: 'move' });
       if (preview.status !== 'ok') return;
-      expect(preview.warnings).toEqual(expect.arrayContaining(['creates-shared-folder']));
+      expect(preview.warnings).toContain('creates-shared-folder');
       expect(preview.folders.find((folder) => folder.id === 'playlists')).toMatchObject({ step: 'link' });
       expect(preview.folders.find((folder) => folder.id === 'user-data')).toMatchObject({ step: 'skip', risky: true });
 

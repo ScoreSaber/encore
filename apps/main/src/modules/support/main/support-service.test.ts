@@ -1,9 +1,10 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { defineApiHandlers, type TargetDispatcher } from '@/lib/api';
 import { supportApi } from '@/modules/support/api';
 import { createSupportLogService } from '@/modules/support/main/support-logs';
 import { createSupportService } from '@/modules/support/main/support-service';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,7 +71,7 @@ describe('support diagnostics', () => {
 
       const bundle = await support.buildDiagnostics({ targetId: 'local' });
 
-      expect(bundle.fileName).toEndWith('.md');
+      expect(bundle.fileName.endsWith('.md')).toBe(true);
       expect(bundle.logs.map((log) => log.fileId)).toEqual(['1.40.0 / latest.log', '1.29.1 / second.log', '1.40.0 / third.log']);
       expect(bundle.text).toContain('# Encore diagnostics');
       expect(bundle.text).toContain('latest.log start');

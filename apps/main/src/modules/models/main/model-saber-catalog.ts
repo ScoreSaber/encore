@@ -51,14 +51,15 @@ export function createModelSaberCatalog(options: { fetchJson?: JsonDocumentFetch
 
    async function search(input: { type: ModelType; query: string; page: number; signal?: AbortSignal }) {
       const start = input.page * searchPageSize;
-      const url = buildUrl({
+      const query: CatalogQuery = {
          type: input.type,
          start,
          end: start + searchPageSize,
          sort: 'date',
-         sortDirection: 'desc',
-         ...(input.query.trim() ? { filter: input.query.trim() } : {})
-      });
+         sortDirection: 'desc'
+      };
+      if (input.query.trim()) query.filter = input.query.trim();
+      const url = buildUrl(query);
 
       const fetched = await readJson(url, input.signal);
       if (Result.isError(fetched)) return Result.err<ModelSaberRecord[], ModelSaberProblem>(fetched.error);
@@ -119,7 +120,9 @@ function buildUrl(query: CatalogQuery) {
 function toModelSaberProblem(problem: JsonDocumentProblem): ModelSaberProblem {
    const failed = problem.code === 'json.unreachable' || problem.code === 'json.fetch-failed' || problem.code === 'json.not-found';
 
-   return { issue: failed ? 'fetch-failed' : 'invalid-response', ...(problem.detail ? { detail: problem.detail } : {}) };
+   const catalogProblem: ModelSaberProblem = { issue: failed ? 'fetch-failed' : 'invalid-response' };
+   if (problem.detail) catalogProblem.detail = problem.detail;
+   return catalogProblem;
 }
 
 function toRecord(document: ModelSaberDocument): ModelSaberRecord | null {

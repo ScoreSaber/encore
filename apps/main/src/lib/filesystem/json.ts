@@ -1,5 +1,5 @@
 import { Result } from 'better-result';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { createFilesystemProblem, createTempPath, resolveFilesystemPath, resolveManagedPath, type FilesystemProblem } from '@/lib/filesystem/path';
 import { createWriteAuditEntry, finishWriteAuditEntry, type WriteAuditSink } from '@/lib/filesystem/write-audit';
@@ -36,7 +36,7 @@ export async function readJsonFile<T>(jsonPath: string, schema: z.ZodType<T>, op
    }
 
    const jsonResult = Result.try({
-      try: (): unknown => JSON.parse(readResult.value),
+      try: () => z.json().parse(JSON.parse(readResult.value)),
       catch: (cause) => createFilesystemProblem('filesystem.json.invalid', 'JSON file contains invalid syntax', normalizedPath, cause)
    });
 

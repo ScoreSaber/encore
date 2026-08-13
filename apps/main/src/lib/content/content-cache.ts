@@ -53,7 +53,7 @@ export function createPersistentCache<Value>(options: PersistentCacheOptions<Val
       if (entry.correlation === correlation) return entry.value;
 
       entries.delete(key);
-      void save();
+      await save();
       return null;
    }
 

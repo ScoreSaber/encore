@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { createContentScanCache } from '@/lib/content/content-cache';
-import { downloadContent, type ContentFetch } from '@/lib/content/content-download';
+import { downloadContent, type ContentFetch, type DownloadContentOptions } from '@/lib/content/content-download';
 import { createContentFailure, createOperationFailure } from '@/lib/content/content-errors';
 import { createContentEvents } from '@/lib/content/content-events';
 import type { ContentLimits } from '@/lib/content/content-limits';
@@ -49,7 +49,7 @@ import { exportPlaylists, writePlaylistFile } from '@/modules/playlists/main/pla
 import { readFile, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 
-const actionIssueMessages: Record<PlaylistActionIssue, string> = {
+const actionIssueMessages = {
    'install-not-found': 'the install is not in the registry anymore',
    'inspect-failed': 'the playlist could not be inspected',
    'invalid-source': 'that address does not point at a playlist',
@@ -397,14 +397,15 @@ export function createPlaylistService(options: PlaylistServiceOptions) {
       }
 
       try {
-         const downloaded = await downloadContent({
+         const downloadOptions: DownloadContentOptions = {
             url: request.url,
             destinationPath: join(area.value.path, 'playlist.json'),
             limits: playlistContentLimits,
             signal,
-            ...(options.fetchContent ? { fetchContent: options.fetchContent } : {}),
             onProgress: (progress) => options.operations.update(operationId, { progress })
-         });
+         };
+         if (options.fetchContent) downloadOptions.fetchContent = options.fetchContent;
+         const downloaded = await downloadContent(downloadOptions);
          if (Result.isError(downloaded)) {
             options.operations.fail(operationId, {
                code: downloaded.error.code,

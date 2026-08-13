@@ -80,17 +80,16 @@ export function createVersionCatalog(options: VersionCatalogOptions) {
          source: 'remote',
          sourceUrl,
          updatedAt,
-         versions,
-         ...(Result.isError(written)
-            ? {
-                 problem: {
-                    code: 'downloads.catalog.write-failed',
-                    message: 'the Beat Saber version list could not be cached',
-                    ...(written.error.detail ? { detail: written.error.detail } : {})
-                 }
-              }
-            : {})
+         versions
       };
+      if (Result.isError(written)) {
+         const problem: DownloadCatalogProblem = {
+            code: 'downloads.catalog.write-failed',
+            message: 'the Beat Saber version list could not be cached'
+         };
+         if (written.error.detail) problem.detail = written.error.detail;
+         snapshot.problem = problem;
+      }
 
       return snapshot;
    }

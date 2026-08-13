@@ -21,7 +21,7 @@ type OperationRecord = {
    cancel?: OperationCancelHandler;
 };
 
-type CreateOperationInput = {
+export type CreateOperationInput = {
    id?: OperationId;
    kind: OperationKind;
    title: string;

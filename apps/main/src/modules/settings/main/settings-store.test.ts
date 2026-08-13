@@ -1,7 +1,8 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { createDefaultAppSettings, createDefaultLibrarySettings } from '@/modules/settings/contract';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

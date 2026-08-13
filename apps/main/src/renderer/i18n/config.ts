@@ -6,7 +6,7 @@ export type Locale = z.infer<typeof localeSchema>;
 export const defaultLocale: Locale = 'en';
 export const LOCALE_STORAGE_KEY = 'locale';
 
-export const localeNames: Record<Locale, string> = {
+export const localeNames = {
    en: 'English'
 };
 

@@ -23,7 +23,7 @@ export function createRemoteTargetStore(options: { settingsStore: SettingsStore;
    }
 
    async function saveRecord(record: RemoteTargetRecord) {
-      return options.settingsStore.updateAppSettings((current) => ({
+      return options.settingsStore.updateAppSettingsWith((current) => ({
          receiver: { remoteTargets: [...current.receiver.remoteTargets.filter((candidate) => candidate.id !== record.id), record] }
       }));
    }
@@ -32,7 +32,7 @@ export function createRemoteTargetStore(options: { settingsStore: SettingsStore;
       memoryTokens.delete(targetId);
       await options.secretStore.remove(`${tokenKeyPrefix}${targetId}`);
 
-      return options.settingsStore.updateAppSettings((current) => ({
+      return options.settingsStore.updateAppSettingsWith((current) => ({
          receiver: { remoteTargets: current.receiver.remoteTargets.filter((candidate) => candidate.id !== targetId) }
       }));
    }

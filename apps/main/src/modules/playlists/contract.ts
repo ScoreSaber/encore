@@ -187,12 +187,9 @@ export function parsePlaylistLink(value: string): PlaylistLinkParse {
 }
 
 export function invalidPlaylistAction(request: PlaylistCollectionRequest, issue: PlaylistActionIssue, detail?: string): PlaylistActionProblem {
-   return {
-      status: 'invalid',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: PlaylistActionProblem = { status: 'invalid', installId: request.installId, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function createEmptyPlaylistCollectionSnapshot(

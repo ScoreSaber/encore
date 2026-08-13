@@ -379,7 +379,7 @@ function configureSecurityHeaders() {
 
 function createMainWindow() {
    const rendererPath = join(currentDir, '../renderer/index.html');
-   const rendererUrl = is.dev && process.env.ELECTRON_RENDERER_URL ? process.env.ELECTRON_RENDERER_URL : pathToFileURL(rendererPath).toString();
+   const rendererUrl = is.dev && process.env.VITE_DEV_SERVER_URL ? process.env.VITE_DEV_SERVER_URL : pathToFileURL(rendererPath).toString();
    const mainWindow = new BrowserWindow({
       width: 1236,
       height: 818,
@@ -424,8 +424,8 @@ function createMainWindow() {
       handleExternalNavigation(url);
    });
 
-   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
-      void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
+   if (is.dev && process.env.VITE_DEV_SERVER_URL) {
+      void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
    } else {
       void mainWindow.loadFile(rendererPath);
    }

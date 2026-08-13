@@ -88,7 +88,13 @@ export function useSupport(request: SupportRequest) {
       async (id: SupportLinkId) => {
          const result = await api.openLink({ id }).catch(() => null);
 
-         setNotice(result?.status === 'opened' ? null : { code: 'blocked', ...(result?.reason ? { detail: result.reason } : {}) });
+         if (result?.status === 'opened') {
+            setNotice(null);
+         } else {
+            const notice: SupportNotice = { code: 'blocked' };
+            if (result?.reason) notice.detail = result.reason;
+            setNotice(notice);
+         }
       },
       [api]
    );
@@ -122,7 +128,9 @@ export function useSupport(request: SupportRequest) {
          return;
       }
 
-      setNotice({ code: 'failed', ...(result?.message ? { detail: result.message } : {}) });
+      const notice: SupportNotice = { code: 'failed' };
+      if (result?.message) notice.detail = result.message;
+      setNotice(notice);
    }, [api, logActionStatus, selection, targetId]);
 
    const selectLog = useCallback((next: SupportLogSelection) => {

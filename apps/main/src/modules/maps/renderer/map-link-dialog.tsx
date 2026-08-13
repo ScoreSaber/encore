@@ -5,9 +5,9 @@ import { ContentLinkDialog } from '@/components/content/content-link-dialog';
 import type { MapLinkIssue } from '@/modules/maps/contract';
 import { useMapLink } from '@/modules/maps/renderer/use-map-link';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<MapLinkIssue, MessageKey<'maps.link.issues'>> = {
+const issueKeys: MessageKeyMap<MapLinkIssue, 'maps.link.issues'> = {
    'invalid-key': 'invalidKey',
    'unsupported-link': 'unsupportedLink'
 };

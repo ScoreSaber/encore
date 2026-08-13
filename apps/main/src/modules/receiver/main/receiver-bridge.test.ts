@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { defineApiHandlers } from '@/lib/api';
 import type { ContentFetch } from '@/lib/content/content-download';
@@ -32,7 +33,6 @@ import {
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import { createTargetRegistry } from '@/modules/targets/main/target-registry';
 
-import { afterEach, describe, expect, setDefaultTimeout, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { request as httpsRequest } from 'node:https';
@@ -42,8 +42,6 @@ import { join } from 'node:path';
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
 const cleanups: (() => Promise<void>)[] = [];
-
-setDefaultTimeout(20_000);
 
 afterEach(async () => {
    for (const cleanup of cleanups.reverse()) {
@@ -204,7 +202,8 @@ describe('receiver bridge', () => {
    test('surfaces auth loss once the receiver revokes the device', async () => {
       const harness = await createHarness();
       const paired = await pair(harness);
-      const device = (await harness.settingsStore.getSnapshot()).app.receiver.pairedDevices[0]!;
+      const device = (await harness.settingsStore.getSnapshot()).app.receiver.pairedDevices[0];
+      if (!device) throw new Error('receiver device was not paired');
 
       const revoked = await harness.server.revokeDevice(device.id);
       const health = await paired.client.getHealth(paired.targetId);
@@ -221,7 +220,8 @@ describe('receiver bridge', () => {
       const paired = await pair(harness);
       paired.client.dispose();
 
-      const record = (await harness.remoteStore.listRecords())[0]!;
+      const record = (await harness.remoteStore.listRecords())[0];
+      if (!record) throw new Error('remote receiver record was not stored');
       const other = await createHarness();
       const otherIdentity = await probeReceiverIdentity({
          host: '127.0.0.1',

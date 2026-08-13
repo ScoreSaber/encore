@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import {
-   getProcedure,
    getUpload,
    type ApiMethod,
    type ApiModule,
@@ -46,7 +46,7 @@ export function createTargetRegistry(options: { remote: RemoteReceiverClient }) 
       targetId: TargetId,
       input: ProcedureInput<Api['procedures'][Method]>
    ): Promise<TargetCallResult<ProcedureOutput<Api['procedures'][Method]>>> {
-      const procedure = getProcedure(local.api, method);
+      const procedure = requireProcedure(local.api.procedures[method], local.api.namespace, method);
       if (!supports(targetId, procedure.capability)) {
          return { status: 'unsupported', targetId, capability: procedure.capability };
       }
@@ -55,7 +55,17 @@ export function createTargetRegistry(options: { remote: RemoteReceiverClient }) 
          return { status: 'ok', targetId, value: await local.handlers[method](input) };
       }
 
-      return options.remote.callTarget(targetId, local.api.namespace, method, procedure, input);
+      const remote = await options.remote.callTarget(targetId, local.api.namespace, method, procedure.capability, z.json().parse(input));
+      if (remote.status !== 'ok') return remote;
+
+      const parsed = procedure.output.pipe(z.custom<ProcedureOutput<Api['procedures'][Method]>>()).safeParse(remote.value);
+      return parsed.success
+         ? { status: 'ok', targetId, value: parsed.data }
+         : {
+              status: 'unavailable',
+              targetId,
+              error: { code: 'receiver.remote.response.invalid', message: 'Receiver response did not match the procedure output' }
+           };
    }
 
    async function uploadTarget<Api extends DomainApi, Method extends ApiUploadMethod<Api>>(
@@ -87,4 +97,9 @@ export function createTargetRegistry(options: { remote: RemoteReceiverClient }) 
       uploadTarget,
       subscribe
    };
+}
+
+function requireProcedure<Procedure>(procedure: Procedure | undefined, namespace: string, method: string): Procedure {
+   if (!procedure) throw new Error(`Unknown API procedure: ${namespace}.${method}`);
+   return procedure;
 }

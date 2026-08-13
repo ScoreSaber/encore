@@ -1,6 +1,6 @@
-import { parsePlaylistLink } from '@/modules/playlists/contract';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { parsePlaylistLink } from '@/modules/playlists/contract';
 
 describe('playlist links', () => {
    test('accepts wrapped https playlists and rejects every other source', () => {

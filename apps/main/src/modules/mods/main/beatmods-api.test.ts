@@ -1,8 +1,7 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import { beatModsVersionSchema, createBeatModsApi } from '@/modules/mods/main/beatmods-api';
-
-import { describe, expect, test } from 'bun:test';
 
 describe('BeatMods API', () => {
    test('validates MD5 fields with the shared digest schema', () => {

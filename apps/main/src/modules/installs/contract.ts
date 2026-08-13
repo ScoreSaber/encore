@@ -173,12 +173,9 @@ export type InstallOpenFolderResult = { status: 'opened' } | { status: 'unsuppor
 export type InstallLocationChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; path: string };
 
 export function invalidInstallAction(request: { installId: InstallId }, issue: InstallActionIssue, detail?: string): InstallActionProblem {
-   return {
-      status: 'invalid',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: InstallActionProblem = { status: 'invalid', installId: request.installId, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export type InstallRootIssue = 'empty' | 'inspect-failed' | 'not-a-directory' | 'not-absolute' | 'not-writable' | 'parent-missing' | 'unchanged';

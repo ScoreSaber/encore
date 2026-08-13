@@ -1,9 +1,9 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { BeatModsApi, BeatModsEntry, BeatModsProblem } from '@/modules/mods/main/beatmods-api';
 import { createModCatalogService, type ModCatalogRequest } from '@/modules/mods/main/mod-catalog';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

@@ -29,7 +29,7 @@ type ScanStatesInput<Snapshot, CacheEntry, Extra> = {
 type InitializingScan<Snapshot> = {
    installPath: string;
    promise: Promise<Snapshot>;
-   token: object;
+   token: symbol;
 };
 
 export function createScanStates<Snapshot extends { status: ContentScanStatus }, CacheEntry, Extra>(
@@ -53,7 +53,7 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
       const pending = initializing.get(installId);
       if (pending?.installPath === installPath) return pending.promise;
 
-      const token = {};
+      const token = Symbol();
       let entry: InitializingScan<Snapshot>;
       const started = initialize(installId, installPath, token).finally(() => {
          if (initializing.get(installId) === entry) initializing.delete(installId);
@@ -78,7 +78,7 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
       return scanResolved(installId, installPath, existing ?? null, false);
    }
 
-   async function initialize(installId: InstallId, installPath: string, token: object): Promise<Snapshot> {
+   async function initialize(installId: InstallId, installPath: string, token: symbol): Promise<Snapshot> {
       const persisted = await input.cache.load(installId, installPath);
       if (initializing.get(installId)?.token !== token) return list(installId);
       if (!persisted) return scanResolved(installId, installPath, null, false);
@@ -115,7 +115,7 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
             background && reusable
                ? reusable.snapshot
                : { ...(reusable?.snapshot ?? input.emptySnapshot(installId, 'scanning')), status: 'scanning' },
-         cache: reusable?.cache ?? new Map(),
+         cache: reusable?.cache ?? new Map<string, CacheEntry>(),
          pending: null,
          extra: reusable?.extra ?? input.emptyExtra(),
          refreshedAt: reusable?.refreshedAt ?? 0,
@@ -125,13 +125,13 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
       states.set(installId, state);
       if (!background) input.publish(state.snapshot);
 
-      state.pending = input.runScan({ installId, installPath: state.installPath, state }).then((snapshot) => {
+      state.pending = input.runScan({ installId, installPath: state.installPath, state }).then(async (snapshot) => {
          if (states.get(installId) !== state) return snapshot;
 
          state.snapshot = snapshot;
          state.refreshedAt = Date.now();
          input.publish(snapshot);
-         void input.cache.save(installId, state.installPath, state);
+         await input.cache.save(installId, state.installPath, state);
 
          return snapshot;
       });

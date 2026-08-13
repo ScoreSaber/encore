@@ -86,6 +86,12 @@ type RepositoryState = {
    detail?: string;
 };
 
+function syncFailure(listingUrl: string, issue: ModRepositoryIssue, detail?: string): ModRepositorySyncResult['failures'][number] {
+   const failure: ModRepositorySyncResult['failures'][number] = { listingUrl, issue };
+   if (detail) failure.detail = detail;
+   return failure;
+}
+
 export function createModRepositoryService(options: ModRepositoryServiceOptions) {
    const cachePath = join(options.dataPath, cacheFileName);
    const policyService =
@@ -246,7 +252,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       const failures: ModRepositorySyncResult['failures'] = [];
       const resolution = await setSourceResolution(input.resolution);
       if (resolution.status === 'invalid') {
-         failures.push({ listingUrl: beatModsOrigin, issue: resolution.issue, ...(resolution.detail ? { detail: resolution.detail } : {}) });
+         failures.push(syncFailure(beatModsOrigin, resolution.issue, resolution.detail));
       }
 
       for (const desired of input.official) {
@@ -254,11 +260,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          if (result.status === 'invalid') {
             const listingUrl =
                desired.id === officialModSourceId ? beatModsOrigin : desired.id === scoreSaberModSourceId ? scoreSaberModSourceUrl : desired.id;
-            failures.push({
-               listingUrl,
-               issue: result.issue,
-               ...(result.detail ? { detail: result.detail } : {})
-            });
+            failures.push(syncFailure(listingUrl, result.issue, result.detail));
          }
       }
 
@@ -272,7 +274,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
             : await add({ url: desired.listingUrl, acknowledged: true });
 
          if (result?.status === 'invalid') {
-            failures.push({ listingUrl: desired.listingUrl, issue: result.issue, ...(result.detail ? { detail: result.detail } : {}) });
+            failures.push(syncFailure(desired.listingUrl, result.issue, result.detail));
             continue;
          }
 
@@ -282,7 +284,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
             const disabled = await setEnabled({ id: added.id, enabled: false });
             if (disabled.status === 'invalid') {
-               failures.push({ listingUrl: desired.listingUrl, issue: disabled.issue, ...(disabled.detail ? { detail: disabled.detail } : {}) });
+               failures.push(syncFailure(desired.listingUrl, disabled.issue, disabled.detail));
             }
          }
       }
@@ -301,15 +303,16 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       if (official.scoreSaberEnabled) {
          const state = await loadListing(scoreSaberRepository, { force: false });
          if (!state.cached) {
-            sources.push({
+            const source: ModSourceStatus = {
                id: scoreSaberModSourceId,
                name: scoreSaberModSourceName,
                kind: 'official',
                state: 'unavailable',
                modCount: 0,
-               issue: state.issue ?? 'fetch-failed',
-               ...(state.detail ? { detail: state.detail } : {})
-            });
+               issue: state.issue ?? 'fetch-failed'
+            };
+            if (state.detail) source.detail = state.detail;
+            sources.push(source);
          } else {
             const selected = selectRepositoryEntries(state.cached.listing, request, 'official');
             entries.push(...selected.entries);
@@ -335,15 +338,16 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
          const state = await loadListing(record, { force: false });
          if (!state.cached) {
-            sources.push({
+            const source: ModSourceStatus = {
                id: record.id,
                name: record.name,
                kind: 'unofficial',
                state: 'unavailable',
                modCount: 0,
-               issue: state.issue ?? 'fetch-failed',
-               ...(state.detail ? { detail: state.detail } : {})
-            });
+               issue: state.issue ?? 'fetch-failed'
+            };
+            if (state.detail) source.detail = state.detail;
+            sources.push(source);
             continue;
          }
 
@@ -373,11 +377,8 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       });
 
       if (Result.isError(fetched)) {
-         const next: RepositoryState = {
-            cached: current,
-            issue: fetched.error.issue,
-            ...(fetched.error.detail ? { detail: fetched.error.detail } : {})
-         };
+         const next: RepositoryState = { cached: current, issue: fetched.error.issue };
+         if (fetched.error.detail) next.detail = fetched.error.detail;
          states.set(record.id, next);
 
          return next;
@@ -435,7 +436,9 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
 
    function describeBlock(policy: ModRepositoryPolicySnapshot, record: ModRepositoryRecord): Pick<ModSourceStatus, 'issue' | 'detail'> | null {
       if (policy.state === 'unavailable') {
-         return { issue: 'policy-unavailable', ...(policy.detail ? { detail: policy.detail } : {}) };
+         const block: Pick<ModSourceStatus, 'issue' | 'detail'> = { issue: 'policy-unavailable' };
+         if (policy.detail) block.detail = policy.detail;
+         return block;
       }
 
       const denied = findDenylistEntry(policy.entries, record);
@@ -466,7 +469,7 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
       const state = states.get(record.id);
       const listing = state?.cached?.listing ?? null;
 
-      return {
+      const summary: ModRepositorySummary = {
          id: record.id,
          name: record.name,
          owner: record.owner,
@@ -479,10 +482,12 @@ export function createModRepositoryService(options: ModRepositoryServiceOptions)
          blockedReason: denied?.reason ?? null,
          blockedDetailsUrl: denied?.detailsUrl ?? null,
          packageCount: listing ? listingPackageCount(listing) : null,
-         checkedAt: state?.cached?.fetchedAt ?? null,
-         ...(denied ? { issue: 'denylisted' } : state?.issue ? { issue: state.issue } : {}),
-         ...(state?.detail ? { detail: state.detail } : {})
+         checkedAt: state?.cached?.fetchedAt ?? null
       };
+      if (denied) summary.issue = 'denylisted';
+      else if (state?.issue) summary.issue = state.issue;
+      if (state?.detail) summary.detail = state.detail;
+      return summary;
    }
 
    async function readRecords() {

@@ -1,16 +1,20 @@
-import type { Metadata } from "next";
-import Link from "next/link";
+import { Link, type LinksFunction, type MetaFunction } from "react-router";
+
+import encoreLogoUrl from "../../../../assets/logo.svg?url";
 
 import { HomeFooter } from "@/components/home/sections";
-import encoreLogo from "../../../../../assets/logo.svg";
 
-export const metadata: Metadata = {
-  title: "Privacy policy | Encore",
-  description: "How Encore collects and uses anonymous community telemetry",
-  alternates: {
-    canonical: "/privacy",
+export const links: LinksFunction = () => [
+  { rel: "canonical", href: "https://encore.scoresaber.com/privacy" },
+];
+
+export const meta: MetaFunction = () => [
+  { title: "Privacy policy | Encore" },
+  {
+    name: "description",
+    content: "How Encore collects and uses anonymous community telemetry",
   },
-};
+];
 
 const headingClass = "mt-10 text-xl font-semibold tracking-[-0.025em] text-white first:mt-0";
 const linkClass =
@@ -22,13 +26,13 @@ export default function PrivacyPolicy() {
       <header className="border-b border-white/10 bg-[#05070e]">
         <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-6 sm:px-10">
           <Link
-            className="inline-flex items-center gap-2 text-xl font-medium tracking-[-0.04em] [font-family:var(--font-pixel),ui-monospace,monospace]"
-            href="/"
+            className="inline-flex items-center gap-2 [font-family:var(--font-pixel),ui-monospace,monospace] text-xl font-medium tracking-[-0.04em]"
+            to="/"
           >
-            <img className="size-6" src={encoreLogo.src} width={24} height={24} alt="" />
+            <img className="size-6" src={encoreLogoUrl} width={24} height={24} alt="" />
             <span className="-translate-y-0.5">Encore</span>
           </Link>
-          <Link className="text-sm text-white/50 transition hover:text-white" href="/">
+          <Link className="text-sm text-white/50 transition hover:text-white" to="/">
             Back to Encore
           </Link>
         </div>

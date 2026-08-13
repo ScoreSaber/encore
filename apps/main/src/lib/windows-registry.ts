@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import { causeCode } from '@/lib/errors';
 
@@ -102,10 +103,8 @@ function parseRegistryValue(line: string): RegistryValue | null {
 }
 
 function createRegistryProblem(key: string, cause: unknown): RegistryProblem {
-   const detail =
-      cause && typeof cause === 'object' && 'code' in cause && (typeof cause.code === 'string' || typeof cause.code === 'number')
-         ? `exit-${cause.code}`
-         : causeCode(cause);
+   const exitCode = z.object({ code: z.union([z.string(), z.number()]) }).safeParse(cause);
+   const detail = exitCode.success ? `exit-${exitCode.data.code}` : causeCode(cause);
 
    return {
       code: detail === 'exit-1' ? 'registry.missing' : 'registry.query-failed',

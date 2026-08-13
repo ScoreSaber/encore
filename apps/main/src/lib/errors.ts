@@ -1,15 +1,19 @@
-const namedCauses: Record<string, string> = {
-   AbortError: 'cancelled',
-   TimeoutError: 'timed out'
-};
+import { z } from 'zod';
+
+const namedCauses = new Map([
+   ['AbortError', 'cancelled'],
+   ['TimeoutError', 'timed out']
+]);
+const codedCauseSchema = z.object({ code: z.union([z.string(), z.number()]) });
 
 export function causeMessage(cause: unknown) {
    if (!(cause instanceof Error)) return String(cause);
-   return namedCauses[cause.name] ?? cause.message;
+   return namedCauses.get(cause.name) ?? cause.message;
 }
 
 export function causeCode(cause: unknown) {
-   if (cause && typeof cause === 'object' && 'code' in cause && typeof cause.code === 'string') return cause.code;
+   const coded = codedCauseSchema.safeParse(cause);
+   if (coded.success) return String(coded.data.code);
    return causeMessage(cause);
 }
 

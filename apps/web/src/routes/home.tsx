@@ -1,44 +1,34 @@
-import type { Metadata } from "next";
+import type { LinksFunction, MetaFunction } from "react-router";
+
+import encoreAppUrl from "../../../../assets/encore-app.webp?url";
+import encoreLogoUrl from "../../../../assets/logo.svg?url";
 
 import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
 import { HomeNavigation } from "@/components/home/navigation";
 import { HomeFooter, HomeSections } from "@/components/home/sections";
-import encoreApp from "../../../../assets/encore-app.webp";
-import encoreLogo from "../../../../assets/logo.svg";
 
-export const metadata: Metadata = {
-  alternates: {
-    canonical: "/",
-  },
-  openGraph: {
-    type: "website",
-    url: "/",
-    title: "Encore",
-    images: [
-      {
-        url: "/social-preview.png?v=4",
-        type: "image/png",
-        width: 1200,
-        height: 630,
-        alt: "Encore",
-      },
-    ],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Encore",
-    images: [
-      {
-        url: "/social-preview.png?v=4",
-        type: "image/png",
-        width: 1200,
-        height: 630,
-        alt: "Encore",
-      },
-    ],
-  },
-};
+const socialPreviewUrl = "https://encore.scoresaber.com/social-preview.png?v=4";
+
+export const links: LinksFunction = () => [
+  { rel: "canonical", href: "https://encore.scoresaber.com/" },
+];
+
+export const meta: MetaFunction = () => [
+  { title: "Encore" },
+  { property: "og:type", content: "website" },
+  { property: "og:url", content: "https://encore.scoresaber.com/" },
+  { property: "og:title", content: "Encore" },
+  { property: "og:image", content: socialPreviewUrl },
+  { property: "og:image:type", content: "image/png" },
+  { property: "og:image:width", content: "1200" },
+  { property: "og:image:height", content: "630" },
+  { property: "og:image:alt", content: "Encore" },
+  { name: "twitter:card", content: "summary_large_image" },
+  { name: "twitter:title", content: "Encore" },
+  { name: "twitter:image", content: socialPreviewUrl },
+  { name: "twitter:image:alt", content: "Encore" },
+];
 
 export default function Home() {
   return (
@@ -58,8 +48,8 @@ export default function Home() {
             <div className="flex w-full translate-y-1.5 items-end justify-between pr-4 pl-[clamp(20px,1.875vw,30px)] max-[1100px]:flex-col max-[1100px]:items-center max-[1100px]:px-0 min-[877px]:pl-7.5">
               <div className="relative flex min-w-0 translate-y-1.5 items-center justify-start gap-[clamp(2px,0.35vw,6px)] max-[540px]:flex-col min-[877px]:gap-1.5">
                 <img
-                  className="aspect-square h-auto w-[clamp(96px,9vw,128px)] -translate-y-1.75 shrink-0 shadow-none [filter:none] max-[540px]:w-[76px] min-[877px]:w-32"
-                  src={encoreLogo.src}
+                  className="aspect-square h-auto w-[clamp(96px,9vw,128px)] shrink-0 -translate-y-1.75 shadow-none [filter:none] max-[540px]:w-[76px] min-[877px]:w-32"
+                  src={encoreLogoUrl}
                   width={168}
                   height={168}
                   alt=""
@@ -69,11 +59,11 @@ export default function Home() {
                   <div className="relative inline-block">
                     <h1
                       id="hero-title"
-                      className="m-0 text-[clamp(3.5625rem,5.625vw,5.125rem)] leading-[0.82] font-medium tracking-[-0.055em] [font-family:var(--font-pixel),ui-monospace,monospace] max-[540px]:text-[clamp(3.125rem,17.5vw,4.375rem)] min-[877px]:text-[calc(var(--spacing)*20.5)]"
+                      className="m-0 [font-family:var(--font-pixel),ui-monospace,monospace] text-[clamp(3.5625rem,5.625vw,5.125rem)] leading-[0.82] font-medium tracking-[-0.055em] max-[540px]:text-[clamp(3.125rem,17.5vw,4.375rem)] min-[877px]:text-[calc(var(--spacing)*20.5)]"
                     >
                       Encore
                     </h1>
-                    <p className="absolute right-2 bottom-full m-0 translate-y-3 whitespace-nowrap text-[0.7rem] font-medium tracking-[0.025em] [color:color-mix(in_srgb,var(--foreground)_32%,transparent)] min-[877px]:text-[calc(var(--spacing)*2.8)]">
+                    <p className="absolute right-2 bottom-full m-0 translate-y-3 text-[0.7rem] font-medium tracking-[0.025em] whitespace-nowrap [color:color-mix(in_srgb,var(--foreground)_32%,transparent)] min-[877px]:text-[calc(var(--spacing)*2.8)]">
                       by{" "}
                       <a
                         className="cursor-pointer text-inherit no-underline transition-colors duration-150 hover:text-[#ffde18] focus-visible:text-[#ffde18]"
@@ -85,7 +75,7 @@ export default function Home() {
                       </a>
                     </p>
                   </div>
-                  <p className="mt-[7px] ml-[clamp(4px,0.2vw,5px)] whitespace-nowrap text-[0.82rem] font-medium tracking-[0.02em] [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] max-[540px]:ml-0 max-[540px]:whitespace-normal min-[877px]:mt-1.75 min-[877px]:ml-1.25 min-[877px]:text-[calc(var(--spacing)*3.28)]">
+                  <p className="mt-[7px] ml-[clamp(4px,0.2vw,5px)] text-[0.82rem] font-medium tracking-[0.02em] whitespace-nowrap [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] max-[540px]:ml-0 max-[540px]:whitespace-normal min-[877px]:mt-1.75 min-[877px]:ml-1.25 min-[877px]:text-[calc(var(--spacing)*3.28)]">
                     A modern desktop companion for Beat Saber
                   </p>
                 </div>
@@ -109,7 +99,7 @@ export default function Home() {
                       Open source
                     </a>
                     <a
-                      className="inline-flex min-h-8 w-4.5 items-center justify-center bg-transparent p-0 font-bold no-underline transition-colors [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] hover:text-[var(--foreground)] focus-visible:text-[var(--foreground)]"
+                      className="inline-flex min-h-8 w-4.5 items-center justify-center bg-transparent p-0 font-bold [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] no-underline transition-colors hover:text-[var(--foreground)] focus-visible:text-[var(--foreground)]"
                       href="/docs"
                       aria-label="Documentation"
                     >
@@ -123,7 +113,7 @@ export default function Home() {
             <div className="relative mt-[clamp(16px,1.5vw,24px)] translate-y-[clamp(0px,calc(1rem+(166.667svh_-_100vw)/2.5),calc(6.8svh_+_2rem))] scale-[1.015] max-[876px]:hidden min-[877px]:mt-6">
               <img
                 className="block h-auto w-full [box-shadow:0_28px_64px_-28px_rgba(0,0,0,0.75)]"
-                src={encoreApp.src}
+                src={encoreAppUrl}
                 width={1516}
                 height={979}
                 alt="Encore desktop app"

@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import type { LaunchOptions } from '@/modules/launch/contract';
@@ -11,7 +12,6 @@ import { waitFor, waitForOperation } from '@/modules/operations/main/operation-w
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,13 +41,10 @@ describe('launch service', () => {
       if (!started.ok) return;
 
       expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
-      expect(harness.spawned).toEqual([
-         expect.objectContaining({
-            executablePath: join(install.path, 'Beat Saber.exe'),
-            args: ['--no-yeet', 'fpfc', '--verbose', '--room', 'my room', '--seed', '7'],
-            runAsAdmin: false
-         })
-      ]);
+      expect(harness.spawned).toHaveLength(1);
+      expect(harness.spawned[0]?.executablePath).toBe(join(install.path, 'Beat Saber.exe'));
+      expect(harness.spawned[0]?.args).toEqual(['--no-yeet', 'fpfc', '--verbose', '--room', 'my room', '--seed', '7']);
+      expect(harness.spawned[0]?.runAsAdmin).toBe(false);
       expect((await harness.launch.getState()).lastLaunch).toMatchObject({
          installId: install.id,
          options: { flags: ['fpfc', 'debug'], args: ['--room', 'my room', '--seed', '7'] }

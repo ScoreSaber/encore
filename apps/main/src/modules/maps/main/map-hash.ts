@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import type { MapHash, MapProblem } from '@/modules/maps/contract';
 import type { MapInfo } from '@/modules/maps/main/map-info';
@@ -37,6 +38,6 @@ export async function computeMapHash(input: MapHashInput): Promise<MapResult<Map
 
 async function updateHashFromFile(hash: ReturnType<typeof createHash>, path: string) {
    for await (const chunk of createReadStream(path)) {
-      hash.update(chunk);
+      hash.update(z.instanceof(Uint8Array).parse(chunk));
    }
 }

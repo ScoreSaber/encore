@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { ContentFetch } from '@/lib/content/content-download';
 import { createContentIngestionService } from '@/lib/content/content-ingestion';
@@ -15,7 +16,6 @@ import { waitForOperation } from '@/modules/operations/main/operation-waiting.fi
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

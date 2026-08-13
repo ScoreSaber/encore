@@ -4,7 +4,7 @@
    Referrer-Policy: strict-origin-when-cross-origin
    Permissions-Policy: camera=(), geolocation=(), microphone=()
 
-/_next/static/*
+/assets/*
    Cache-Control: public, max-age=31536000, immutable
 
 /policy/*.json

@@ -1,6 +1,6 @@
-import { createAppPackaging } from '@/packaging';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { createAppPackaging } from '@/packaging';
 
 describe('app packaging policy', () => {
    test('uses self-updates only for formats the updater can install', () => {

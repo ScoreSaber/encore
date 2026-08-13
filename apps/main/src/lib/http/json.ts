@@ -1,5 +1,5 @@
 import { Result } from 'better-result';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import { causeMessage } from '@/lib/errors';
 import { redactUrl, resolveHttpsUrl, type HttpsUrlPolicy } from '@/lib/http/url';
@@ -27,6 +27,8 @@ export type JsonDocumentFetch = (
    init: { signal: AbortSignal; headers: Record<string, string>; redirect?: 'manual' }
 ) => Promise<Response>;
 
+export type JsonValue = z.infer<ReturnType<typeof z.json>>;
+
 export type JsonDocumentRequest = {
    url: string;
    policy?: HttpsUrlPolicy;
@@ -39,11 +41,17 @@ export type JsonDocumentRequest = {
    fetchJson?: JsonDocumentFetch;
 };
 
+type JsonRequestHeaders = {
+   accept: string;
+   'if-none-match'?: string;
+   'if-modified-since'?: string;
+};
+
 export type JsonDocument =
    | {
         status: 'ok';
         url: string;
-        value: unknown;
+        value: JsonValue;
         etag: string | null;
         lastModified: string | null;
      }
@@ -59,11 +67,9 @@ export async function fetchJsonDocument(request: JsonDocumentRequest): Promise<J
    const fetchJson = request.fetchJson ?? ((url, init) => fetch(url, init));
    const first = resolveHttpsUrl(request.url, request.policy);
    if (Result.isError(first)) {
-      return Result.err<JsonDocument, JsonDocumentProblem>({
-         code: 'json.unsupported-url',
-         message: first.error.message,
-         ...(first.error.detail ? { detail: first.error.detail } : {})
-      });
+      const problem: JsonDocumentProblem = { code: 'json.unsupported-url', message: first.error.message };
+      if (first.error.detail) problem.detail = first.error.detail;
+      return Result.err<JsonDocument, JsonDocumentProblem>(problem);
    }
 
    let url = first.value;
@@ -163,18 +169,18 @@ export async function fetchJsonResource<Output>(request: JsonResourceRequest<Out
    const parsed = await readBoundedJson(response.value, request.maxBytes ?? defaultMaxBytes);
    if (Result.isError(parsed)) return Result.err<Output, JsonDocumentProblem>(parsed.error);
 
-   const shaped = request.schema.safeParse(parsed.value);
+   const validated = request.schema.safeParse(parsed.value);
 
-   return shaped.success
-      ? Result.ok<Output, JsonDocumentProblem>(shaped.data)
+   return validated.success
+      ? Result.ok<Output, JsonDocumentProblem>(validated.data)
       : Result.err<Output, JsonDocumentProblem>({
            code: 'json.unexpected-shape',
            message: 'the answer was not the expected shape',
-           detail: shaped.error.message
+           detail: validated.error.message
         });
 }
 
-async function readBoundedJson(response: Response, maxBytes: number): Promise<JsonDocumentResult<unknown>> {
+async function readBoundedJson(response: Response, maxBytes: number): Promise<JsonDocumentResult<z.infer<ReturnType<typeof z.json>>>> {
    const text = await Result.tryPromise({
       try: async () => {
          const body = response.body;
@@ -209,7 +215,7 @@ async function readBoundedJson(response: Response, maxBytes: number): Promise<Js
    if (Result.isError(text)) return text;
 
    return Result.try({
-      try: (): unknown => JSON.parse(text.value),
+      try: () => z.json().parse(JSON.parse(text.value)),
       catch: (cause): JsonDocumentProblem => ({
          code: 'json.invalid',
          message: 'the answer was not valid JSON',
@@ -236,21 +242,18 @@ function readRedirect(response: Response, url: URL, policy: HttpsUrlPolicy | und
 
    const resolved = resolveHttpsUrl(next.value.href, policy);
 
-   return Result.isError(resolved)
-      ? Result.err<URL, JsonDocumentProblem>({
-           code: 'json.unsupported-url',
-           message: resolved.error.message,
-           ...(resolved.error.detail ? { detail: resolved.error.detail } : {})
-        })
-      : Result.ok<URL, JsonDocumentProblem>(resolved.value);
+   if (Result.isOk(resolved)) return Result.ok<URL, JsonDocumentProblem>(resolved.value);
+
+   const problem: JsonDocumentProblem = { code: 'json.unsupported-url', message: resolved.error.message };
+   if (resolved.error.detail) problem.detail = resolved.error.detail;
+   return Result.err<URL, JsonDocumentProblem>(problem);
 }
 
 function conditionalHeaders(request: JsonDocumentRequest) {
-   return {
-      accept: 'application/json',
-      ...(request.etag ? { 'if-none-match': request.etag } : {}),
-      ...(request.lastModified ? { 'if-modified-since': request.lastModified } : {})
-   };
+   const headers: JsonRequestHeaders = { accept: 'application/json' };
+   if (request.etag) headers['if-none-match'] = request.etag;
+   if (request.lastModified) headers['if-modified-since'] = request.lastModified;
+   return headers;
 }
 
 async function discardBody(response: Response) {

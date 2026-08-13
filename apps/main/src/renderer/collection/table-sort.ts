@@ -11,10 +11,8 @@ export function readTableSorting(tableId: string) {
    const stored = Result.unwrapOr(readStorageValue(`encore.table-sort.${tableId}`), null);
    if (!stored) return [];
 
-   const json = Result.try({ try: () => JSON.parse(stored), catch: () => null });
-   const parsed = sortingSchema.safeParse(Result.unwrapOr(json, null));
-
-   return parsed.success ? parsed.data : [];
+   const parsed = Result.try({ try: () => sortingSchema.parse(JSON.parse(stored)), catch: () => null });
+   return Result.unwrapOr(parsed, []);
 }
 
 export function writeTableSorting(tableId: string, sorting: TableSorting) {

@@ -33,7 +33,7 @@ import type { SettingsStore } from '@/modules/settings/main/settings-store';
 
 import { join } from 'node:path';
 
-const launchIssueMessages: Record<LaunchIssue, string> = {
+const launchIssueMessages = {
    'executable-missing': 'the Beat Saber executable is not in the install folder',
    'inspect-failed': 'the install folder could not be inspected',
    'invalid-options': 'the launch options are not something Encore can pass to Beat Saber',

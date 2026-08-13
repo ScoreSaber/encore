@@ -1,10 +1,10 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { extractZipArchive } from '@/lib/content/archive-extraction';
 import { inspectZipArchive } from '@/lib/content/archive-inspection';
 import { buildZipArchive, corruptZipEntryData, patchZipEntryHeaders, type ZipFixtureEntry } from '@/lib/content/zip-archive.fixture';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

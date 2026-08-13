@@ -109,7 +109,7 @@ export function createBeatModsApi(options: BeatModsApiOptions = {}) {
       return Result.ok<BeatModsVersion | null, BeatModsProblem>(read.value.modVersions.find((version) => version !== null) ?? null);
    }
 
-   async function readJson<Output>(url: string, schema: z.ZodType<Output>, shapeMessage = 'the BeatMods answer could not be read') {
+   async function readJson<Output>(url: string, schema: z.ZodType<Output>, invalidResponseMessage = 'the BeatMods answer could not be read') {
       const read = await fetchJsonResource({
          url,
          schema,
@@ -118,17 +118,17 @@ export function createBeatModsApi(options: BeatModsApiOptions = {}) {
          fetchJson: options.fetchJson
       });
 
-      return Result.mapError(read, (problem) => toBeatModsProblem(problem, shapeMessage));
+      return Result.mapError(read, (problem) => toBeatModsProblem(problem, invalidResponseMessage));
    }
 
    return { checkStatus, listMods, lookupHash };
 }
 
-function toBeatModsProblem(problem: JsonDocumentProblem, shapeMessage: string): BeatModsProblem {
+function toBeatModsProblem(problem: JsonDocumentProblem, invalidResponseMessage: string): BeatModsProblem {
    const detail = problem.detail ? { detail: problem.detail } : {};
 
    if (problem.code === 'json.unreachable') return { code: 'mods.catalog.unreachable', message: 'BeatMods could not be reached', ...detail };
-   if (problem.code === 'json.unexpected-shape') return { code: 'mods.catalog.invalid', message: shapeMessage, ...detail };
+   if (problem.code === 'json.unexpected-shape') return { code: 'mods.catalog.invalid', message: invalidResponseMessage, ...detail };
    if (problem.code === 'json.invalid') return { code: 'mods.catalog.invalid', message: 'the BeatMods answer could not be read', ...detail };
    if (problem.code === 'json.too-large') return { code: 'mods.catalog.fetch-failed', message: 'the BeatMods answer could not be read', ...detail };
 

@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { createSteamDownloader } from '@/modules/downloads/main/steam-downloader';
 import { createVersionCatalog } from '@/modules/downloads/main/version-catalog';
@@ -8,7 +9,6 @@ import { waitFor, waitForOperation } from '@/modules/operations/main/operation-w
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

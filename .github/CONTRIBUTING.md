@@ -4,15 +4,15 @@ For local setup, start with the [setup guide](setup.md)
 
 ## Package Management
 
-Use Bun for package work:
+Use Vite+ for package work. It manages the pinned pnpm version for the project:
 
 ```sh
-bun i
-bun add <package>
-bun remove <package>
+vp install
+vp add <package>
+vp remove <package>
 ```
 
-Do not use npm, pnpm or yarn in this repo
+Direct pnpm also works without a global Vite+ install. Use the version pinned in `package.json`, run `pnpm install`, then invoke built-in Vite+ commands through `pnpm exec vp`. Do not use npm, Bun or yarn to install dependencies
 
 ## Code Style
 
@@ -42,6 +42,14 @@ Do not use npm, pnpm or yarn in this repo
 - Do not import Electron or Node APIs from renderer routes, UI components or shared renderer code
 - Keep expected fallible desktop flows in `Result` helpers instead of scattered `try`/`catch`
 - Keep filesystem access, process state and native integrations in the main process
+
+## Checks
+
+Run the full check before committing:
+
+```sh
+vp run verify
+```
 
 ## Commits
 

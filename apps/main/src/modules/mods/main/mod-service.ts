@@ -47,7 +47,7 @@ import type { OperationRegistry } from '@/modules/operations/main/operation-regi
 
 import { basename, extname, join } from 'node:path';
 
-const issueMessages: Record<ModIssue, string> = {
+const issueMessages = {
    'catalog-unavailable': 'BeatMods could not be reached',
    'inspect-failed': 'the install folder could not be inspected',
    'not-found': 'the install is not in the registry anymore',

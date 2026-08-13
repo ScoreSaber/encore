@@ -372,17 +372,12 @@ function relativePathKey(path: string) {
 }
 
 function failure(issue: BSManagerIssue, detail?: string): IpcFailureResult {
-   return {
-      ok: false,
-      error: {
-         code: `bsmanager.${issue}`,
-         message: issueMessages[issue],
-         ...(detail ? { details: { detail } } : {})
-      }
-   };
+   const error: IpcFailureResult['error'] = { code: `bsmanager.${issue}`, message: issueMessages[issue] };
+   if (detail) error.details = { detail };
+   return { ok: false, error };
 }
 
-const issueMessages: Record<BSManagerIssue, string> = {
+const issueMessages = {
    'inspect-failed': 'the BSManager folder could not be read',
    'not-bsmanager': 'that folder does not look like a BSManager folder',
    'not-found': 'no BSManager folder was found',

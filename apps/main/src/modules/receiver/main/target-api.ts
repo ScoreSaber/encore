@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { hasUploads, type TargetApiModule, type TargetUploadFailure, type UploadTargetApiModule } from '@/lib/api';
+import { hasUploads, type TargetApiModule, type UploadTargetApiModule } from '@/lib/api';
 import { readJsonBody, writeError, writeJson } from '@/modules/receiver/main/receiver-http';
 import type { Route } from '@/modules/receiver/main/routes/route-table';
 import { receiverProtocolVersion } from '@/modules/receiver/protocol';
@@ -23,7 +23,7 @@ export function defineReceiverApiRoutes(modules: readonly TargetApiModule[]) {
    return modules.flatMap((module) => [...defineProcedureRoutes(module), ...(hasUploads(module) ? defineUploadRoutes(module) : [])]);
 }
 
-function defineProcedureRoutes({ api, handlers }: TargetApiModule) {
+function defineProcedureRoutes({ api, receiverHandlers }: TargetApiModule) {
    return Object.entries(api.procedures).map(
       ([method, procedure]): Route => ({
          method: 'POST',
@@ -42,15 +42,22 @@ function defineProcedureRoutes({ api, handlers }: TargetApiModule) {
                });
             }
 
-            const handler = Reflect.get(handlers, method);
-            const value = await Reflect.apply(handler, undefined, [input.data]);
+            const handler = receiverHandlers.get(method);
+            if (!handler) {
+               return writeError(response, {
+                  status: 500,
+                  code: 'receiver.rpc.handler-missing',
+                  message: 'Receiver procedure is unavailable'
+               });
+            }
+            const value = await handler(z.json().parse(input.data));
             writeJson(response, 200, { protocolVersion: receiverProtocolVersion, value });
          }
       })
    );
 }
 
-function defineUploadRoutes({ api, uploadHandlers }: UploadTargetApiModule) {
+function defineUploadRoutes({ api, receiverUploadHandlers }: UploadTargetApiModule) {
    return Object.entries(api.uploads).map(
       ([method, upload]): Route => ({
          method: 'POST',
@@ -75,11 +82,15 @@ function defineUploadRoutes({ api, uploadHandlers }: UploadTargetApiModule) {
                });
             }
 
-            const handler = Reflect.get(uploadHandlers, method) as (
-               input: object,
-               source: AsyncIterable<Uint8Array>
-            ) => Promise<Result<void, TargetUploadFailure>>;
-            const uploaded = await handler(input.value.data, request);
+            const handler = receiverUploadHandlers.get(method);
+            if (!handler) {
+               return writeError(response, {
+                  status: 500,
+                  code: 'receiver.upload.handler-missing',
+                  message: 'Receiver upload is unavailable'
+               });
+            }
+            const uploaded = await handler(z.json().parse(input.value.data), request);
             if (Result.isError(uploaded)) {
                return writeError(response, {
                   status: uploaded.error.kind === 'not-found' ? 404 : uploaded.error.kind === 'unavailable' ? 500 : 400,

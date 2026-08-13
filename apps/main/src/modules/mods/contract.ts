@@ -200,7 +200,9 @@ export type ModRepositoryIdRequest = {
 export type ModSourceResolutionRequest = ModSourceResolutionSettings;
 
 export function modRepositoryProblem(issue: ModRepositoryIssue, detail?: string): ModRepositoryProblem {
-   return { status: 'invalid', issue, ...(detail ? { detail } : {}) };
+   const problem: ModRepositoryProblem = { status: 'invalid', issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function parseModRepositoryLink(value: string): ModRepositoryLinkEvent {
@@ -491,21 +493,15 @@ export type ModFundingResult = { status: 'available'; url: string } | { status: 
 export type ModImportChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; preview: ModImportPreview };
 
 export function invalidModAction(request: Pick<ModRequest, 'installId'>, issue: ModIssue, detail?: string): ModActionProblem {
-   return {
-      status: 'invalid',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: ModActionProblem = { status: 'invalid', installId: request.installId, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function unavailableModsSnapshot(request: Pick<ModRequest, 'installId'>, issue: ModIssue, detail?: string): UnavailableModsSnapshot {
-   return {
-      status: 'unavailable',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const snapshot: UnavailableModsSnapshot = { status: 'unavailable', installId: request.installId, issue };
+   if (detail) snapshot.detail = detail;
+   return snapshot;
 }
 
 export function modPlatformForStore(store: string | null): ModPlatform {

@@ -8,9 +8,9 @@ import type { InstallActionIssue, InstallActionRequest } from '@/modules/install
 import type { InstallActions } from '@/modules/installs/renderer/use-install-actions';
 import { isOperationFinished, OperationOutcome, OperationProgress, PreviewRow } from '@/modules/operations/renderer/operation-progress';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<InstallActionIssue, MessageKey<'installs.manage.issues'>> = {
+const issueKeys: MessageKeyMap<InstallActionIssue, 'installs.manage.issues'> = {
    'inspect-failed': 'inspectFailed',
    'invalid-color': 'invalidColor',
    'invalid-name': 'invalidName',

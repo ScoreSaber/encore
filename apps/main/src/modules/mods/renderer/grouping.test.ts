@@ -1,7 +1,7 @@
+import { describe, expect, test } from 'vite-plus/test';
+
 import type { ModSummary } from '@/modules/mods/contract';
 import { groupMods } from '@/modules/mods/renderer/grouping';
-
-import { describe, expect, test } from 'bun:test';
 
 describe('mod grouping', () => {
    test('places unofficial ScoreSaber beside its BeatMods variant in leaderboards', () => {
@@ -17,7 +17,8 @@ describe('mod grouping', () => {
       expect(groups).toHaveLength(1);
       expect(groups[0]?.id).toBe('category:leaderboards');
       const ids = groups.flatMap((group) => group.mods.map((entry) => entry.modId));
-      expect(ids).toEqual(expect.arrayContaining(['beatmods:281', 'com.scoresaber.latest:scoresaber']));
+      expect(ids).toContain('beatmods:281');
+      expect(ids).toContain('com.scoresaber.latest:scoresaber');
       expect(Math.abs(ids.indexOf('beatmods:281') - ids.indexOf('com.scoresaber.latest:scoresaber'))).toBe(1);
    });
 });

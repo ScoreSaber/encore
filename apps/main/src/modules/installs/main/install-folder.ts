@@ -9,7 +9,7 @@ import { isAbsolute } from 'node:path';
 
 const beatSaberExecutableName = 'beat saber.exe';
 
-export const installFolderIssueMessages: Record<InstallFolderIssue, string> = {
+export const installFolderIssueMessages = {
    'inspect-failed': 'the selected folder could not be inspected',
    'missing-executable': 'the selected folder has no Beat Saber executable',
    'missing-game-data': 'the selected folder has no Beat Saber game data',
@@ -48,5 +48,7 @@ export async function inspectInstallFolder(sourcePath: string): Promise<InstallF
 }
 
 function invalid(path: string, issue: InstallFolderIssue, detail?: string): InstallFolderInspection {
-   return { status: 'invalid', path, issue, ...(detail ? { detail } : {}) };
+   const inspection: InstallFolderInspection = { status: 'invalid', path, issue };
+   if (detail) inspection.detail = detail;
+   return inspection;
 }

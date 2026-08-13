@@ -1,7 +1,8 @@
 "use client";
 
 import { lazy, type ReactNode } from "react";
-import { RootProvider } from "fumadocs-ui/provider/next";
+
+import { RootProvider } from "fumadocs-ui/provider/react-router";
 
 const SearchDialog = lazy(() => import("@/components/search"));
 

@@ -149,13 +149,9 @@ export function unavailableDownloadPreview(input: {
    issue: DownloadIssue;
    detail?: string;
 }): UnavailableDownloadPreview {
-   return {
-      status: 'unavailable',
-      store: input.store,
-      version: input.version,
-      issue: input.issue,
-      ...(input.detail ? { detail: input.detail } : {})
-   };
+   const preview: UnavailableDownloadPreview = { status: 'unavailable', store: input.store, version: input.version, issue: input.issue };
+   if (input.detail) preview.detail = input.detail;
+   return preview;
 }
 
 export function versionSupportsStore(version: DownloadVersion, store: StoreKind) {

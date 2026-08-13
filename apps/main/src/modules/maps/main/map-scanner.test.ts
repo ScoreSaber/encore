@@ -1,7 +1,8 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { customLevelsPath } from '@/modules/maps/main/map-paths';
 import { scanCustomLevels } from '@/modules/maps/main/map-scanner';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

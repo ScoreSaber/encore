@@ -17,9 +17,9 @@ import { storeKinds, type StoreKind } from '@/modules/stores/contract';
 import { StoreIcon } from '@/modules/stores/renderer/store-icon';
 import { localTargetId } from '@/modules/targets/contract';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<DownloadIssue, MessageKey<'downloads.issues'>> = {
+const issueKeys: MessageKeyMap<DownloadIssue, 'downloads.issues'> = {
    'binary-unavailable': 'binaryUnavailable',
    'catalog-unavailable': 'catalogUnavailable',
    'depot-not-empty': 'depotNotEmpty',

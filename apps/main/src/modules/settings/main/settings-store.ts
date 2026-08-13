@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import { causeCode } from '@/lib/errors';
 import { writeJsonFileAtomic } from '@/lib/filesystem/json';
@@ -56,11 +57,23 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       return createSnapshot(settings);
    }
 
-   async function updateAppSettings(patch: AppSettingsPatch | ((current: AppSettings) => AppSettingsPatch)) {
+   async function updateAppSettings(patch: AppSettingsPatch) {
       return enqueueWrite(async () => {
          const settings = await loadSettings();
          const nextSettings: LoadedSettings = {
-            app: applyAppSettingsPatch(settings.app, typeof patch === 'function' ? patch(settings.app) : patch),
+            app: applyAppSettingsPatch(settings.app, patch),
+            library: settings.library
+         };
+
+         return writeSettings(nextSettings);
+      });
+   }
+
+   async function updateAppSettingsWith(update: (current: AppSettings) => AppSettingsPatch) {
+      return enqueueWrite(async () => {
+         const settings = await loadSettings();
+         const nextSettings: LoadedSettings = {
+            app: applyAppSettingsPatch(settings.app, update(settings.app)),
             library: settings.library
          };
 
@@ -147,7 +160,7 @@ export function createSettingsStore(options: SettingsStoreOptions) {
 
    function parseSettingsFile(contents: string): LoadedSettings {
       const parseResult = Result.try({
-         try: (): unknown => JSON.parse(contents),
+         try: () => z.json().parse(JSON.parse(contents)),
          catch: (cause) => createSettingsProblem('settings.read.corrupt', 'settings file contains invalid JSON', causeCode(cause))
       });
 
@@ -177,13 +190,14 @@ export function createSettingsStore(options: SettingsStoreOptions) {
    }
 
    function createSnapshot(settings: LoadedSettings): SettingsSnapshot {
-      return {
+      const snapshot: SettingsSnapshot = {
          status: settings.problem ? 'recovered' : 'ready',
          app: settings.app,
          library: settings.library,
-         diagnostics: createDiagnostics(settings),
-         ...(settings.problem ? { problem: settings.problem } : {})
+         diagnostics: createDiagnostics(settings)
       };
+      if (settings.problem) snapshot.problem = settings.problem;
+      return snapshot;
    }
 
    function createDiagnostics(settings: LoadedSettings): SettingsDiagnostics {
@@ -199,20 +213,15 @@ export function createSettingsStore(options: SettingsStoreOptions) {
    }
 
    function createDefaultSettings(problem?: SettingsProblem): LoadedSettings {
-      return {
-         app: createDefaultAppSettings(),
-         library: createDefaultLibrarySettings(defaultInstallRoot),
-         ...(problem ? { problem } : {})
-      };
+      const settings: LoadedSettings = { app: createDefaultAppSettings(), library: createDefaultLibrarySettings(defaultInstallRoot) };
+      if (problem) settings.problem = problem;
+      return settings;
    }
 
    function createSettingsProblem(code: SettingsProblem['code'], message: string, detail?: string): SettingsProblem {
-      return {
-         code,
-         message,
-         path: settingsPath,
-         ...(detail ? { detail } : {})
-      };
+      const problem: SettingsProblem = { code, message, path: settingsPath };
+      if (detail) problem.detail = detail;
+      return problem;
    }
 
    function subscribe(listener: SettingsListener) {
@@ -232,6 +241,7 @@ export function createSettingsStore(options: SettingsStoreOptions) {
    return {
       getSnapshot,
       updateAppSettings,
+      updateAppSettingsWith,
       updateLibrarySettings,
       subscribe
    };

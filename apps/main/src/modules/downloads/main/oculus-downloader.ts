@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import { abortableSleep } from '@/lib/async';
 import { causeMessage } from '@/lib/errors';
@@ -37,13 +38,13 @@ import { Transform, Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createInflate, createInflateRaw, type Inflate } from 'node:zlib';
 
-const oculusIssueMessages: Partial<Record<DownloadIssue, string>> = {
-   'binary-unavailable': 'Meta does not serve an Oculus PC build of this Beat Saber version',
-   'catalog-unavailable': 'the Beat Saber version list is unavailable',
-   'inspect-failed': 'the download could not be prepared',
-   'unknown-version': 'this Beat Saber version is not in the version list',
-   'unsupported-platform': 'Oculus PC downloads need Windows'
-};
+const oculusIssueMessages = new Map<DownloadIssue, string>([
+   ['binary-unavailable', 'Meta does not serve an Oculus PC build of this Beat Saber version'],
+   ['catalog-unavailable', 'the Beat Saber version list is unavailable'],
+   ['inspect-failed', 'the download could not be prepared'],
+   ['unknown-version', 'this Beat Saber version is not in the version list'],
+   ['unsupported-platform', 'Oculus PC downloads need Windows']
+]);
 
 type FetchLike = (url: string, init: { signal: AbortSignal }) => Promise<Response>;
 
@@ -128,7 +129,7 @@ export function createOculusDownloader(options: OculusDownloaderOptions) {
             ok: false,
             error: {
                code: `downloads.oculus.${previewed.issue}`,
-               message: oculusIssueMessages[previewed.issue] ?? 'the download could not be prepared',
+               message: oculusIssueMessages.get(previewed.issue) ?? 'the download could not be prepared',
                details: { version: previewed.version, detail: previewed.detail }
             }
          };
@@ -544,14 +545,15 @@ async function inflateAttempt(options: InflateSegmentOptions, createDecoder: () 
    let bytes = 0;
    const meter = new Transform({
       transform(chunk, _encoding, callback) {
-         bytes += chunk.byteLength;
+         const payload = z.instanceof(Uint8Array).parse(chunk);
+         bytes += payload.byteLength;
          if (bytes > options.maxBytes) {
             callback(new SegmentOutputLimitError('the inflated segment is too large'));
             return;
          }
 
-         hash.update(chunk);
-         callback(null, chunk);
+         hash.update(payload);
+         callback(null, payload);
       }
    });
 
@@ -572,7 +574,7 @@ function createSegmentWriter(destination: FileHandle, offset: number) {
 
    return new Writable({
       write(chunk, _encoding, callback) {
-         const payload = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+         const payload = Buffer.from(z.instanceof(Uint8Array).parse(chunk));
          void writeChunkAt(destination, payload, position, callback);
          position += payload.byteLength;
       }
@@ -606,8 +608,8 @@ function classifySegmentFailure(cause: unknown, signal: AbortSignal): SegmentFai
    if (signal.aborted) return { kind: 'cancelled', detail: 'the download was cancelled' };
    if (cause instanceof SegmentOutputLimitError) return { kind: 'too-large', detail: cause.message };
 
-   const code = typeof cause === 'object' && cause !== null && 'code' in cause ? cause.code : null;
-   if (typeof code === 'string' && code.startsWith('Z_')) return { kind: 'compression', detail: causeMessage(cause) };
+   const coded = z.object({ code: z.string() }).safeParse(cause);
+   if (coded.success && coded.data.code.startsWith('Z_')) return { kind: 'compression', detail: causeMessage(cause) };
 
    return { kind: 'write', detail: causeMessage(cause) };
 }

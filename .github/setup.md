@@ -8,72 +8,69 @@ If you haven't already, we strongly urge y'all to harden your shell environment 
 
 ## Requirements
 
-### Package Manager
+### Vite+
 
-Install Bun:
+Install the Vite+ CLI, which provisions the Node and pnpm versions pinned by this project:
 
 Linux and macOS:
 
 ```sh
-curl -fsSL https://bun.sh/install | bash
+curl -fsSL https://vite.plus | bash
 ```
 
 Windows:
 
 ```sh
-powershell -c "irm bun.sh/install.ps1 | iex"
+powershell -c "irm https://vite.plus/ps1 | iex"
 ```
 
-### Runtime
-
-Use Node `24.x`
-
-We recommend [nvm](https://github.com/nvm-sh/nvm#installing-and-updating). From the project root:
+If you already have the pnpm version pinned in `package.json`, Vite+ doesn’t need to be installed globally:
 
 ```sh
-nvm install
-nvm use
+pnpm install
+pnpm exec vp dev
 ```
+
+`pnpm install` installs the project-local Vite+ CLI. The global CLI is recommended because it also manages the pinned Node and pnpm versions
 
 ## Run Encore
 
 Install dependencies:
 
 ```sh
-bun i
+vp install
 ```
 
 Start the app:
 
 ```sh
-bun run dev
+vp dev
 ```
 
 Preview a production build:
 
 ```sh
-bun run build
-bun run start
+vp build
+vp run start
 ```
 
 Create an unpacked app directory:
 
 ```sh
-bun run package:dir
+vp run package:dir
+```
+
+The website has separate development and static build tasks:
+
+```sh
+vp run dev:web
+vp run build:web
+vp run start:web
 ```
 
 ## Checks
 
-IDE extensions and pre-commit hooks should handle most formatting and linting for you. If you want to run the same checks manually:
-
 ```sh
-bun run lint:all
-bun run format:check
-bun run typecheck:all
-```
-
-For behavior, Electron, packaging, filesystem, dependency or install detection changes, a production build is also useful:
-
-```sh
-bun run build
+vp check
+vp run verify
 ```

@@ -1,5 +1,6 @@
 import { Result } from 'better-result';
 import { Zip, ZipDeflate } from 'fflate';
+import { z } from 'zod';
 
 import { createFilesystemProblem, type FilesystemProblem } from '@/lib/filesystem/path';
 
@@ -70,7 +71,7 @@ async function streamZip(output: WriteStream, files: readonly ZipSourceFile[], s
       archive.add(entry);
 
       for await (const chunk of createReadStream(file.sourcePath, { signal })) {
-         entry.push(chunk);
+         entry.push(z.instanceof(Uint8Array).parse(chunk));
          await flush();
          if (zipError) throw zipError;
       }

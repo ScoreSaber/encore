@@ -5,16 +5,12 @@ import type { ModelProblem, ModelProblemCode, ModelType } from '@/modules/models
 
 export type ModelResult<T> = Ok<T, ModelProblem> | Err<T, ModelProblem>;
 
-export function createModelProblem(
-   code: ModelProblemCode,
-   message: string,
-   options: { type?: ModelType; fileName?: string; cause?: unknown } = {}
-): ModelProblem {
-   return {
-      code,
-      message,
-      ...(options.type ? { type: options.type } : {}),
-      ...(options.fileName ? { fileName: options.fileName } : {}),
-      ...(options.cause === undefined ? {} : { detail: causeCode(options.cause) })
-   };
+export type ModelProblemOptions = { type?: ModelType; fileName?: string; cause?: unknown };
+
+export function createModelProblem(code: ModelProblemCode, message: string, options: ModelProblemOptions = {}): ModelProblem {
+   const problem: ModelProblem = { code, message };
+   if (options.type) problem.type = options.type;
+   if (options.fileName) problem.fileName = options.fileName;
+   if (options.cause !== undefined) problem.detail = causeCode(options.cause);
+   return problem;
 }

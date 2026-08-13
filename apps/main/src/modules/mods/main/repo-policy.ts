@@ -145,27 +145,29 @@ export function createModRepositoryPolicyService(options: ModRepositoryPolicyOpt
 
    function describe(current: CachedPolicy | null): ModRepositoryPolicySnapshot {
       if (!current) {
-         return {
+         const snapshot: ModRepositoryPolicySnapshot = {
             state: 'unavailable',
             version: null,
             updatedAt: null,
             checkedAt: null,
-            entries: [],
-            ...(lastDetail ? { detail: lastDetail } : {})
+            entries: []
          };
+         if (lastDetail) snapshot.detail = lastDetail;
+         return snapshot;
       }
 
       const expiresAt = Date.parse(current.document.expiresAt);
       const expired = Number.isNaN(expiresAt) || expiresAt <= now();
 
-      return {
+      const snapshot: ModRepositoryPolicySnapshot = {
          state: expired ? 'stale' : 'ready',
          version: current.document.version,
          updatedAt: current.document.updatedAt,
          checkedAt: current.checkedAt,
-         entries: current.document.entries.filter((entry) => entry !== null),
-         ...(lastDetail ? { detail: lastDetail } : {})
+         entries: current.document.entries.filter((entry) => entry !== null)
       };
+      if (lastDetail) snapshot.detail = lastDetail;
+      return snapshot;
    }
 
    return { get, refresh };

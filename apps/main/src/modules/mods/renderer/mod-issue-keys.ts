@@ -1,8 +1,8 @@
 import type { ModIssue, ModWarning } from '@/modules/mods/contract';
 import type { ModRepositoryIssue } from '@/modules/mods/contract';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-export const modIssueKeys: Record<ModIssue, MessageKey<'mods.issues'>> = {
+export const modIssueKeys: MessageKeyMap<ModIssue, 'mods.issues'> = {
    'catalog-unavailable': 'catalogUnavailable',
    'inspect-failed': 'inspectFailed',
    'not-found': 'notFound',
@@ -12,7 +12,7 @@ export const modIssueKeys: Record<ModIssue, MessageKey<'mods.issues'>> = {
    'unsupported-target': 'unsupportedTarget'
 };
 
-export const modWarningKeys: Record<ModWarning, MessageKey<'mods.warnings'>> = {
+export const modWarningKeys: MessageKeyMap<ModWarning, 'mods.warnings'> = {
    'bsipa-first': 'bsipaFirst',
    'claimed-identity': 'claimedIdentity',
    'missing-dependency': 'missingDependency',
@@ -24,7 +24,7 @@ export const modWarningKeys: Record<ModWarning, MessageKey<'mods.warnings'>> = {
    'unverified-source': 'unverifiedSource'
 };
 
-export const modRepositoryIssueKeys: Record<ModRepositoryIssue, MessageKey<'mods.repositories.issues'>> = {
+export const modRepositoryIssueKeys: MessageKeyMap<ModRepositoryIssue, 'mods.repositories.issues'> = {
    denylisted: 'denylisted',
    duplicate: 'duplicate',
    'fetch-failed': 'fetchFailed',

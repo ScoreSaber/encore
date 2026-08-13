@@ -1,8 +1,7 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import { resolveRepositoryListingUrl } from '@/modules/mods/main/repo-url';
-
-import { describe, expect, test } from 'bun:test';
 
 function resolve(input: string) {
    const resolved = resolveRepositoryListingUrl(input);

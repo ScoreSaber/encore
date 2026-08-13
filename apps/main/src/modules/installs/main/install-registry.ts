@@ -106,10 +106,11 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
       if (Result.isError(reordered)) return Result.err<InstallRegistrySnapshot, FilesystemProblem>(reordered.error);
 
       const installs = new Map(current.installs.map((install) => [install.id, install]));
-      snapshot = {
-         ...current,
-         installs: reordered.value.map((record) => installs.get(record.id)!)
-      };
+      const reorderedInstalls = reordered.value.flatMap((record) => {
+         const install = installs.get(record.id);
+         return install ? [install] : [];
+      });
+      snapshot = { ...current, installs: reorderedInstalls };
       emit(snapshot);
 
       return Result.ok<InstallRegistrySnapshot, FilesystemProblem>(snapshot);
@@ -165,12 +166,13 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
       const detection = await options.detectStores();
       const resolved = await store.resolveStoreCandidates(detection.candidates);
       if (Result.isError(resolved)) {
-         problems.push({
+         const problem: InstallProblem = {
             code: 'install.registry.write-failed',
             message: 'the install registry could not be saved',
-            path: store.filePath,
-            ...(resolved.error.detail ? { detail: resolved.error.detail } : {})
-         });
+            path: store.filePath
+         };
+         if (resolved.error.detail) problem.detail = resolved.error.detail;
+         problems.push(problem);
       }
 
       const records = Result.isOk(resolved) ? resolved.value : await store.load();
@@ -192,26 +194,22 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
       const info = await readPathInfo(record.path);
       const missing = Result.isError(info) || info.value.kind !== 'directory';
       const version = missing ? null : await readBeatSaberVersion(record.path);
-      const problem: InstallProblem | undefined = missing
-         ? {
-              code: 'install.path.unreadable',
-              message: 'the install folder could not be read',
-              installId: record.id,
-              path: record.path,
-              ...(Result.isError(info) && info.error.detail ? { detail: info.error.detail } : {})
-           }
-         : version
-           ? undefined
-           : {
-                code: 'install.version.unknown',
-                message: 'Beat Saber version could not be detected',
-                installId: record.id,
-                path: record.path
-             };
+      let problem: InstallProblem | undefined;
+      if (missing) {
+         problem = { code: 'install.path.unreadable', message: 'the install folder could not be read', installId: record.id, path: record.path };
+         if (Result.isError(info) && info.error.detail) problem.detail = info.error.detail;
+      } else if (!version) {
+         problem = {
+            code: 'install.version.unknown',
+            message: 'Beat Saber version could not be detected',
+            installId: record.id,
+            path: record.path
+         };
+      }
 
       if (problem) problems.push(problem);
 
-      return {
+      const detail: InstallDetail = {
          id: record.id,
          name:
             record.name === `Beat Saber ${version}`
@@ -226,13 +224,14 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
          status: missing ? 'missing' : version ? 'ready' : 'incomplete',
          createdAt: record.createdAt,
          updatedAt: record.updatedAt,
-         aliases: record.aliases,
-         ...(record.libraryPath ? { libraryPath: record.libraryPath } : {}),
-         ...(record.appId ? { appId: record.appId } : {}),
-         ...(record.manifestPath ? { manifestPath: record.manifestPath } : {}),
-         ...(record.executablePath ? { executablePath: record.executablePath } : {}),
-         ...(problem ? { problem } : {})
+         aliases: record.aliases
       };
+      if (record.libraryPath) detail.libraryPath = record.libraryPath;
+      if (record.appId) detail.appId = record.appId;
+      if (record.manifestPath) detail.manifestPath = record.manifestPath;
+      if (record.executablePath) detail.executablePath = record.executablePath;
+      if (problem) detail.problem = problem;
+      return detail;
    }
 
    function emit(next: InstallRegistrySnapshot) {

@@ -1,5 +1,6 @@
 import { Result } from 'better-result';
 import { buf as crc32 } from 'crc-32';
+import { z } from 'zod';
 
 import type { ArchiveInspection, InspectedArchiveEntry } from '@/lib/content/archive-inspection';
 import type { ContentResult } from '@/lib/content/content-errors';
@@ -148,14 +149,15 @@ async function writeEntryFile(
             break;
          }
 
-         bytes += chunk.byteLength;
+         const payload = z.instanceof(Uint8Array).parse(chunk);
+         bytes += payload.byteLength;
          if (bytes > declaredBytes || bytes > options.limits.maxEntryBytes) {
             failure = sizeMismatch(options.entry.path);
             break;
          }
 
-         checksum = crc32(chunk, checksum);
-         await file.value.write(chunk);
+         checksum = crc32(payload, checksum);
+         await file.value.write(payload);
       }
    } catch (cause) {
       failure = {

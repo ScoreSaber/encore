@@ -1,6 +1,6 @@
-import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
 
 describe('operation registry retention', () => {
    test('keeps running work and only recent terminal history', () => {

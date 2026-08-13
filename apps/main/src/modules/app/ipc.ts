@@ -7,5 +7,5 @@ export const appIpc = defineIpcDescriptor({
    copyText: defineIpcCommand<void, { text: string }>('app:copy-text', z.object({ text: z.string() })),
    getInfo: defineIpcQuery<AppInfo>('app:info'),
    openLink: defineIpcCommand<ExternalLinkResult, ExternalLinkRequest>('app:open-link', externalLinkRequestSchema),
-   quit: defineIpcCommand<void>('app:quit')
+   quit: defineIpcCommand<undefined>('app:quit')
 });

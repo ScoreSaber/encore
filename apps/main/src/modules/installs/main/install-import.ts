@@ -7,7 +7,7 @@ import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import { localTargetId } from '@/modules/targets/contract';
 
-const importIssueMessages: Record<InstallImportIssue, string> = {
+const importIssueMessages = {
    'already-registered': 'the selected folder is already registered with Encore',
    ...installFolderIssueMessages
 };
@@ -70,13 +70,9 @@ export function createInstallImportService(options: InstallImportOptions) {
    }
 
    function invalid(sourcePath: string, issue: InstallImportIssue, detail?: string): InstallImportPreview {
-      return {
-         status: 'invalid',
-         targetId: localTargetId,
-         sourcePath,
-         issue,
-         ...(detail ? { detail } : {})
-      };
+      const preview: InstallImportPreview = { status: 'invalid', targetId: localTargetId, sourcePath, issue };
+      if (detail) preview.detail = detail;
+      return preview;
    }
 
    return { preview, start };

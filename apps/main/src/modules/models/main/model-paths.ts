@@ -3,7 +3,7 @@ import { modelTypes, type ModelType } from '@/modules/models/contract';
 
 import { extname, join } from 'node:path';
 
-const modelFolderNames: Record<ModelType, string> = {
+const modelFolderNames = {
    avatar: 'CustomAvatars',
    bloq: 'CustomNotes',
    platform: 'CustomPlatforms',
@@ -11,7 +11,7 @@ const modelFolderNames: Record<ModelType, string> = {
    wall: 'CustomWalls'
 };
 
-const modelExtensions: Record<ModelType, string> = {
+const modelExtensions = {
    avatar: '.avatar',
    bloq: '.bloq',
    platform: '.plat',

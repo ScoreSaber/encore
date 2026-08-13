@@ -178,7 +178,7 @@ function publishUpdateSnapshot(snapshot: UpdateSnapshot) {
    if (!snapshotChanged(previousSnapshot, snapshot)) return;
 
    updateSnapshot = snapshot;
-   logUpdateMessage('info', formatUpdateSnapshot(updateSnapshot));
+   logUpdateMessage('info', [formatUpdateSnapshot(updateSnapshot)]);
    broadcastIpcEvent(updatesIpc.onStatus, updateSnapshot);
 }
 
@@ -205,15 +205,17 @@ function formatUpdateSnapshot(snapshot: UpdateSnapshot) {
 
 function createUpdateLogger(): Logger {
    return {
-      info: (message) => logUpdateMessage('info', message),
-      warn: (message) => logUpdateMessage('warn', message),
-      error: (message) => logUpdateMessage('error', message),
-      debug: (message) => logUpdateMessage('debug', message)
+      info: (message?: UpdateLogValue, ...optionalParams: UpdateLogValue[]) => logUpdateMessage('info', [message, ...optionalParams]),
+      warn: (message?: UpdateLogValue, ...optionalParams: UpdateLogValue[]) => logUpdateMessage('warn', [message, ...optionalParams]),
+      error: (message?: UpdateLogValue, ...optionalParams: UpdateLogValue[]) => logUpdateMessage('error', [message, ...optionalParams]),
+      debug: (message?: UpdateLogValue, ...optionalParams: UpdateLogValue[]) => logUpdateMessage('debug', [message, ...optionalParams])
    };
 }
 
-function logUpdateMessage(level: UpdateLogLevel, message: string) {
-   const line = `[${new Date().toISOString()}] [${level}] ${String(message)}\n`;
+type UpdateLogValue = string | number | boolean | bigint | symbol | null | undefined | Error;
+
+function logUpdateMessage(level: UpdateLogLevel, messages: readonly UpdateLogValue[]) {
+   const line = `[${new Date().toISOString()}] [${level}] ${messages.map(String).join(' ')}\n`;
    queueUpdateLogLine(line);
 
    const consoleMessage = line.trimEnd();

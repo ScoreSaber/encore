@@ -81,7 +81,7 @@ const v4InfoSchema = z.object({
 export function parseMapInfo(raw: string, folderName?: string): MapResult<MapInfo> {
    const contents = raw.startsWith('﻿') ? raw.slice(1) : raw;
    const json = Result.try({
-      try: (): unknown => JSON.parse(contents),
+      try: () => z.json().parse(JSON.parse(contents)),
       catch: (cause) => createMapProblem('maps.info.invalid', 'the map description is not valid JSON', { folderName, cause })
    });
    if (Result.isError(json)) return Result.err<MapInfo, MapProblem>(json.error);
@@ -105,7 +105,7 @@ export function parseMapInfo(raw: string, folderName?: string): MapResult<MapInf
    );
 }
 
-function parseLegacyInfo(value: unknown, folderName?: string): MapResult<MapInfo> {
+function parseLegacyInfo(value: z.infer<ReturnType<typeof z.json>>, folderName?: string): MapResult<MapInfo> {
    const parsed = legacyInfoSchema.safeParse(value);
    if (!parsed.success) {
       return Result.err<MapInfo, MapProblem>(
@@ -154,7 +154,7 @@ function parseLegacyInfo(value: unknown, folderName?: string): MapResult<MapInfo
    });
 }
 
-function parseV4Info(value: unknown, folderName?: string): MapResult<MapInfo> {
+function parseV4Info(value: z.infer<ReturnType<typeof z.json>>, folderName?: string): MapResult<MapInfo> {
    const parsed = v4InfoSchema.safeParse(value);
    if (!parsed.success) {
       return Result.err<MapInfo, MapProblem>(

@@ -1,5 +1,6 @@
 import { Result } from 'better-result';
 
+import type { IpcFailureResult } from '@/ipc/core';
 import { causeMessage } from '@/lib/errors';
 import { pathExists } from '@/lib/filesystem/path';
 import type { InstallDetailRequest } from '@/modules/installs/contract';
@@ -31,7 +32,7 @@ import {
 import { writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-const shortcutIssueMessages: Record<ShortcutIssue, string> = {
+const shortcutIssueMessages = {
    'install-not-found': 'the install is not in the registry anymore',
    'invalid-options': 'the launch options are not something Encore can put in a shortcut',
    'steam-client-missing': 'the Steam client is not installed on this machine',
@@ -197,14 +198,9 @@ export function createShortcutService(options: {
 }
 
 function failed(issue: ShortcutIssue, detail?: string): ShortcutResult {
-   return {
-      ok: false,
-      error: {
-         code: `shortcuts.${issue}`,
-         message: shortcutIssueMessages[issue],
-         ...(detail ? { details: { detail } } : {})
-      }
-   };
+   const error: IpcFailureResult['error'] = { code: `shortcuts.${issue}`, message: shortcutIssueMessages[issue] };
+   if (detail) error.details = { detail };
+   return { ok: false, error };
 }
 
 export function shortcutFileName(name: string) {

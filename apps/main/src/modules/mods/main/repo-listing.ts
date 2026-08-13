@@ -142,7 +142,7 @@ async function readLocalRepositoryListing(url: URL, signal?: AbortSignal): Promi
    }
 
    const contents = await Result.tryPromise({
-      try: () => readFile(resolvedPath.value, { encoding: 'utf8', ...(signal ? { signal } : {}) }),
+      try: () => (signal ? readFile(resolvedPath.value, { encoding: 'utf8', signal }) : readFile(resolvedPath.value, 'utf8')),
       catch: (cause): ModRepositoryProblem => modRepositoryProblem('fetch-failed', causeMessage(cause))
    });
    if (Result.isError(contents)) return Result.err<FetchedListing, ModRepositoryProblem>(contents.error);
@@ -151,7 +151,7 @@ async function readLocalRepositoryListing(url: URL, signal?: AbortSignal): Promi
    }
 
    const document = Result.try({
-      try: (): unknown => JSON.parse(contents.value),
+      try: () => z.json().parse(JSON.parse(contents.value)),
       catch: (cause): ModRepositoryProblem => modRepositoryProblem('invalid-listing', causeMessage(cause))
    });
    if (Result.isError(document)) return Result.err<FetchedListing, ModRepositoryProblem>(document.error);
@@ -167,7 +167,7 @@ async function readLocalRepositoryListing(url: URL, signal?: AbortSignal): Promi
    });
 }
 
-export function parseRepositoryListing(value: unknown): Result<ModRepositoryListing, ModRepositoryProblem> {
+export function parseRepositoryListing(value: z.infer<ReturnType<typeof z.json>>): Result<ModRepositoryListing, ModRepositoryProblem> {
    const parsed = modRepositoryListingSchema.safeParse(value);
    if (parsed.success) return Result.ok<ModRepositoryListing, ModRepositoryProblem>(parsed.data);
 
@@ -188,7 +188,7 @@ export function selectRepositoryEntries(
    listing: ModRepositoryListing,
    request: { gameVersion: string; platform: ModPlatform },
    sourceKind: ModSourceKind = 'unofficial'
-): { entries: ModIndexEntry[]; fileMatches: ModIndexFileMatch[]; downloadHosts: string[] } {
+) {
    const entries: ModIndexEntry[] = [];
    const fileMatches: ModIndexFileMatch[] = [];
    const downloadHosts = new Set<string>();

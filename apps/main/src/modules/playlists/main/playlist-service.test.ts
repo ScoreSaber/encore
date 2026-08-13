@@ -1,5 +1,7 @@
 import { Result } from 'better-result';
 import { zipSync } from 'fflate';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { z } from 'zod';
 
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import type { BeatSaverCatalog } from '@/modules/maps/main/beatsaver-catalog';
@@ -12,7 +14,6 @@ import { createPlaylistService } from '@/modules/playlists/main/playlist-service
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -118,7 +119,11 @@ async function createHarness() {
       operations,
       maps,
       playlists,
-      firstInstall: async () => (await registry.list()).installs[0]!,
+      firstInstall: async () => {
+         const install = (await registry.list()).installs[0];
+         if (!install) throw new Error('test install was not registered');
+         return install;
+      },
       installMap: async (installId: string, installPath: string) => {
          const archivePath = await writeMapArchive(dataPath, `${installId}.zip`, 'Reality Check');
          const started = await maps.startImport({ installId, paths: [archivePath] });
@@ -141,10 +146,11 @@ async function createInstallFolder(parentPath: string, name: string) {
    return installPath;
 }
 
-async function writePlaylist(installPath: string, fileName: string, document: unknown) {
+async function writePlaylist(installPath: string, fileName: string, document: z.infer<ReturnType<typeof z.json>>) {
    const rootPath = playlistsPath(installPath);
    await mkdir(rootPath, { recursive: true });
-   await writeFile(join(rootPath, fileName), typeof document === 'string' ? document : JSON.stringify(document), 'utf8');
+   const text = z.string().safeParse(document);
+   await writeFile(join(rootPath, fileName), text.success ? text.data : JSON.stringify(document), 'utf8');
 }
 
 async function writeMapArchive(parentPath: string, fileName: string, title: string) {

@@ -1,5 +1,8 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { z } from 'zod';
+
 import type { JsonDocumentFetch } from '@/lib/http/json';
-import type { ModPlatform, ModSourceStatus } from '@/modules/mods/contract';
+import { modPlatformSchema, type ModSourceStatus } from '@/modules/mods/contract';
 import {
    modRepositoryPolicyUrl,
    officialModSourceId,
@@ -13,13 +16,12 @@ import type { ModRepositoryPolicy } from '@/modules/mods/main/repo-policy';
 import { createModRepositoryService } from '@/modules/mods/main/repo-service';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const listingUrl = 'https://example.github.io/encore-repo/index.json';
-const install: { gameVersion: string; platform: ModPlatform } = { gameVersion: '1.37.0', platform: 'steampc' };
+const install = { gameVersion: '1.37.0', platform: modPlatformSchema.enum.steampc };
 const tempRoots: string[] = [];
 const emptyScoreSaberSource: ModSourceStatus = {
    id: scoreSaberModSourceId,
@@ -97,7 +99,10 @@ describe('mod repositories', () => {
 
       expect((await harness.repositories.getSnapshot()).repositories).toEqual([]);
       expect((await harness.settingsStore.getSnapshot()).app.modRepositories).toEqual([]);
-      expect(JSON.parse(await readFile(join(harness.dataPath, 'mod-repositories.json'), 'utf8')).repositories).toEqual([]);
+      const stored = z
+         .object({ repositories: z.array(z.unknown()) })
+         .parse(JSON.parse(await readFile(join(harness.dataPath, 'mod-repositories.json'), 'utf8')));
+      expect(stored.repositories).toEqual([]);
    });
 
    test('does not add another custom copy of the official ScoreSaber source', async () => {
@@ -125,9 +130,12 @@ describe('mod repositories', () => {
       expect(added).toMatchObject({ status: 'ok' });
       if (added.status !== 'ok') return;
 
-      expect(added.snapshot.repositories).toEqual([
-         expect.objectContaining({ id: 'com.example.repo', name: 'Example Mods', enabled: true, blocked: false, packageCount: 1 })
-      ]);
+      expect(added.snapshot.repositories).toHaveLength(1);
+      expect(added.snapshot.repositories[0]?.id).toBe('com.example.repo');
+      expect(added.snapshot.repositories[0]?.name).toBe('Example Mods');
+      expect(added.snapshot.repositories[0]?.enabled).toBe(true);
+      expect(added.snapshot.repositories[0]?.blocked).toBe(false);
+      expect(added.snapshot.repositories[0]?.packageCount).toBe(1);
 
       const listed = await harness.repositories.listEntries(install);
       expect(listed.sources).toEqual([
@@ -138,19 +146,21 @@ describe('mod repositories', () => {
          ['com.example.repo:com.example.coolmod', '1.2.3', 'downloads.example.com']
       ]);
 
-      expect((await harness.settingsStore.getSnapshot()).app.modRepositories).toEqual([
-         expect.objectContaining({ id: 'com.example.repo', listingUrl, enabled: true })
-      ]);
+      const settings = (await harness.settingsStore.getSnapshot()).app.modRepositories;
+      expect(settings).toHaveLength(1);
+      expect(settings[0]?.id).toBe('com.example.repo');
+      expect(settings[0]?.listingUrl).toBe(listingUrl);
+      expect(settings[0]?.enabled).toBe(true);
    });
 
    test('reports BeatMods identity claims while reviewing a repository', async () => {
       const harness = await createHarness({ listing: sampleListing({ packages: [samplePackage({ identity: 'beatmods:256' })] }) });
 
-      expect(await harness.repositories.preview({ url: listingUrl })).toMatchObject({
-         status: 'ok',
-         identityClaimCount: 1,
-         packages: [expect.objectContaining({ identity: 'beatmods:256' })]
-      });
+      const preview = await harness.repositories.preview({ url: listingUrl });
+      expect(preview).toMatchObject({ status: 'ok', identityClaimCount: 1 });
+      if (preview.status !== 'ok') return;
+      expect(preview.packages).toHaveLength(1);
+      expect(preview.packages[0]?.identity).toBe('beatmods:256');
    });
 
    test('refuses a denylisted repository and switches one off that lands on the list later', async () => {
@@ -201,11 +211,14 @@ describe('mod repositories', () => {
       });
 
       expect(synced.failures).toEqual([]);
-      expect(synced.snapshot.official).toEqual([
-         expect.objectContaining({ id: officialModSourceId, enabled: false }),
-         expect.objectContaining({ id: scoreSaberModSourceId, enabled: true })
-      ]);
-      expect(synced.snapshot.repositories).toEqual([expect.objectContaining({ listingUrl, enabled: false })]);
+      expect(synced.snapshot.official).toHaveLength(2);
+      expect(synced.snapshot.official[0]?.id).toBe(officialModSourceId);
+      expect(synced.snapshot.official[0]?.enabled).toBe(false);
+      expect(synced.snapshot.official[1]?.id).toBe(scoreSaberModSourceId);
+      expect(synced.snapshot.official[1]?.enabled).toBe(true);
+      expect(synced.snapshot.repositories).toHaveLength(1);
+      expect(synced.snapshot.repositories[0]?.listingUrl).toBe(listingUrl);
+      expect(synced.snapshot.repositories[0]?.enabled).toBe(false);
       expect(synced.snapshot.resolution).toEqual({ combine: true, strategy: 'prefer-unofficial' });
    });
 });

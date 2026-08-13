@@ -6,3 +6,5 @@ export type MessageKey<Namespace extends MessageNamespace> = MessageKeys<
    NestedValueOf<Messages, Namespace>,
    NestedKeyOf<NestedValueOf<Messages, Namespace>>
 >;
+
+export type MessageKeyMap<Code extends PropertyKey, Namespace extends MessageNamespace> = Record<Code, MessageKey<Namespace>>;

@@ -1,8 +1,7 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import { archivePathKey, claimUniqueArchiveEntryName, parseArchiveEntryPath } from '@/lib/archive/path';
-
-import { describe, expect, test } from 'bun:test';
 
 describe('archive entry paths', () => {
    test('normalizes safe paths and rejects cross-platform escapes and collisions', () => {

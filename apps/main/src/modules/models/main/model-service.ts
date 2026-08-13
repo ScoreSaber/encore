@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { createContentScanCache } from '@/lib/content/content-cache';
 import { createContentFailure, createOperationFailure } from '@/lib/content/content-errors';
 import { createContentEvents } from '@/lib/content/content-events';
-import { createContentIngestionService, type ContentIngestionService } from '@/lib/content/content-ingestion';
+import { createContentIngestionService, type ContentIngestionService, type IngestFileRequest } from '@/lib/content/content-ingestion';
 import type { ContentLimits } from '@/lib/content/content-limits';
 import type { ContentStaging } from '@/lib/content/content-staging';
 import type { ContentProblem, ContentSource } from '@/lib/content/contract';
@@ -50,7 +50,7 @@ import { createBytesProgress, createInstallProgress } from '@/modules/operations
 
 import { basename, join } from 'node:path';
 
-const actionIssueMessages: Record<ModelActionIssue, string> = {
+const actionIssueMessages = {
    'already-installed': 'this model is already in the install',
    'inspect-failed': 'the model could not be inspected',
    'install-not-found': 'the install is not in the registry anymore',
@@ -330,12 +330,11 @@ export function createModelService(options: ModelServiceOptions) {
          query: request.query,
          page
       });
-      if (Result.isError(found))
-         return {
-            status: 'failed',
-            issue: found.error.issue,
-            ...(found.error.detail ? { detail: found.error.detail } : {})
-         };
+      if (Result.isError(found)) {
+         const result: ModelSearchResult = { status: 'failed', issue: found.error.issue };
+         if (found.error.detail) result.detail = found.error.detail;
+         return result;
+      }
 
       const installed = await installedKeys(request.installId);
       for (const record of found.value) {
@@ -518,12 +517,11 @@ export function createModelService(options: ModelServiceOptions) {
 
    async function installModel(input: InstallModelsInput & InstallModelSource & { operationId: string; index: number }) {
       const folderPath = modelFolderPath(input.installPath, input.type);
-      const staged = await ingestion.ingestFile({
+      const request: IngestFileRequest = {
          source: input.source,
          targetKind: 'local',
          limits: modelContentLimits,
          fileName: input.fileName,
-         ...(input.allowedHosts ? { urlPolicy: { allowedHosts: input.allowedHosts } } : {}),
          signal: input.signal,
          validate: ({ fileName }) =>
             modelTypeForFileName(fileName) === input.type
@@ -534,7 +532,9 @@ export function createModelService(options: ModelServiceOptions) {
                     detail: modelExtension(input.type)
                  }),
          onProgress: (progress) => reportInstallProgress(input.operationId, input.index, input.sources.length, progress)
-      });
+      };
+      if (input.allowedHosts) request.urlPolicy = { allowedHosts: input.allowedHosts };
+      const staged = await ingestion.ingestFile(request);
       if (Result.isError(staged)) {
          return Result.err<{ bytes: number; files: number }, ModelProblem>(
             createModelProblem('models.import.rejected', staged.error.message, {

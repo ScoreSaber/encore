@@ -1,9 +1,10 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { createInstallImportService } from '@/modules/installs/main/install-import';
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

@@ -7,7 +7,13 @@ export type MetaAuthProblem = {
 
 export type MetaAuthRequest = (options: { signal: AbortSignal }) => Promise<Result<string, MetaAuthProblem>>;
 
-export const metaAuthProblems: Record<'cancelled' | 'failed' | 'timedOut', MetaAuthProblem> = {
+type MetaAuthProblems = {
+   cancelled: MetaAuthProblem;
+   failed: MetaAuthProblem;
+   timedOut: MetaAuthProblem;
+};
+
+export const metaAuthProblems: MetaAuthProblems = {
    cancelled: {
       code: 'downloads.oculus.sign-in-cancelled',
       message: 'the Meta sign-in window was closed before the download started'

@@ -1,8 +1,9 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { z } from 'zod';
 
 import { assertCanCopyToDestination, createTempPath, isPathInside, pathExists, readPathInfo, resolveManagedPath } from '@/lib/filesystem/path';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -132,5 +133,6 @@ async function createTestSymlink(target: string, path: string, type?: 'dir' | 'f
 }
 
 function isSymlinkPrivilegeError(cause: unknown) {
-   return cause instanceof Error && 'code' in cause && typeof cause.code === 'string' && (cause.code === 'EPERM' || cause.code === 'EACCES');
+   const parsed = z.object({ code: z.enum(['EPERM', 'EACCES']) }).safeParse(cause);
+   return parsed.success;
 }

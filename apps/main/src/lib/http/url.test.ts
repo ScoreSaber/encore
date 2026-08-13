@@ -1,8 +1,7 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import { redactUrl, resolveHttpsUrl } from '@/lib/http/url';
-
-import { describe, expect, test } from 'bun:test';
 
 describe('content url policy', () => {
    test('rejects unsafe addresses without leaking their credentials', () => {

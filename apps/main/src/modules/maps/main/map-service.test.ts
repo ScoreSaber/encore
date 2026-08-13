@@ -1,18 +1,18 @@
 import { Result } from 'better-result';
 import { zipSync } from 'fflate';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { ContentFetch } from '@/lib/content/content-download';
 import { createContentIngestionService } from '@/lib/content/content-ingestion';
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import type { BeatSaverCatalog } from '@/modules/maps/main/beatsaver-catalog';
 import { customLevelsPath } from '@/modules/maps/main/map-paths';
-import { createMapService } from '@/modules/maps/main/map-service';
+import { createMapService, type MapServiceOptions } from '@/modules/maps/main/map-service';
 import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
 import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -39,7 +39,9 @@ describe('map service', () => {
       await writeFile(join(mapPath, 'cover.png'), 'cover');
 
       const snapshot = await harness.maps.list({ installId: install.id });
-      const mapId = snapshot.maps[0]!.id;
+      const map = snapshot.maps[0];
+      if (!map) throw new Error('map was not scanned');
+      const mapId = map.id;
 
       expect(await harness.maps.getCovers({ installId: install.id, mapIds: [mapId, 'missing'] })).toEqual({
          covers: [{ mapId, dataUrl: 'data:image/png;base64,Y292ZXI=' }],
@@ -84,7 +86,7 @@ describe('map service', () => {
       await symlink(sharedMapsPath, customLevelsPath(second.path), 'dir');
 
       await harness.maps.list({ installId: first.id });
-      const published = [] as { installId: string; progress: { scanned: number; total: number } | null }[];
+      const published: { installId: string; progress: { scanned: number; total: number } | null }[] = [];
       const unsubscribe = harness.maps.subscribe((snapshot) => published.push(snapshot));
 
       const snapshot = await harness.maps.list({ installId: second.id });
@@ -112,7 +114,9 @@ describe('map service', () => {
       expect(snapshot.maps.map((map) => map.title)).toEqual(['Reality Check']);
       expect(await readdir(customLevelsPath(install.path))).toEqual(['Reality Check - Artist - Mapper']);
 
-      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [snapshot.maps[0]!.id] });
+      const importedMap = snapshot.maps[0];
+      if (!importedMap) throw new Error('imported map was not scanned');
+      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [importedMap.id] });
       expect(deleted.ok).toBe(true);
       if (!deleted.ok) return;
 
@@ -136,7 +140,9 @@ describe('map service', () => {
       expect(replacementSnapshot.mapsPath).toBe(customLevelsPath(replacementPath));
       expect(replacementSnapshot.maps.map((map) => map.title)).toEqual(['New map']);
 
-      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [replacementSnapshot.maps[0]!.id] });
+      const replacement = replacementSnapshot.maps[0];
+      if (!replacement) throw new Error('replacement map was not scanned');
+      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [replacement.id] });
       expect(deleted.ok).toBe(true);
       if (!deleted.ok) return;
 
@@ -232,13 +238,14 @@ async function createHarness(options: { fetchContent?: ContentFetch } = {}) {
       getByHashes: (hashes) => Promise.resolve(Result.ok(new Map(hashes.map((hash) => [hash, catalogRecord(hash)])))),
       pageSize: 20
    };
-   const maps = createMapService({
+   const serviceOptions: MapServiceOptions = {
       registry,
       operations,
       dataPath,
-      catalog,
-      ...(options.fetchContent ? { ingestion: createContentIngestionService({ dataPath, fetchContent: options.fetchContent }) } : {})
-   });
+      catalog
+   };
+   if (options.fetchContent) serviceOptions.ingestion = createContentIngestionService({ dataPath, fetchContent: options.fetchContent });
+   const maps = createMapService(serviceOptions);
 
    cleanups.push(async () => {
       maps.dispose();
@@ -250,11 +257,17 @@ async function createHarness(options: { fetchContent?: ContentFetch } = {}) {
       dataPath,
       operations,
       maps,
-      firstInstall: async () => (await registry.list()).installs[0]!,
+      firstInstall: async () => {
+         const install = (await registry.list()).installs[0];
+         if (!install) throw new Error('test install was not registered');
+         return install;
+      },
       addInstall: async (name: string) => {
          const path = await createInstallFolder(installRoot, name);
          await registry.register({ source: 'library', path });
-         return (await registry.list()).installs.find((install) => install.path === path)!;
+         const install = (await registry.list()).installs.find((candidate) => candidate.path === path);
+         if (!install) throw new Error('test install was not registered');
+         return install;
       },
       repointInstall: async (installId: string, path: string) => {
          const updated = await registry.update(installId, { path });
@@ -380,18 +393,30 @@ function rawV4MapInfo() {
 }
 
 function rawMapInfo(title: string, coverFileName?: string) {
-   return JSON.stringify({
+   interface RawMapInfo {
+      _version: string;
+      _songName: string;
+      _songAuthorName: string;
+      _levelAuthorName: string;
+      _beatsPerMinute: number;
+      _songFilename: string;
+      _coverImageFilename?: string;
+      _difficultyBeatmapSets: { _beatmapCharacteristicName: string; _difficultyBeatmaps: { _difficulty: string; _beatmapFilename: string }[] }[];
+   }
+
+   const info: RawMapInfo = {
       _version: '2.0.0',
       _songName: title,
       _songAuthorName: 'Artist',
       _levelAuthorName: 'Mapper',
       _beatsPerMinute: 160,
       _songFilename: 'song.egg',
-      ...(coverFileName ? { _coverImageFilename: coverFileName } : {}),
       _difficultyBeatmapSets: [
          { _beatmapCharacteristicName: 'Standard', _difficultyBeatmaps: [{ _difficulty: 'Expert', _beatmapFilename: 'Expert.dat' }] }
       ]
-   });
+   };
+   if (coverFileName) info._coverImageFilename = coverFileName;
+   return JSON.stringify(info);
 }
 
 function encode(value: string) {

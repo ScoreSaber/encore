@@ -1,6 +1,7 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { createSecretStore, type SecretProtection, type SecretStoreAvailability } from '@/lib/security/secret-store';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -40,7 +41,9 @@ describe('secret store', () => {
       const written = await store.write('receiver:controller', 'plain-token');
       const entries = await readdir(join(dataPath, 'secrets'));
       expect(entries).toHaveLength(1);
-      const persisted = await readFile(join(dataPath, 'secrets', entries[0]!), 'utf8');
+      const entry = entries[0];
+      if (!entry) throw new Error('secret file was not written');
+      const persisted = await readFile(join(dataPath, 'secrets', entry), 'utf8');
       const read = await store.read('receiver:controller');
 
       written.unwrap();

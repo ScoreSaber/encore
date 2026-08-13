@@ -1,18 +1,21 @@
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { z } from 'zod';
 
 import {
    ipcInvalidRequestCode,
+   ipcTransportValueSchema,
    type AnyIpcEventDefinition,
    type IpcDescriptor,
    type IpcEventArgs,
    type IpcInvokeArgs,
    type IpcRequestDefinition,
-   type IpcResponse
+   type IpcResponse,
+   type IpcTransportValue
 } from '@/ipc/core';
 
 const ipcEventWindows = new Set<BrowserWindow>();
 
-type IpcMainHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
+type IpcMainHandler = (event: IpcMainInvokeEvent, ...args: IpcTransportValue[]) => IpcTransportValue | Promise<IpcTransportValue>;
 
 type IpcMainHandlers<Descriptor extends IpcDescriptor> = {
    [Method in keyof Descriptor as Descriptor[Method] extends IpcRequestDefinition ? Method : never]: Descriptor[Method] extends IpcRequestDefinition
@@ -23,11 +26,21 @@ type IpcMainHandlers<Descriptor extends IpcDescriptor> = {
       : never;
 };
 
-export type IpcMainModule = readonly [definition: IpcRequestDefinition, handler: IpcMainHandler][];
+export type IpcMainModule = readonly { definition: IpcRequestDefinition; handler: IpcMainHandler }[];
 
 export function defineIpcHandlers<Descriptor extends IpcDescriptor>(descriptor: Descriptor, handlers: IpcMainHandlers<Descriptor>): IpcMainModule {
-   // object iteration erases descriptor keys and handler signatures; keep that erasure here
-   return Object.entries(handlers).map(([method, handler]) => [descriptor[method], handler]) as IpcMainModule;
+   const parsedHandlers = z
+      .record(z.string(), z.function({ input: z.tuple([z.custom<IpcMainInvokeEvent>()], ipcTransportValueSchema) }))
+      .parse(handlers);
+   return Object.entries(parsedHandlers).map(([method, handler]) => {
+      const definition = descriptor[method];
+      if (!definition || definition.kind === 'event') throw new Error(`Unknown IPC handler: ${method}`);
+
+      return {
+         definition,
+         handler: async (event, ...args) => ipcTransportValueSchema.parse(await handler(event, ...args))
+      };
+   });
 }
 
 export function registerIpcEventWindow(window: BrowserWindow) {
@@ -56,14 +69,14 @@ function guardRequest(definition: IpcRequestDefinition, handle: IpcMainHandler):
       const parsed = schema.safeParse(request);
       if (!parsed.success) throw new Error(`${ipcInvalidRequestCode}: ${definition.channel}`);
 
-      return handle(event, parsed.data);
+      return handle(event, ipcTransportValueSchema.parse(parsed.data));
    };
 }
 
 export function registerIpcModules(modules: readonly IpcMainModule[]) {
    for (const module of modules) {
-      for (const [definition, handle] of module) {
-         ipcMain.handle(definition.channel, guardRequest(definition, handle));
+      for (const { definition, handler } of module) {
+         ipcMain.handle(definition.channel, guardRequest(definition, handler));
       }
    }
 }

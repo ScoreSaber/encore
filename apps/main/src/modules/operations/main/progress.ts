@@ -19,16 +19,17 @@ export function createThrottledProgress(onProgress?: (progress: OperationProgres
 export function createInstallProgress(operations: OperationRegistry) {
    return (operationId: string, index: number, total: number, progress: OperationProgress) => {
       const done = index + Math.min(1, (progress.percent ?? 0) / 100);
+      const nextProgress: OperationProgress = {
+         phase: progress.phase ?? 'installing',
+         current: done,
+         total,
+         percent: Math.min(100, Math.round((done / total) * 100)),
+         unit: 'items'
+      };
+      if (progress.label) nextProgress.label = progress.label;
 
       operations.update(operationId, {
-         progress: {
-            phase: progress.phase ?? 'installing',
-            current: done,
-            total,
-            percent: Math.min(100, Math.round((done / total) * 100)),
-            unit: 'items',
-            ...(progress.label ? { label: progress.label } : {})
-         }
+         progress: nextProgress
       });
    };
 }

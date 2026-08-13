@@ -19,13 +19,14 @@ import {
 } from '@/modules/installs/contract';
 import { inspectInstallFolder, installFolderIssueMessages } from '@/modules/installs/main/install-folder';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
+import type { InstallRecordPatch } from '@/modules/installs/main/install-store';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 
 import { dirname } from 'node:path';
 
 type InstallUpdateIssue = InstallActionIssue | 'already-registered' | 'invalid-path';
 
-const actionIssueMessages: Record<InstallUpdateIssue, string> = {
+const actionIssueMessages = {
    'already-registered': 'the selected folder is already registered with Encore',
    'inspect-failed': 'the install folder could not be inspected',
    'invalid-path': 'the selected folder is not a complete Beat Saber install',
@@ -79,11 +80,12 @@ export function createInstallManagementService(options: InstallManagementOptions
          path = inspected.path;
       }
 
-      const updated = await options.registry.update(request.installId, {
-         ...(name ? { name: name.data } : {}),
-         ...(request.color === undefined ? {} : { color: color ? color.data : null }),
-         ...(path === undefined ? {} : { path })
-      });
+      const patch: InstallRecordPatch = {};
+      if (name) patch.name = name.data;
+      if (request.color !== undefined) patch.color = color ? color.data : null;
+      if (path !== undefined) patch.path = path;
+
+      const updated = await options.registry.update(request.installId, patch);
       if (Result.isError(updated)) return { ok: false, error: toIpcError(updated.error) };
 
       return updated.value ? { ok: true, value: updated.value } : failure(request.installId, 'not-found');

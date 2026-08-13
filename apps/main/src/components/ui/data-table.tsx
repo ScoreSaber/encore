@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 
 import {
    flexRender,
+   functionalUpdate,
    getCoreRowModel,
    getSortedRowModel,
    useReactTable,
@@ -29,7 +30,15 @@ declare module '@tanstack/react-table' {
    }
 }
 
-const sortLabels: Record<'asc' | 'desc' | 'false', NonNullable<React.AriaAttributes['aria-sort']>> = {
+type SortLabel = NonNullable<React.AriaAttributes['aria-sort']>;
+
+type SortLabels = {
+   asc: SortLabel;
+   desc: SortLabel;
+   false: SortLabel;
+};
+
+const sortLabels: SortLabels = {
    asc: 'ascending',
    desc: 'descending',
    false: 'none'
@@ -68,7 +77,7 @@ export function DataTable<T>({
       columns,
       state: { sorting },
       onSortingChange: (updater) => {
-         const next = typeof updater === 'function' ? updater(sorting) : updater;
+         const next = functionalUpdate(updater, sorting);
 
          setSorting(next);
          if (tableId) writeTableSorting(tableId, next);

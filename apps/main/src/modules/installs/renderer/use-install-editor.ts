@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react';
 import { Result } from 'better-result';
 
 import type { IpcError } from '@/ipc/core';
-import { installNameSchema, type InstallActionRequest, type InstallDetail } from '@/modules/installs/contract';
+import { installNameSchema, type InstallActionRequest, type InstallDetail, type InstallUpdateRequest } from '@/modules/installs/contract';
 import { localTargetId } from '@/modules/targets/contract';
 import { inlineTargetIpcResult } from '@/renderer/ipc-result';
 
@@ -86,10 +86,12 @@ export function useInstallEditor(request: InstallActionRequest) {
       const draft = { name: state.name, color: state.color, path: state.path, canChangePath: state.canChangePath };
       setState({ status: 'saving', ...draft });
 
-      const saved = await inlineTargetIpcResult(
-         () => installs.update({ ...request, name: draft.name, color: draft.color, ...(draft.canChangePath ? { path: draft.path } : {}) }),
-         { code: 'installs.manage.save-failed', message: 'the install could not be saved' }
-      );
+      const updateRequest: InstallUpdateRequest = { ...request, name: draft.name, color: draft.color };
+      if (draft.canChangePath) updateRequest.path = draft.path;
+      const saved = await inlineTargetIpcResult(() => installs.update(updateRequest), {
+         code: 'installs.manage.save-failed',
+         message: 'the install could not be saved'
+      });
       setState(
          saved.ok
             ? { status: 'closed' }

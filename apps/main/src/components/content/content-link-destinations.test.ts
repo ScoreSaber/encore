@@ -1,6 +1,6 @@
-import { createContentLinkDestinations, type ContentLinkSharedState } from '@/components/content/content-link-destinations';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { createContentLinkDestinations, type ContentLinkSharedState } from '@/components/content/content-link-destinations';
 
 describe('content link destinations', () => {
    test('groups installs only when every requested folder uses the same target library', () => {

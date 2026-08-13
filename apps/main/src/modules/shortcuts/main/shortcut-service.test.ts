@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { LaunchOptions } from '@/modules/launch/contract';
 import { encoreProtocol, type ShortcutRequest } from '@/modules/shortcuts/contract';
@@ -7,7 +8,6 @@ import { resolveLaunchLink } from '@/modules/shortcuts/main/launch-link-intake';
 import type { ShortcutRuntime } from '@/modules/shortcuts/main/shortcut-runtime';
 import { createShortcutService } from '@/modules/shortcuts/main/shortcut-service';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

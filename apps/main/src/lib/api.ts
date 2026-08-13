@@ -1,7 +1,9 @@
-import type { Result } from 'better-result';
-import type { z, ZodType } from 'zod';
+import { Result } from 'better-result';
+import { z, type ZodType } from 'zod';
 
 import type { TargetCapability, TargetId } from '@/modules/targets/contract';
+
+export type ApiJsonValue = z.infer<ReturnType<typeof z.json>>;
 
 export type TargetProcedure<Input extends ZodType | undefined = ZodType | undefined, Output extends ZodType = ZodType> = {
    kind: 'procedure';
@@ -75,14 +77,23 @@ type UploadImplementation<Api extends DomainApi> = Api extends { uploads: Target
    : { uploadHandlers?: undefined };
 
 export type ApiModule<Api extends DomainApi> = { api: Api; handlers: ApiHandlers<Api> } & SnapshotSubscription<Api> & UploadImplementation<Api>;
-export type TargetApiModule = { api: DomainApi; handlers: object; subscribe?: object; uploadHandlers?: object };
+type ReceiverProcedureHandler = (input: ApiJsonValue) => Promise<ApiJsonValue>;
+type ReceiverUploadHandler = (input: ApiJsonValue, source: AsyncIterable<Uint8Array>) => Promise<Result<void, TargetUploadFailure>>;
+type ReceiverSnapshotSubscription = (listener: (snapshot: ApiJsonValue) => void) => () => void;
+
+export type TargetApiModule = {
+   api: DomainApi;
+   receiverHandlers: ReadonlyMap<string, ReceiverProcedureHandler>;
+   subscribeJson?: ReceiverSnapshotSubscription;
+   receiverUploadHandlers?: ReadonlyMap<string, ReceiverUploadHandler>;
+};
 export type SnapshotTargetApiModule = TargetApiModule & {
    api: DomainApi & { snapshot: ZodType };
-   subscribe: object;
+   subscribeJson: ReceiverSnapshotSubscription;
 };
 export type UploadTargetApiModule = TargetApiModule & {
    api: DomainApi & { uploads: TargetUploads };
-   uploadHandlers: object;
+   receiverUploadHandlers: ReadonlyMap<string, ReceiverUploadHandler>;
 };
 export type ApiMethod<Api extends DomainApi> = keyof Api['procedures'] & string;
 
@@ -131,7 +142,11 @@ export function defineDomainApi(
       uploads?: TargetUploads;
    } = {}
 ) {
-   return { namespace, procedures, ...options };
+   if (options.snapshot) {
+      return { namespace, procedures, ...options, snapshot: options.snapshot };
+   }
+
+   return { namespace, procedures, ...options, snapshot: undefined };
 }
 
 export function getProcedure<Api extends DomainApi, Method extends ApiMethod<Api>>(api: Api, method: Method): Api['procedures'][Method];
@@ -151,20 +166,57 @@ export function getUpload(api: DomainApi, method: string) {
 }
 
 export function hasSnapshotStream(module: TargetApiModule): module is SnapshotTargetApiModule {
-   return Boolean(module.api.snapshot && module.subscribe);
+   return Boolean(module.api.snapshot && module.subscribeJson);
 }
 
 export function hasUploads(module: TargetApiModule): module is UploadTargetApiModule {
-   return Boolean(module.api.uploads && module.uploadHandlers);
+   return Boolean(module.api.uploads && module.receiverUploadHandlers);
 }
 
 type ApiModuleOptions<Api extends DomainApi> = SnapshotSubscription<Api> & UploadImplementation<Api>;
 
+const callableSchema = z.function({ input: [z.json()] });
+const uploadCallableSchema = z.function({ input: [z.json(), z.custom<AsyncIterable<Uint8Array>>()] });
+const targetUploadResultSchema = z.discriminatedUnion('status', [
+   z.object({ status: z.literal('ok') }),
+   z.object({
+      status: z.literal('error'),
+      error: z.object({ kind: z.enum(['invalid', 'not-found', 'unavailable']), code: z.string(), message: z.string() })
+   })
+]);
+
 export function defineApiHandlers<Api extends DomainApi & { snapshot?: undefined; uploads?: undefined }>(
    api: Api,
    handlers: ApiHandlers<Api>
-): ApiModule<Api>;
-export function defineApiHandlers<Api extends DomainApi>(api: Api, handlers: ApiHandlers<Api>, options: ApiModuleOptions<Api>): ApiModule<Api>;
-export function defineApiHandlers(api: DomainApi, handlers: object, options?: { subscribe?: object; uploadHandlers?: object }) {
-   return { api, handlers, ...options };
+): ApiModule<Api> & TargetApiModule;
+export function defineApiHandlers<Api extends DomainApi>(
+   api: Api,
+   handlers: ApiHandlers<Api>,
+   options: ApiModuleOptions<Api>
+): ApiModule<Api> & TargetApiModule;
+export function defineApiHandlers<Api extends DomainApi>(api: Api, handlers: ApiHandlers<Api>, options?: ApiModuleOptions<Api>) {
+   const parsedHandlers = z.record(z.string(), callableSchema).parse(handlers);
+   const receiverHandlers = new Map<string, ReceiverProcedureHandler>();
+   for (const [method, handler] of Object.entries(parsedHandlers)) {
+      receiverHandlers.set(method, async (input) => z.json().parse(await handler(input)));
+   }
+
+   let subscribeJson: ReceiverSnapshotSubscription | undefined;
+   if (options?.subscribe) {
+      subscribeJson = (listener) => options.subscribe((snapshot) => listener(z.json().parse(snapshot)));
+   }
+
+   let receiverUploadHandlers: Map<string, ReceiverUploadHandler> | undefined;
+   if (options?.uploadHandlers) {
+      const parsedUploadHandlers = z.record(z.string(), uploadCallableSchema).parse(options.uploadHandlers);
+      receiverUploadHandlers = new Map();
+      for (const [method, handler] of Object.entries(parsedUploadHandlers)) {
+         receiverUploadHandlers.set(method, async (input, source) => {
+            const result = targetUploadResultSchema.parse(await handler(input, source));
+            return result.status === 'ok' ? Result.ok(undefined) : Result.err(result.error);
+         });
+      }
+   }
+
+   return { api, handlers, ...options, receiverHandlers, subscribeJson, receiverUploadHandlers };
 }

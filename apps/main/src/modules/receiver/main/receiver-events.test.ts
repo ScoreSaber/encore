@@ -1,7 +1,8 @@
+import { describe, expect, test } from 'vite-plus/test';
+
 import { createReceiverEventHub } from '@/modules/receiver/main/receiver-events';
 import type { ReceiverStreamEvent } from '@/modules/receiver/protocol';
 
-import { describe, expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
 
 const initialEvent: ReceiverStreamEvent = {

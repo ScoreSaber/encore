@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { createBSManagerAdoptionService } from '@/modules/bsmanager/main/adoption-service';
 import { readBSManagerAppConfig } from '@/modules/bsmanager/main/bsmanager-config';
@@ -9,7 +10,6 @@ import { waitForOperation } from '@/modules/operations/main/operation-waiting.fi
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -128,9 +128,10 @@ describe('bsmanager adoption', () => {
 
       await harness.adoption.migrateAdoptedSetup();
 
-      expect((await harness.settingsStore.getSnapshot()).library.customFolders).toEqual([
-         expect.objectContaining({ installRelativePath: 'UserData/BeatLeader', libraryRelativePath: 'BeatLeader' })
-      ]);
+      const customFolders = (await harness.settingsStore.getSnapshot()).library.customFolders;
+      expect(customFolders).toHaveLength(1);
+      expect(customFolders[0]?.installRelativePath).toBe('UserData/BeatLeader');
+      expect(customFolders[0]?.libraryRelativePath).toBe('BeatLeader');
    });
 
    test('only converts links between installs after explicit cleanup', async () => {

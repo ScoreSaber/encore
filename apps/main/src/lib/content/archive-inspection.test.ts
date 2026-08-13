@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { inspectZipArchive, type ArchiveInspection } from '@/lib/content/archive-inspection';
 import type { ContentLimits } from '@/lib/content/content-limits';
@@ -10,7 +11,6 @@ import {
    type ZipFixtureEntry
 } from '@/lib/content/zip-archive.fixture';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

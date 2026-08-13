@@ -34,11 +34,8 @@ export function useModelSearch(request: TargetModelCollectionRequest, type: Mode
    } else if (!search.data) {
       state = { status: 'searching' };
    } else if (search.data.status !== 'ok') {
-      state = {
-         status: 'failed',
-         issue: search.data.issue,
-         ...(search.data.detail ? { detail: search.data.detail } : {})
-      };
+      state = { status: 'failed', issue: search.data.issue };
+      if (search.data.detail) state.detail = search.data.detail;
    } else {
       state = {
          status: 'ready',

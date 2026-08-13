@@ -7,9 +7,9 @@ import type { ModelActionIssue } from '@/modules/models/contract';
 import type { ModelActions } from '@/modules/models/renderer/use-model-actions';
 import { PreviewList } from '@/modules/operations/renderer/operation-progress';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<ModelActionIssue, MessageKey<'models.issues'>> = {
+const issueKeys: MessageKeyMap<ModelActionIssue, 'models.issues'> = {
    'already-installed': 'alreadyInstalled',
    'inspect-failed': 'inspectFailed',
    'install-not-found': 'installNotFound',

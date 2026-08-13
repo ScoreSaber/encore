@@ -28,21 +28,15 @@ import { basename, join } from 'node:path';
 
 const depotLayoutFiles = ['Beat Saber.exe', 'UnityPlayer.dll', join('Beat Saber_Data', 'globalgamemanagers')];
 
-const clientIssues: Record<Exclude<SteamClientState['status'], 'ready'>, DownloadIssue> = {
-   missing: 'steam-missing',
-   'signed-out': 'steam-signed-out',
-   'unsupported-platform': 'unsupported-platform'
-};
-
-const steamIssueMessages: Partial<Record<DownloadIssue, string>> = {
-   'catalog-unavailable': 'the Beat Saber version list is unavailable',
-   'depot-not-empty': 'the Steam depot folder still holds content Encore did not download',
-   'inspect-failed': 'the download could not be prepared',
-   'steam-missing': 'the Steam client is not installed on this machine',
-   'steam-signed-out': 'no Steam account is signed in on this machine',
-   'unknown-version': 'this Beat Saber version is not in the version list',
-   'unsupported-platform': 'Steam downloads need the Windows Steam client'
-};
+const steamIssueMessages = new Map<DownloadIssue, string>([
+   ['catalog-unavailable', 'the Beat Saber version list is unavailable'],
+   ['depot-not-empty', 'the Steam depot folder still holds content Encore did not download'],
+   ['inspect-failed', 'the download could not be prepared'],
+   ['steam-missing', 'the Steam client is not installed on this machine'],
+   ['steam-signed-out', 'no Steam account is signed in on this machine'],
+   ['unknown-version', 'this Beat Saber version is not in the version list'],
+   ['unsupported-platform', 'Steam downloads need the Windows Steam client']
+]);
 
 type SteamLaunch = (input: { executablePath: string; manifestId: string }) => Promise<Result<void, string>>;
 
@@ -81,7 +75,11 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
 
    async function preview(version: string): Promise<SteamDownloadPreview | UnavailableDownloadPreview> {
       const client = await readClientState();
-      if (client.status !== 'ready') return unavailable(version, clientIssues[client.status]);
+      if (client.status !== 'ready') {
+         const issue: DownloadIssue =
+            client.status === 'missing' ? 'steam-missing' : client.status === 'signed-out' ? 'steam-signed-out' : 'unsupported-platform';
+         return unavailable(version, issue);
+      }
 
       const catalog = await options.catalog.get();
       if (catalog.status !== 'ready') return unavailable(version, 'catalog-unavailable', catalog.problem?.code);
@@ -121,7 +119,7 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
             ok: false,
             error: {
                code: `downloads.steam.${previewed.issue}`,
-               message: steamIssueMessages[previewed.issue] ?? 'the download could not be prepared',
+               message: steamIssueMessages.get(previewed.issue) ?? 'the download could not be prepared',
                details: { version: previewed.version, detail: previewed.detail }
             }
          };

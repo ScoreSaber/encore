@@ -5,9 +5,9 @@ import { ContentLinkDialog } from '@/components/content/content-link-dialog';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
 import type { PlaylistLinkIssue } from '@/modules/playlists/contract';
 import { usePlaylistLink } from '@/modules/playlists/renderer/use-playlist-link';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<PlaylistLinkIssue, MessageKey<'playlists.link.issues'>> = {
+const issueKeys: MessageKeyMap<PlaylistLinkIssue, 'playlists.link.issues'> = {
    'invalid-source': 'invalidSource',
    'unsupported-link': 'unsupportedLink'
 };

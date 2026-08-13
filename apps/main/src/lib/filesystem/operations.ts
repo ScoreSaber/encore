@@ -761,11 +761,11 @@ function createProgressReporter(
       if (!complete && now - lastProgressAt < progressThrottleMs) return;
       lastProgressAt = now;
 
-      const nextProgress = {
-         ...progress,
-         ...(progressOptions.keepComplete ? { current: progress.total, percent: 100 } : {}),
-         phase
-      };
+      const nextProgress: FilesystemProgress = { ...progress, phase };
+      if (progressOptions.keepComplete) {
+         nextProgress.current = progress.total;
+         nextProgress.percent = 100;
+      }
 
       options.onProgress?.(nextProgress);
    };

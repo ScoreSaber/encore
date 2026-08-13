@@ -174,11 +174,12 @@ function describeZipFailure(cause: unknown, archivePath: string, entryName?: str
       return { code: 'content.archive.read-failed', message: 'the archive could not be read', path: archivePath, detail: message };
    }
 
-   return {
+   const problem: ContentProblem = {
       code: 'content.archive.corrupt',
       message: 'the archive is damaged',
-      ...(entryName ? { entry: entryName } : {}),
       path: archivePath,
       detail: message
    };
+   if (entryName) problem.entry = entryName;
+   return problem;
 }

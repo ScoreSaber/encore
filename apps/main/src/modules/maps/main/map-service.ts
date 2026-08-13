@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { createContentScanCache } from '@/lib/content/content-cache';
 import { createContentFailure, createOperationFailure } from '@/lib/content/content-errors';
 import { createContentEvents } from '@/lib/content/content-events';
-import { createContentIngestionService, type ContentIngestionService } from '@/lib/content/content-ingestion';
+import { createContentIngestionService, type ContentIngestionService, type IngestArchiveRequest } from '@/lib/content/content-ingestion';
 import type { ContentLimits } from '@/lib/content/content-limits';
 import type { ContentStaging } from '@/lib/content/content-staging';
 import type { ContentSource } from '@/lib/content/contract';
@@ -48,13 +48,13 @@ import { customLevelsPath } from '@/modules/maps/main/map-paths';
 import { createMapProblem } from '@/modules/maps/main/map-problem';
 import { scanCustomLevels, withMapDuplicateFlags, type MapScanCacheEntry } from '@/modules/maps/main/map-scanner';
 import { createScoreSaberCatalog, type ScoreSaberCatalog } from '@/modules/maps/main/scoresaber/scoresaber-catalog';
-import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
+import type { CreateOperationInput, OperationRegistry } from '@/modules/operations/main/operation-registry';
 import { createBytesProgress, createInstallProgress } from '@/modules/operations/main/progress';
 
 import { readFile, realpath } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 
-const actionIssueMessages: Record<MapActionIssue, string> = {
+const actionIssueMessages = {
    'already-installed': 'this map is already in the install',
    'install-not-found': 'the install is not in the registry anymore',
    'inspect-failed': 'the map folder could not be inspected',
@@ -75,12 +75,12 @@ const mapContentLimits: Partial<ContentLimits> = {
    maxPathDepth: 3
 };
 
-const coverMimeTypes: Record<string, string> = {
-   '.jpeg': 'image/jpeg',
-   '.jpg': 'image/jpeg',
-   '.png': 'image/png',
-   '.webp': 'image/webp'
-};
+const coverMimeTypes = new Map([
+   ['.jpeg', 'image/jpeg'],
+   ['.jpg', 'image/jpeg'],
+   ['.png', 'image/png'],
+   ['.webp', 'image/webp']
+]);
 
 const maxCoverBytes = 4 * 1024 * 1024;
 const maxCoverResponseCharacters = 6 * 1024 * 1024;
@@ -89,7 +89,7 @@ const mapScanCacheEntrySchema = z.object({
    map: localMapSummarySchema
 });
 
-type MapServiceOptions = {
+export type MapServiceOptions = {
    registry: InstallRegistry;
    operations: OperationRegistry;
    dataPath: string;
@@ -257,7 +257,7 @@ export function createMapService(options: MapServiceOptions) {
       if (!map.coverFileName || !isSafeFileName(map.coverFileName)) return null;
 
       const coverPath = join(map.path, map.coverFileName);
-      const mimeType = coverMimeTypes[extname(coverPath).toLowerCase()];
+      const mimeType = coverMimeTypes.get(extname(coverPath).toLowerCase());
       if (!mimeType) return null;
 
       const bytes = await Result.tryPromise({
@@ -422,12 +422,11 @@ export function createMapService(options: MapServiceOptions) {
    async function search(request: MapSearchRequest): Promise<MapSearchResult> {
       const page = request.page ?? 0;
       const found = await catalog.search({ query: request.query, page });
-      if (Result.isError(found))
-         return {
-            status: 'failed',
-            issue: found.error.issue,
-            ...(found.error.detail ? { detail: found.error.detail } : {})
-         };
+      if (Result.isError(found)) {
+         const result: MapSearchResult = { status: 'failed', issue: found.error.issue };
+         if (found.error.detail) result.detail = found.error.detail;
+         return result;
+      }
 
       const installed = await installedHashes(request.installId);
 
@@ -514,10 +513,9 @@ export function createMapService(options: MapServiceOptions) {
          fallbackName: record.summary.key,
          expectedHash: record.summary.hash
       }));
-      const operation = options.operations.create({
+      const operationInput: CreateOperationInput = {
          kind: 'download',
          title: input.title,
-         ...(input.message ? { message: input.message } : {}),
          progress: {
             phase: 'preparing',
             current: 0,
@@ -527,7 +525,9 @@ export function createMapService(options: MapServiceOptions) {
          },
          metadata: { installId: input.installId, mapCount: sources.length },
          cancel: () => controller.abort()
-      });
+      };
+      if (input.message) operationInput.message = input.message;
+      const operation = options.operations.create(operationInput);
 
       void runInstall(operation.id, {
          installId: input.installId,
@@ -623,15 +623,16 @@ export function createMapService(options: MapServiceOptions) {
    }
 
    async function installArchive(input: InstallArchivesInput & InstallArchiveSource & { operationId: string; index: number }) {
-      const staged = await ingestion.ingestArchive({
+      const request: IngestArchiveRequest = {
          source: input.source,
          targetKind: 'local',
          limits: mapContentLimits,
-         ...(input.allowedHosts ? { urlPolicy: { allowedHosts: input.allowedHosts } } : {}),
          signal: input.signal,
          validate: createMapArchiveValidator(),
          onProgress: (progress) => reportInstallProgress(input.operationId, input.index, input.sources.length, progress)
-      });
+      };
+      if (input.allowedHosts) request.urlPolicy = { allowedHosts: input.allowedHosts };
+      const staged = await ingestion.ingestArchive(request);
       if (Result.isError(staged)) {
          return Result.err<InstallArchiveOutcome, MapProblem>(
             createMapProblem('maps.info.invalid', staged.error.message, {

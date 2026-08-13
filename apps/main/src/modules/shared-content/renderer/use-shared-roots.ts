@@ -67,7 +67,9 @@ export function useSharedRoots(targetId: TargetId) {
 
          const result = response.value;
          if (result.status === 'invalid') {
-            setState({ status: 'invalid', issue: result.issue, ...(result.detail ? { detail: result.detail } : {}) });
+            const invalid: SharedRootsState = { status: 'invalid', issue: result.issue };
+            if (result.detail) invalid.detail = result.detail;
+            setState(invalid);
             return;
          }
 

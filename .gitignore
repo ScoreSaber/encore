@@ -6,12 +6,13 @@ dist/
 out/
 release/
 build/
-.next/
 .source/
-.turbo/
+.react-router/
+.react-router-build/
 .wrangler/
 .output/
 .tanstack/
+.vite-hooks/_/
 *.tsbuildinfo
 electron.vite.*.mjs
 

@@ -1,8 +1,9 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot, StoreInstallCandidate } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -46,12 +47,14 @@ describe('install registry', () => {
       const firstLibrary = join(dataPath, 'SteamLibrary');
       await createInstall(firstLibrary);
       candidates = [createCandidate(firstLibrary)];
-      const detected = (await registry.list()).installs[0]!;
+      const detected = (await registry.list()).installs[0];
+      if (!detected) throw new Error('store install was not detected');
 
       const secondLibrary = join(dataPath, 'SteamLibrary2');
       await createInstall(secondLibrary);
       candidates = [createCandidate(secondLibrary)];
-      const moved = (await registry.rescan()).installs[0]!;
+      const moved = (await registry.rescan()).installs[0];
+      if (!moved) throw new Error('moved store install was not detected');
 
       expect(moved).toMatchObject({
          id: detected.id,

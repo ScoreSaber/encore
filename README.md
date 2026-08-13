@@ -16,4 +16,4 @@ See [.github/setup.md](.github/setup.md) for the local development guide
 
 ## Contributing
 
-See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for code standards, testing expectations and pull request conventions
+See [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md) for code standards and pull request expectations

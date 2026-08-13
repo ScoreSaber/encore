@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import type { IpcError } from '@/ipc/core';
 import { hasSnapshotStream, type TargetApiModule } from '@/lib/api';
@@ -98,8 +99,7 @@ export function createReceiverServer(options: ReceiverServerOptions) {
    for (const module of options.apiModules) {
       if (!hasSnapshotStream(module)) continue;
 
-      const subscribe = module.subscribe as (listener: (snapshot: unknown) => void) => () => void;
-      subscribe((snapshot) => {
+      module.subscribeJson((snapshot) => {
          events.broadcast({ type: 'snapshot', namespace: module.api.namespace, value: snapshot });
       });
    }
@@ -296,7 +296,7 @@ export function createReceiverServer(options: ReceiverServerOptions) {
    }
 
    async function writePairedDevices(next: (devices: PairedDevice[]) => PairedDevice[]): Promise<ReceiverActionResult> {
-      const written = await options.settingsStore.updateAppSettings((current) => ({
+      const written = await options.settingsStore.updateAppSettingsWith((current) => ({
          receiver: { pairedDevices: next(current.receiver.pairedDevices) }
       }));
 
@@ -359,7 +359,8 @@ function listenOn(server: Server, address: LanAddress, interfaces: LanAddress[],
          server.removeListener('error', reject);
 
          const listening = server.address();
-         const boundPort = typeof listening === 'object' && listening ? listening.port : port;
+         const addressInfo = z.object({ port: z.number() }).safeParse(listening);
+         const boundPort = addressInfo.success ? addressInfo.data.port : port;
 
          const advertisedAddresses =
             address.interfaceName === wildcardInterfaceName

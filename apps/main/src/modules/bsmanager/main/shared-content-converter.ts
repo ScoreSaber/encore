@@ -82,12 +82,13 @@ export function createBSManagerSharedContentConverter(options: ConverterOptions)
    async function run(operationId: OperationId, plan: ReadyBSManagerPlan, groups: ConversionGroup[], signal: AbortSignal) {
       const support = await probeLinkSupport(plan.sharedContentPath, preferredLinkMode(options.locations.platform, plan.useSymlinks));
       if (!support.supported) {
-         return fail(operationId, {
+         const problem: FilesystemProblem = {
             code: 'filesystem.operation.copy-failed',
             message: 'this filesystem cannot create the links Encore uses',
-            path: plan.sharedContentPath,
-            ...(support.detail ? { detail: support.detail } : {})
-         });
+            path: plan.sharedContentPath
+         };
+         if (support.detail) problem.detail = support.detail;
+         return fail(operationId, problem);
       }
 
       const appConfigPath = bsmanagerAppConfigPath(options.locations);

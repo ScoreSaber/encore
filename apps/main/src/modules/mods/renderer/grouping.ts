@@ -55,7 +55,11 @@ function shuffleModFamilies(mods: ModSummary[]) {
    const shuffled = [...families.values()];
    for (let index = shuffled.length - 1; index > 0; index--) {
       const other = Math.floor(Math.random() * (index + 1));
-      [shuffled[index], shuffled[other]] = [shuffled[other]!, shuffled[index]!];
+      const current = shuffled[index];
+      const selected = shuffled[other];
+      if (!current || !selected) continue;
+      shuffled[index] = selected;
+      shuffled[other] = current;
    }
    mods.splice(0, mods.length, ...shuffled.flat());
 }

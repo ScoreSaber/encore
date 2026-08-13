@@ -84,7 +84,7 @@ import {
 import { mkdir, readdir } from 'node:fs/promises';
 import { relative, sep } from 'node:path';
 
-const actionIssueMessages: Record<SharedContentIssue, string> = {
+const actionIssueMessages = {
    'already-linked': 'this folder is already a link',
    'inspect-failed': 'the folder could not be inspected',
    'install-not-found': 'the install is not in the registry anymore',
@@ -157,12 +157,13 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       }
 
       if (!support.supported) {
-         problems.push({
+         const problem: SharedContentProblem = {
             code: 'shared.support.failed',
             message: 'this filesystem cannot create the links Encore uses',
-            path: sharedRootPath,
-            ...(support.detail ? { detail: support.detail } : {})
-         });
+            path: sharedRootPath
+         };
+         if (support.detail) problem.detail = support.detail;
+         problems.push(problem);
       }
 
       return publish({

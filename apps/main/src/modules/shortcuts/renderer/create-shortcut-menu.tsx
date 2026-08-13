@@ -9,9 +9,9 @@ import { DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenu
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
 import { shortcutKinds, type ShortcutIssue, type ShortcutWarning } from '@/modules/shortcuts/contract';
 import type { InstallShortcuts } from '@/modules/shortcuts/renderer/use-install-shortcuts';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<ShortcutIssue, MessageKey<'shortcuts.issues'>> = {
+const issueKeys: MessageKeyMap<ShortcutIssue, 'shortcuts.issues'> = {
    'install-not-found': 'installNotFound',
    'invalid-options': 'invalidOptions',
    'steam-client-missing': 'steamClientMissing',
@@ -22,7 +22,7 @@ const issueKeys: Record<ShortcutIssue, MessageKey<'shortcuts.issues'>> = {
    'write-failed': 'writeFailed'
 };
 
-const warningKeys: Record<ShortcutWarning, MessageKey<'shortcuts.warnings'>> = {
+const warningKeys: MessageKeyMap<ShortcutWarning, 'shortcuts.warnings'> = {
    'replaces-existing': 'replacesExisting',
    'steam-must-be-closed': 'steamMustBeClosed'
 };

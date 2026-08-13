@@ -1,8 +1,8 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 import { z } from 'zod';
 
 import { createPersistentCache } from '@/lib/content/content-cache';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

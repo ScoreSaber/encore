@@ -5,8 +5,8 @@ import { modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/
 import {
    accentColorSchema,
    appSettingsSchema,
+   downloadInstallSettingsSchema,
    librarySettingsSchema,
-   linkHandlingSettingsSchema,
    modGroupSettingsSchema,
    pairedDeviceSchema,
    remoteTargetRecordSchema,
@@ -42,7 +42,7 @@ export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSe
    const linkHandling = z
       .object({
          launchWithoutAsking: z.boolean().catch(defaults.app.linkHandling.launchWithoutAsking),
-         downloadInstall: linkHandlingSettingsSchema.shape.downloadInstall.catch(defaults.app.linkHandling.downloadInstall)
+         downloadInstall: downloadInstallSettingsSchema.catch(defaults.app.linkHandling.downloadInstall)
       })
       .catch(defaults.app.linkHandling);
    const app = z

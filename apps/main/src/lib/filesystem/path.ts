@@ -241,14 +241,15 @@ export async function readPathInfo(targetPath: string) {
                createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect filesystem link target', normalizedPath, cause)
          });
 
-         return {
+         const info: PathInfo = {
             path: normalizedPath,
             kind: 'link',
             isLink: true,
             sizeBytes: 0,
-            targetPath: resolveFilesystemPath(target, dirname(normalizedPath)),
-            ...(Result.isOk(targetStats) ? { targetKind: pathKindFromStats(targetStats.value) } : {})
+            targetPath: resolveFilesystemPath(target, dirname(normalizedPath))
          };
+         if (Result.isOk(targetStats)) info.targetKind = pathKindFromStats(targetStats.value);
+         return info;
       },
       catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect filesystem path', normalizedPath, cause)
    });
@@ -277,12 +278,10 @@ export async function pathExistsSafely(targetPath: string) {
 }
 
 export function createFilesystemProblem(code: FilesystemProblemCode, message: string, targetPath?: string, cause?: unknown): FilesystemProblem {
-   return {
-      code,
-      message,
-      ...(targetPath ? { path: targetPath } : {}),
-      ...(cause ? { detail: causeCode(cause) } : {})
-   };
+   const problem: FilesystemProblem = { code, message };
+   if (targetPath) problem.path = targetPath;
+   if (cause) problem.detail = causeCode(cause);
+   return problem;
 }
 
 async function readRealPath(targetPath: string) {

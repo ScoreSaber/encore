@@ -1,6 +1,7 @@
+import { describe, expect, test } from 'vite-plus/test';
+
 import { resolveModContentPath } from '@/modules/mods/main/mod-paths';
 
-import { describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
 
 const installPath = join('/tmp', 'encore-install');

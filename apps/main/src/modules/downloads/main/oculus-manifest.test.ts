@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import {
    maxManifestFiles,
@@ -10,8 +11,6 @@ import {
    readZipEntry
 } from '@/modules/downloads/main/oculus-manifest';
 import { createZipArchive } from '@/modules/downloads/main/oculus-manifest.fixture';
-
-import { describe, expect, test } from 'bun:test';
 
 describe('oculus manifest', () => {
    test('bounds declared and inflated manifest sizes', () => {

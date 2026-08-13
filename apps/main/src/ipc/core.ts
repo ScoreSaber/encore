@@ -1,6 +1,18 @@
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
 
 export type IpcSerializable = string | number | boolean | null | readonly IpcSerializable[] | { readonly [key: string]: IpcSerializable | undefined };
+export type IpcTransportValue = IpcSerializable | undefined;
+const ipcSerializableSchema: ZodType<IpcSerializable> = z.lazy(() =>
+   z.union([
+      z.string(),
+      z.number(),
+      z.boolean(),
+      z.null(),
+      z.array(ipcSerializableSchema),
+      z.record(z.string(), z.union([ipcSerializableSchema, z.undefined()]))
+   ])
+);
+export const ipcTransportValueSchema: ZodType<IpcTransportValue> = z.union([ipcSerializableSchema, z.undefined()]);
 
 export const ipcInvalidRequestCode = 'ipc.invalid-request';
 

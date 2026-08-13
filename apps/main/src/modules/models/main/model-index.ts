@@ -2,7 +2,6 @@ import { z } from 'zod';
 
 import { readJsonFileOrDefault, writeJsonFileAtomic } from '@/lib/filesystem/json';
 import { modelTypeSchema, type ModelHash, type ModelSaberModelSummary } from '@/modules/models/contract';
-import type { ModelSaberRecord } from '@/modules/models/main/model-saber-catalog';
 
 import { join } from 'node:path';
 
@@ -54,7 +53,7 @@ export function createModelIndex(options: { dataPath: string }) {
       return entries.get(hash.toLowerCase()) ?? null;
    }
 
-   async function remember(summary: ModelSaberModelSummary | ModelSaberRecord['summary']) {
+   async function remember(summary: ModelSaberModelSummary) {
       await load();
 
       const hash = summary.hash.toLowerCase();

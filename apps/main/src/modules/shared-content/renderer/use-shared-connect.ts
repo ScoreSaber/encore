@@ -35,28 +35,23 @@ export function useSharedConnect(targetId: TargetId) {
 
    const preview = useCallback(
       async (target: ConnectTarget, options?: { contents?: SharedContentsMode; includeRisky?: boolean }, current?: ReadySharedConnectPreview) => {
-         setState(
-            current
-               ? {
-                    status: 'ready',
-                    preview: {
-                       ...current,
-                       ...(options?.contents ? { contents: options.contents } : {}),
-                       ...(options?.includeRisky !== undefined ? { includeRisky: options.includeRisky } : {})
-                    },
-                    ...target
-                 }
-               : { status: 'previewing', ...target }
-         );
+         if (current) {
+            const nextPreview: ReadySharedConnectPreview = { ...current };
+            if (options?.contents) nextPreview.contents = options.contents;
+            if (options?.includeRisky !== undefined) nextPreview.includeRisky = options.includeRisky;
+            setState({ status: 'ready', preview: nextPreview, ...target });
+         } else {
+            setState({ status: 'previewing', ...target });
+         }
 
          const request: SharedConnectRequest & { targetId: TargetId } = {
             targetId,
             installId: target.installId,
             action: target.action,
-            rootPath: target.rootPath,
-            ...(options?.contents ? { contents: options.contents } : {}),
-            ...(options?.includeRisky !== undefined ? { includeRisky: options.includeRisky } : {})
+            rootPath: target.rootPath
          };
+         if (options?.contents) request.contents = options.contents;
+         if (options?.includeRisky !== undefined) request.includeRisky = options.includeRisky;
          const response = await sharedContent.previewConnect(request).catch(() => null);
          if (!response || response.status !== 'ok') {
             setState({ status: 'failed', error: { code: 'shared-content.preview-failed', message: 'the install could not be read' }, ...target });

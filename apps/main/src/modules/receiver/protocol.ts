@@ -14,8 +14,8 @@ export const receiverPairingCodeSchema = z
 export const receiverTokenSchema = z.string().trim().min(32);
 export const receiverProtocolVersionSchema = z.int().positive();
 
-function receiverResponseSchema<Shape extends z.ZodRawShape>(shape: Shape) {
-   return z.object({ protocolVersion: receiverProtocolVersionSchema, ...shape });
+function receiverResponseSchema<Fields extends Parameters<typeof z.object>[0]>(fields: Fields) {
+   return z.object({ protocolVersion: receiverProtocolVersionSchema, ...fields });
 }
 
 export const receiverHealthResponseSchema = receiverResponseSchema({

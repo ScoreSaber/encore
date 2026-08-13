@@ -1,8 +1,8 @@
+import { describe, expect, test } from 'vite-plus/test';
+
 import { openExternalUrl } from '@/external-navigation';
 import type { ExternalNavigationBlockReason } from '@/lib/security/external-url';
 import { supportLinkUrls } from '@/modules/support/contract';
-
-import { describe, expect, test } from 'bun:test';
 
 describe('Encore external navigation policy', () => {
    test('hands only Encore and support destinations to the OS', async () => {

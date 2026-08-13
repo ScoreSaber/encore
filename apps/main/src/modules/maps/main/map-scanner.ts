@@ -107,11 +107,12 @@ async function readMap(input: ReadMapInput): Promise<LocalMapSummary> {
 
    const hash = await computeMapHash({ mapPath: input.mapPath, folderName: input.folderName, rawInfo: raw.value, info: info.value });
 
-   return {
+   const map: LocalMapSummary = {
       ...describeMap(input, info.value),
-      hash: Result.isOk(hash) ? hash.value : null,
-      ...(Result.isError(hash) ? { problem: hash.error } : {})
+      hash: Result.isOk(hash) ? hash.value : null
    };
+   if (Result.isError(hash)) map.problem = hash.error;
+   return map;
 }
 
 function describeMap(input: ReadMapInput, info: MapInfo): LocalMapSummary {

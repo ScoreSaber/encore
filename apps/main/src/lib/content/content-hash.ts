@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { z } from 'zod';
 
 import type { ContentHash, ContentHashAlgorithm, ContentProblem } from '@/lib/content/contract';
 
@@ -11,7 +12,7 @@ export async function hashFile(filePath: string, algorithm: ContentHashAlgorithm
          const hash = createHash(algorithm);
 
          for await (const chunk of createReadStream(filePath)) {
-            hash.update(chunk);
+            hash.update(z.instanceof(Uint8Array).parse(chunk));
          }
 
          return hash.digest('hex');

@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import {
    createReceiverPairingController,
@@ -8,7 +9,6 @@ import {
 } from '@/modules/receiver/main/receiver-pairing';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

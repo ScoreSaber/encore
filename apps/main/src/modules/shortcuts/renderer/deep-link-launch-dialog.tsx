@@ -10,16 +10,16 @@ import { formatLaunchArgs, type LaunchIssue, type LaunchWarning } from '@/module
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
 import type { LaunchLinkIssue } from '@/modules/shortcuts/contract';
 import { useDeepLinkLaunch } from '@/modules/shortcuts/renderer/use-deep-link-launch';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const linkIssueKeys: Record<LaunchLinkIssue, MessageKey<'shortcuts.link.issues'>> = {
+const linkIssueKeys: MessageKeyMap<LaunchLinkIssue, 'shortcuts.link.issues'> = {
    'invalid-request': 'invalidRequest',
    'unknown-action': 'unknownAction',
    'unknown-install': 'unknownInstall',
    'unsupported-link': 'unsupportedLink'
 };
 
-const issueKeys: Record<LaunchIssue, MessageKey<'launch.issues'>> = {
+const issueKeys: MessageKeyMap<LaunchIssue, 'launch.issues'> = {
    'executable-missing': 'executableMissing',
    'inspect-failed': 'inspectFailed',
    'invalid-options': 'invalidOptions',
@@ -31,7 +31,7 @@ const issueKeys: Record<LaunchIssue, MessageKey<'launch.issues'>> = {
    'unsupported-target': 'unsupportedTarget'
 };
 
-const warningKeys: Record<LaunchWarning, MessageKey<'launch.warnings'>> = {
+const warningKeys: MessageKeyMap<LaunchWarning, 'launch.warnings'> = {
    'admin-prompt': 'adminPrompt',
    'admin-unsupported': 'adminUnsupported',
    'oculus-client-starts': 'oculusClientStarts',

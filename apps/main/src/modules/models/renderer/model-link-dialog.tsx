@@ -5,9 +5,9 @@ import { ContentLinkDialog } from '@/components/content/content-link-dialog';
 import type { ModelLinkIssue } from '@/modules/models/contract';
 import { useModelLink } from '@/modules/models/renderer/use-model-link';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<ModelLinkIssue, MessageKey<'models.link.issues'>> = {
+const issueKeys: MessageKeyMap<ModelLinkIssue, 'models.link.issues'> = {
    'invalid-id': 'invalidId',
    'unsupported-link': 'unsupportedLink'
 };

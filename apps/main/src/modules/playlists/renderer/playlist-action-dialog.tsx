@@ -8,9 +8,9 @@ import type { TargetPlaylistCollectionRequest } from '@/modules/playlists/api';
 import type { PlaylistActionIssue } from '@/modules/playlists/contract';
 import type { PlaylistActions } from '@/modules/playlists/renderer/use-playlist-actions';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<PlaylistActionIssue, MessageKey<'playlists.issues'>> = {
+const issueKeys: MessageKeyMap<PlaylistActionIssue, 'playlists.issues'> = {
    'install-not-found': 'installNotFound',
    'inspect-failed': 'inspectFailed',
    'invalid-source': 'invalidSource',

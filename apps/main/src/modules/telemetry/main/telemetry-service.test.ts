@@ -1,3 +1,5 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { type InstallRegistrySnapshot } from '@/modules/installs/contract';
 import { createDefaultAppSettings, createDefaultLibrarySettings, type SettingsSnapshot } from '@/modules/settings/contract';
 import { localTargetId } from '@/modules/targets/contract';
@@ -10,7 +12,6 @@ import {
    type TelemetryClient
 } from '@/modules/telemetry/main/telemetry-service';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

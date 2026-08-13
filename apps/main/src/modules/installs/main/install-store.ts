@@ -112,7 +112,7 @@ export function createInstallStore(options: { dataPath: string }) {
          const aliases =
             existing && existing.key && existing.key !== key ? [...new Set([...existing.aliases, existing.key])] : (existing?.aliases ?? []);
 
-         next.push({
+         const record: InstallRecord = {
             id: existing?.id ?? id,
             targetId: candidate.targetId,
             source: 'store',
@@ -124,12 +124,13 @@ export function createInstallStore(options: { dataPath: string }) {
             key,
             aliases,
             libraryPath,
-            ...(candidate.appId ? { appId: candidate.appId } : {}),
-            ...(candidate.manifestPath ? { manifestPath: candidate.manifestPath } : {}),
-            ...(candidate.executablePath ? { executablePath: candidate.executablePath } : {}),
             createdAt: existing?.createdAt ?? now,
             updatedAt: existing && unchanged ? existing.updatedAt : now
-         });
+         };
+         if (candidate.appId) record.appId = candidate.appId;
+         if (candidate.manifestPath) record.manifestPath = candidate.manifestPath;
+         if (candidate.executablePath) record.executablePath = candidate.executablePath;
+         next.push(record);
 
          changed ||= !unchanged;
       }
@@ -172,15 +173,12 @@ export function createInstallStore(options: { dataPath: string }) {
       const existing = current.find((record) => record.id === installId);
       if (!existing) return Result.ok<InstallRecord | null, FilesystemProblem>(null);
 
-      const updated: InstallRecord = {
-         ...existing,
-         ...(patch.name === undefined ? {} : { name: patch.name }),
-         ...(patch.pinned === undefined ? {} : { pinned: patch.pinned }),
-         ...(patch.color === undefined ? {} : { color: patch.color }),
-         ...(patch.path === undefined ? {} : { path: resolveFilesystemPath(patch.path) }),
-         ...(patch.store === undefined ? {} : { store: patch.store }),
-         updatedAt: new Date().toISOString()
-      };
+      const updated: InstallRecord = { ...existing, updatedAt: new Date().toISOString() };
+      if (patch.name !== undefined) updated.name = patch.name;
+      if (patch.pinned !== undefined) updated.pinned = patch.pinned;
+      if (patch.color !== undefined) updated.color = patch.color;
+      if (patch.path !== undefined) updated.path = resolveFilesystemPath(patch.path);
+      if (patch.store !== undefined) updated.store = patch.store;
 
       const written = await persist(current.map((record) => (record.id === installId ? updated : record)));
       return Result.isError(written)

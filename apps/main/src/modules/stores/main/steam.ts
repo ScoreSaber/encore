@@ -1,5 +1,6 @@
 import { Result, type Result as BetterResult } from 'better-result';
-import { deserialize, type KVObject, type KVValue } from 'valve-kv';
+import { deserialize, isKvObject, type KVObject, type KVValue } from 'valve-kv';
+import { z } from 'zod';
 
 import { causeCode } from '@/lib/errors';
 import { pathExists } from '@/lib/filesystem/path';
@@ -45,11 +46,12 @@ type SteamDetectionResult = {
 
 // Steam's text VDF escapes backslashes, so keep its KeyValues checks at the file boundary
 function vdfObject(value: KVValue | undefined): KVObject | null {
-   return typeof value === 'object' && !Array.isArray(value) ? value : null;
+   return value !== undefined && isKvObject(value) ? value : null;
 }
 
 function vdfString(value: KVValue | undefined): string | null {
-   return typeof value === 'string' ? value : null;
+   const text = z.string().safeParse(value);
+   return text.success ? text.data : null;
 }
 
 type SteamLibrary = {
@@ -95,15 +97,16 @@ export async function detectSteamStore(targetId: TargetId): Promise<SteamDetecti
    const rootResult = await findSteamRoot();
    if (Result.isError(rootResult)) {
       const diagnostic = steamDiagnostic(rootResult.error.code, rootResult.error.severity, rootResult.error.path, rootResult.error.detail);
+      const store: StoreDetectionStoreSummary = {
+         store: steamStore,
+         status: rootResult.error.status,
+         libraries: [],
+         diagnostics: [diagnostic]
+      };
+      if (rootResult.error.clientPath) store.clientPath = rootResult.error.clientPath;
 
       return {
-         store: {
-            store: steamStore,
-            status: rootResult.error.status,
-            libraries: [],
-            diagnostics: [diagnostic],
-            ...(rootResult.error.clientPath ? { clientPath: rootResult.error.clientPath } : {})
-         },
+         store,
          candidates: []
       };
    }
@@ -134,14 +137,15 @@ export async function detectSteamStore(targetId: TargetId): Promise<SteamDetecti
       const executablePath = installPath ? await findSteamExecutable(installPath) : null;
       const hasBeatSaber = Boolean(installPath);
 
-      libraries.push({
+      const summary: StoreLibrarySummary = {
          id: library.id,
          store: steamStore,
          path: library.path,
-         hasBeatSaber,
-         ...(manifest ? { manifestPath: manifest.path } : {}),
-         ...(installPath ? { installPath } : {})
-      });
+         hasBeatSaber
+      };
+      if (manifest) summary.manifestPath = manifest.path;
+      if (installPath) summary.installPath = installPath;
+      libraries.push(summary);
 
       if (!installPath) continue;
 
@@ -151,10 +155,10 @@ export async function detectSteamStore(targetId: TargetId): Promise<SteamDetecti
          store: steamStore,
          path: installPath,
          libraryPath: library.path,
-         appId: beatSaberAppId,
-         ...(manifest ? { manifestPath: manifest.path } : {}),
-         ...(executablePath ? { executablePath } : {})
+         appId: beatSaberAppId
       };
+      if (manifest) candidate.manifestPath = manifest.path;
+      if (executablePath) candidate.executablePath = executablePath;
 
       candidates.push(candidate);
       diagnostics.push(steamDiagnostic('steam.detected', 'info', installPath));
@@ -343,12 +347,13 @@ function steamDiagnostic(
    path?: string,
    detail?: string
 ): StoreDetectionDiagnostic {
-   return {
+   const diagnostic: StoreDetectionDiagnostic = {
       id: [steamStore, code, path].filter(Boolean).join(':'),
       store: steamStore,
       code,
-      severity,
-      ...(path ? { path } : {}),
-      ...(detail ? { detail } : {})
+      severity
    };
+   if (path) diagnostic.path = path;
+   if (detail) diagnostic.detail = detail;
+   return diagnostic;
 }

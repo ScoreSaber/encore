@@ -13,9 +13,9 @@ import type { TargetMapCollectionRequest } from '@/modules/maps/api';
 import type { BeatSaverMapSummary, MapSearchIssue } from '@/modules/maps/contract';
 import { useMapSearch } from '@/modules/maps/renderer/use-map-search';
 import { supportLinkUrls } from '@/modules/support/contract';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<MapSearchIssue, MessageKey<'maps.search.issues'>> = {
+const issueKeys: MessageKeyMap<MapSearchIssue, 'maps.search.issues'> = {
    'fetch-failed': 'fetchFailed',
    'invalid-response': 'invalidResponse',
    unsupported: 'unsupported'
@@ -59,7 +59,7 @@ export function MapSearchDialog({
             <form
                onSubmit={(event) => {
                   event.preventDefault();
-                  void search.submit();
+                  search.submit();
                }}
             >
                <div className="flex gap-2">

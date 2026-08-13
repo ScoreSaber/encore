@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   ArrowRight,
   ChevronRight,
@@ -10,6 +9,7 @@ import {
   PackagePlus,
   Plus,
 } from "lucide-react";
+import { Link } from "react-router";
 
 import { GitHubIcon } from "@/components/github-icon";
 import {
@@ -43,7 +43,7 @@ export function RepositorySection() {
           </p>
           <Link
             className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-white/70 transition hover:text-white"
-            href="/docs/modding/mod-repositories"
+            to="/docs/modding/mod-repositories"
           >
             Learn more
             <ArrowRight className="size-4" aria-hidden="true" />
@@ -190,7 +190,7 @@ function RepositoryPreview() {
                 <PreviewScrollbar />
               </div>
             </div>
-            <span className="pointer-events-none absolute inset-0 z-30 rounded-[inherit] ring-1 ring-inset ring-white/20" />
+            <span className="pointer-events-none absolute inset-0 z-30 rounded-[inherit] ring-1 ring-white/20 ring-inset" />
           </div>
         </div>
       </div>

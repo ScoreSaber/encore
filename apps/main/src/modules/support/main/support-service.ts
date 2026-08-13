@@ -30,13 +30,14 @@ export function createSupportService(options: {
 
       if (installResult.status === 'ok') return installResult.value;
 
-      return {
+      const group: SupportInstallLogGroup = {
          source: 'install',
          status: 'unsupported',
          rootPath: null,
-         files: [],
-         ...(installResult.status === 'unavailable' ? { detail: installResult.error.message } : {})
+         files: []
       };
+      if (installResult.status === 'unavailable') group.detail = installResult.error.message;
+      return group;
    }
 
    async function getLogs(request: SupportTargetInput): Promise<SupportLogsSnapshot> {

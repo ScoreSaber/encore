@@ -1,6 +1,6 @@
-import { redactSupportText } from '@/modules/support/main/log-redaction';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { redactSupportText } from '@/modules/support/main/log-redaction';
 
 describe('support redaction', () => {
    test('removes tokens, accounts and machine paths before a log can be shared', () => {

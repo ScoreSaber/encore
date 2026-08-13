@@ -59,14 +59,16 @@ export function createDefaultModGroupSettings() {
    return { order: [], collapsed: ['category:library'] };
 }
 
+export const downloadInstallSettingsSchema = z
+   .object({
+      targetId: targetIdSchema,
+      installId: installIdSchema
+   })
+   .nullable();
+
 export const linkHandlingSettingsSchema = z.object({
    launchWithoutAsking: z.boolean(),
-   downloadInstall: z
-      .object({
-         targetId: targetIdSchema,
-         installId: installIdSchema
-      })
-      .nullable()
+   downloadInstall: downloadInstallSettingsSchema
 });
 
 export const appSettingsSchema = z.object({

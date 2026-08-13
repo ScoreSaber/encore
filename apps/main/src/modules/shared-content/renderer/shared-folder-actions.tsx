@@ -8,12 +8,12 @@ import { ButtonGroup } from '@/components/ui/button-group';
 import type { SharedContentIssue, SharedFolderLinkState, SharedFolderStatus } from '@/modules/shared-content/contract';
 import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedContentActions } from '@/modules/shared-content/renderer/use-shared-content-actions';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
 const linkedStates = new Set<SharedFolderLinkState>(['broken', 'foreign', 'linked']);
 const repairStates = new Set<SharedFolderLinkState>(['broken', 'foreign']);
 
-export const sharedContentIssueKeys: Record<SharedContentIssue, MessageKey<'sharedContent.issues'>> = {
+export const sharedContentIssueKeys: MessageKeyMap<SharedContentIssue, 'sharedContent.issues'> = {
    'already-linked': 'alreadyLinked',
    'inspect-failed': 'inspectFailed',
    'install-not-found': 'installNotFound',

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+
 import { ChevronDown } from "lucide-react";
+import { Link } from "react-router";
+
+import encoreLogoUrl from "../../../../../assets/logo.svg?url";
 
 import { DownloadButton } from "@/components/download-button";
 import { GitHubIcon } from "@/components/github-icon";
-import encoreLogo from "../../../../../assets/logo.svg";
 
 export function HomeNavigation() {
   const [featureButtonVisible, setFeatureButtonVisible] = useState(true);
@@ -53,13 +55,13 @@ export function HomeNavigation() {
       >
         <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-7 px-6 sm:px-10">
           <a
-            className="relative inline-flex items-center gap-2 text-xl font-medium tracking-[-0.04em] [font-family:var(--font-pixel),ui-monospace,monospace]"
+            className="relative inline-flex items-center gap-2 [font-family:var(--font-pixel),ui-monospace,monospace] text-xl font-medium tracking-[-0.04em]"
             href="#top"
           >
-            <img className="size-6" src={encoreLogo.src} width={24} height={24} alt="" />
+            <img className="size-6" src={encoreLogoUrl} width={24} height={24} alt="" />
             <span className="relative -translate-y-0.5">
               Encore
-              <span className="absolute bottom-[-0.35rem] left-0 whitespace-nowrap text-[0.5rem] leading-none font-medium tracking-normal text-white/25 [font-family:var(--font-sans),sans-serif]">
+              <span className="absolute bottom-[-0.35rem] left-0 [font-family:var(--font-sans),sans-serif] text-[0.5rem] leading-none font-medium tracking-normal whitespace-nowrap text-white/25">
                 by ScoreSaber
               </span>
             </span>
@@ -71,7 +73,7 @@ export function HomeNavigation() {
             <a className="transition hover:text-white" href="#faq">
               FAQ
             </a>
-            <Link className="transition hover:text-white" href="/docs">
+            <Link className="transition hover:text-white" to="/docs">
               Docs
             </Link>
           </div>

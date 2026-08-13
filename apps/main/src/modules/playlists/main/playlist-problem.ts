@@ -10,10 +10,8 @@ export function createPlaylistProblem(
    message: string,
    options: { fileName?: string; cause?: unknown } = {}
 ): PlaylistProblem {
-   return {
-      code,
-      message,
-      ...(options.fileName ? { fileName: options.fileName } : {}),
-      ...(options.cause === undefined ? {} : { detail: causeCode(options.cause) })
-   };
+   const problem: PlaylistProblem = { code, message };
+   if (options.fileName) problem.fileName = options.fileName;
+   if (options.cause !== undefined) problem.detail = causeCode(options.cause);
+   return problem;
 }

@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 
+import { z } from "zod";
+
 type Platform = "Linux" | "macOS" | "Windows";
 
-interface ReleaseAsset {
-  name: string;
-  browser_download_url: string;
-}
+const releaseSchema = z.object({
+  assets: z.array(z.object({ name: z.string(), browser_download_url: z.string().url() })),
+});
 
-interface Release {
-  assets: ReleaseAsset[];
-}
+type Release = z.infer<typeof releaseSchema>;
+type ReleaseAsset = Release["assets"][number];
 
 const RELEASES_URL = "https://github.com/ScoreSaber/encore/releases";
 const RELEASE_API_URL = "https://api.github.com/repos/ScoreSaber/encore/releases/latest";
@@ -27,13 +27,13 @@ function detectPlatform(): Platform {
 
 async function fetchLatestRelease(signal: AbortSignal): Promise<Release> {
   const cached = sessionStorage.getItem(RELEASE_CACHE_KEY);
-  if (cached) return JSON.parse(cached);
+  if (cached) return releaseSchema.parse(JSON.parse(cached));
 
   const response = await fetch(RELEASE_API_URL, { signal });
   if (!response.ok) throw new Error(`GitHub release request failed with ${response.status}`);
 
-  const release: Release = await response.json();
-  if (release.assets) sessionStorage.setItem(RELEASE_CACHE_KEY, JSON.stringify(release));
+  const release = releaseSchema.parse(await response.json());
+  sessionStorage.setItem(RELEASE_CACHE_KEY, JSON.stringify(release));
 
   return release;
 }
@@ -96,7 +96,7 @@ export function DownloadButton() {
 
   return (
     <a
-      className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border px-3.25 font-semibold text-[#06101a] no-underline [border-color:color-mix(in_srgb,var(--accent)_72%,white)] [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]"
+      className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border [border-color:color-mix(in_srgb,var(--accent)_72%,white)] px-3.25 font-semibold text-[#06101a] no-underline [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]"
       href={downloadUrl}
     >
       <PlatformIcon platform={platform} />

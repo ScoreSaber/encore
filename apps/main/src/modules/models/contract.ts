@@ -3,7 +3,6 @@ import { z } from 'zod';
 import type { IpcResult } from '@/ipc/core';
 import { installIdSchema } from '@/modules/installs/contract';
 import type { OperationSnapshot } from '@/modules/operations/contract';
-import type { SharedFolderId } from '@/modules/shared-content/contract';
 
 export const modelTypeSchema = z.enum(['avatar', 'bloq', 'platform', 'saber', 'wall']);
 export const modelTypes = modelTypeSchema.options;
@@ -11,7 +10,7 @@ export const modelTypes = modelTypeSchema.options;
 export type ModelType = z.infer<typeof modelTypeSchema>;
 export type CatalogModelType = Exclude<ModelType, 'wall'>;
 
-export const modelSharedFolderIds: Record<ModelType, SharedFolderId | null> = {
+export const modelSharedFolderIds = {
    avatar: 'avatars',
    bloq: 'notes',
    platform: 'platforms',
@@ -242,12 +241,9 @@ export function parseModelLink(value: string): ModelLinkParse {
 }
 
 export function invalidModelAction(request: ModelCollectionRequest, issue: ModelActionIssue, detail?: string): ModelActionProblem {
-   return {
-      status: 'invalid',
-      installId: request.installId,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: ModelActionProblem = { status: 'invalid', installId: request.installId, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function createEmptyModelCollectionSnapshot(

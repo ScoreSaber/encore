@@ -1,8 +1,7 @@
 import { Result } from 'better-result';
+import { describe, expect, test } from 'vite-plus/test';
 
 import { createBeatSaverCatalog } from '@/modules/maps/main/beatsaver-catalog';
-
-import { describe, expect, test } from 'bun:test';
 
 const hash = 'A'.repeat(40);
 
@@ -28,7 +27,7 @@ describe('BeatSaver catalog', () => {
       if (Result.isError(records)) return;
 
       expect(requests).toHaveLength(1);
-      expect(requests[0]).toEndWith(`/maps/hash/${hash.toLowerCase()}`);
+      expect(requests[0]?.endsWith(`/maps/hash/${hash.toLowerCase()}`)).toBe(true);
       expect(records.value.get(hash.toLowerCase())?.summary).toMatchObject({ bpm: null, durationSeconds: null });
    });
 });

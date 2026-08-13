@@ -33,9 +33,9 @@ import {
 } from '@/modules/launch/contract';
 import { ProtonFolderField } from '@/modules/launch/renderer/proton-folder-field';
 import type { InstallLaunch } from '@/modules/launch/renderer/use-install-launch';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKey, MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<LaunchIssue, MessageKey<'launch.issues'>> = {
+const issueKeys: MessageKeyMap<LaunchIssue, 'launch.issues'> = {
    'executable-missing': 'executableMissing',
    'inspect-failed': 'inspectFailed',
    'invalid-options': 'invalidOptions',
@@ -47,7 +47,7 @@ const issueKeys: Record<LaunchIssue, MessageKey<'launch.issues'>> = {
    'unsupported-target': 'unsupportedTarget'
 };
 
-const warningKeys: Record<LaunchWarning, MessageKey<'launch.warnings'>> = {
+const warningKeys: MessageKeyMap<LaunchWarning, 'launch.warnings'> = {
    'admin-prompt': 'adminPrompt',
    'admin-unsupported': 'adminUnsupported',
    'oculus-client-starts': 'oculusClientStarts',
@@ -56,7 +56,18 @@ const warningKeys: Record<LaunchWarning, MessageKey<'launch.warnings'>> = {
    'steam-skipped': 'steamSkipped'
 };
 
-const flagKeys: Record<LaunchFlag, { label: MessageKey<'launch'>; description: MessageKey<'launch'> }> = {
+type LaunchFlagCopyEntry = { label: MessageKey<'launch'>; description: MessageKey<'launch'> };
+
+type LaunchFlagCopy = {
+   'oculus-mode': LaunchFlagCopyEntry;
+   fpfc: LaunchFlagCopyEntry;
+   debug: LaunchFlagCopyEntry;
+   editor: LaunchFlagCopyEntry;
+   'skip-steam': LaunchFlagCopyEntry;
+   'proton-logs': LaunchFlagCopyEntry;
+};
+
+const flagKeys: LaunchFlagCopy = {
    'oculus-mode': { label: 'flags.oculusMode.label', description: 'flags.oculusMode.description' },
    fpfc: { label: 'flags.fpfc.label', description: 'flags.fpfc.description' },
    debug: { label: 'flags.debug.label', description: 'flags.debug.description' },
@@ -65,7 +76,7 @@ const flagKeys: Record<LaunchFlag, { label: MessageKey<'launch'>; description: M
    'proton-logs': { label: 'flags.protonLogs.label', description: 'flags.protonLogs.description' }
 };
 
-const flagIcons: Record<LaunchFlag, typeof Play> = {
+const flagIcons = {
    'oculus-mode': Glasses,
    fpfc: Monitor,
    debug: Bug,

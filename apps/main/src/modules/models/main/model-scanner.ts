@@ -120,9 +120,9 @@ async function readModel(entry: ScanEntry, cache?: ModelScanCache): Promise<Loca
       thumbnailUrl: null,
       sizeBytes,
       updatedAt,
-      isDuplicate: false,
-      ...(Result.isError(hash) ? { problem: hash.error } : {})
+      isDuplicate: false
    };
+   if (Result.isError(hash)) model.problem = hash.error;
 
    cache?.set(id, { fingerprint, model });
 

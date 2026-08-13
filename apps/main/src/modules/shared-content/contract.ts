@@ -477,13 +477,9 @@ export function isConnectContentsAllowed(action: SharedConnectAction, contents: 
 }
 
 export function invalidSharedConnect(request: SharedConnectRequest, issue: SharedContentIssue, detail?: string): SharedConnectProblem {
-   return {
-      status: 'invalid',
-      installId: request.installId,
-      action: request.action,
-      issue,
-      ...(detail ? { detail } : {})
-   };
+   const problem: SharedConnectProblem = { status: 'invalid', installId: request.installId, action: request.action, issue };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function invalidSharedContentAction(
@@ -491,14 +487,15 @@ export function invalidSharedContentAction(
    issue: SharedContentIssue,
    detail?: string
 ): SharedContentActionProblem {
-   return {
+   const problem: SharedContentActionProblem = {
       status: 'invalid',
       installId: request.installId,
       folderId: request.folderId,
       action: request.action,
-      issue,
-      ...(detail ? { detail } : {})
+      issue
    };
+   if (detail) problem.detail = detail;
+   return problem;
 }
 
 export function createEmptySharedContentSnapshot(request: SharedContentRequest, status: SharedContentStatus = 'missing'): SharedContentSnapshot {

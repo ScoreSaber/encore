@@ -7,9 +7,9 @@ import type { MapActionIssue } from '@/modules/maps/contract';
 import type { MapActions } from '@/modules/maps/renderer/use-map-actions';
 import { PreviewList } from '@/modules/operations/renderer/operation-progress';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<MapActionIssue, MessageKey<'maps.issues'>> = {
+const issueKeys: MessageKeyMap<MapActionIssue, 'maps.issues'> = {
    'already-installed': 'alreadyInstalled',
    'install-not-found': 'installNotFound',
    'inspect-failed': 'inspectFailed',

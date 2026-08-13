@@ -1,8 +1,8 @@
+import { describe, expect, test } from 'vite-plus/test';
+
 import type { ContentHash } from '@/lib/content/contract';
 import { buildModIndex, fileHashKey, resolveModIdentities, type ModIndexEntry } from '@/modules/mods/main/mod-index';
 import { summarizeMods } from '@/modules/mods/main/mod-plan';
-
-import { describe, expect, test } from 'bun:test';
 
 const sharedHash: ContentHash = { algorithm: 'md5', value: '1'.repeat(32) };
 const previousHash: ContentHash = { algorithm: 'sha256', value: '2'.repeat(64) };

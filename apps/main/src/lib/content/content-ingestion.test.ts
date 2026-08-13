@@ -1,11 +1,11 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import type { ContentFetch } from '@/lib/content/content-download';
 import { createContentIngestionService, type StagedArchive } from '@/lib/content/content-ingestion';
 import { createContentStaging } from '@/lib/content/content-staging';
 import { buildZipArchive } from '@/lib/content/zip-archive.fixture';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

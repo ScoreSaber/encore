@@ -10,9 +10,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import type { BSManagerIssue, BSManagerVersion, ReadyBSManagerPlan } from '@/modules/bsmanager/contract';
 import type { BSManagerAdopter } from '@/modules/bsmanager/renderer/use-bsmanager-adoption';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<BSManagerIssue, MessageKey<'bsmanager.issues'>> = {
+const issueKeys: MessageKeyMap<BSManagerIssue, 'bsmanager.issues'> = {
    'inspect-failed': 'inspectFailed',
    'not-bsmanager': 'notBSManager',
    'not-found': 'notFound',

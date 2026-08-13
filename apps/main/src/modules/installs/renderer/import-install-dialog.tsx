@@ -6,9 +6,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import type { InstallImportIssue } from '@/modules/installs/contract';
 import type { InstallImporter } from '@/modules/installs/renderer/use-install-import';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<InstallImportIssue, MessageKey<'installs.import.issues'>> = {
+const issueKeys: MessageKeyMap<InstallImportIssue, 'installs.import.issues'> = {
    'already-registered': 'alreadyRegistered',
    'inspect-failed': 'inspectFailed',
    'missing-executable': 'missingExecutable',

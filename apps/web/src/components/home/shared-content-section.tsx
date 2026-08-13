@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+
 import { Box, ChevronDown, FolderOpen, MoreHorizontal } from "lucide-react";
 
 import { PreviewButton, PreviewScrollbar } from "@/components/home/preview-ui";

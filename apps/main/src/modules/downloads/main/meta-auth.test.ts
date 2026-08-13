@@ -1,6 +1,6 @@
-import { isMetaAuthToken } from '@/modules/downloads/main/meta-auth';
+import { describe, expect, test } from 'vite-plus/test';
 
-import { describe, expect, test } from 'bun:test';
+import { isMetaAuthToken } from '@/modules/downloads/main/meta-auth';
 
 describe('meta auth', () => {
    test('only accepts cookie values shaped like a Meta access token', () => {

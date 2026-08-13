@@ -1,6 +1,7 @@
+import { afterEach, describe, expect, test } from 'vite-plus/test';
+
 import { createSupportLogService } from '@/modules/support/main/support-logs';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,7 +34,10 @@ describe('support logs', () => {
       expect(app.status).toBe('ready');
       expect(app.files.map((file) => file.id)).toEqual(['encore-2026-07-28.log', 'encore-2026-07-27.log']);
       expect(install).toMatchObject({ source: 'install', status: 'ready' });
-      expect(install.files).toEqual([expect.objectContaining({ id: '_latest.log', installId: 'install_1', installName: '1.29.1' })]);
+      expect(install.files).toHaveLength(1);
+      expect(install.files[0]?.id).toBe('_latest.log');
+      expect(install.files[0]?.installId).toBe('install_1');
+      expect(install.files[0]?.installName).toBe('1.29.1');
       expect(escaped).toMatchObject({ status: 'unavailable', issue: 'invalid-path' });
       expect(absolute).toMatchObject({ status: 'unavailable', issue: 'invalid-path' });
       expect(linked).toMatchObject({ status: 'unavailable', issue: 'invalid-path' });

@@ -13,9 +13,9 @@ import type { TargetModelCollectionRequest } from '@/modules/models/api';
 import { isCatalogModelType, type ModelSaberModelSummary, type ModelSearchIssue, type ModelType } from '@/modules/models/contract';
 import { useModelSearch } from '@/modules/models/renderer/use-model-search';
 import { supportLinkUrls } from '@/modules/support/contract';
-import type { MessageKey } from '@/renderer/i18n/keys';
+import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: Record<ModelSearchIssue, MessageKey<'models.search.issues'>> = {
+const issueKeys: MessageKeyMap<ModelSearchIssue, 'models.search.issues'> = {
    'fetch-failed': 'fetchFailed',
    'invalid-response': 'invalidResponse',
    unsupported: 'unsupported',
@@ -64,7 +64,7 @@ export function ModelSearchDialog({
             <form
                onSubmit={(event) => {
                   event.preventDefault();
-                  void search.submit();
+                  search.submit();
                }}
             >
                <div className="flex gap-2">

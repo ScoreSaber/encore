@@ -1,4 +1,5 @@
 import { Result } from 'better-result';
+import { afterEach, describe, expect, test } from 'vite-plus/test';
 
 import { createInstallRegistry } from '@/modules/installs/main/install-registry';
 import type { ModelType } from '@/modules/models/contract';
@@ -10,7 +11,6 @@ import { waitForOperation } from '@/modules/operations/main/operation-waiting.fi
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
-import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,7 +86,11 @@ async function createHarness() {
       dataPath,
       operations,
       models,
-      firstInstall: async () => (await registry.list()).installs[0]!
+      firstInstall: async () => {
+         const install = (await registry.list()).installs[0];
+         if (!install) throw new Error('test install was not registered');
+         return install;
+      }
    };
 }
 

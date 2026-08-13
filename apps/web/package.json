@@ -2,35 +2,37 @@
   "name": "@encore/web",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "fumadocs-mdx && next dev",
-    "build": "fumadocs-mdx && next build",
+    "dev": "react-router dev",
+    "build": "react-router build",
     "start": "serve out",
-    "typecheck": "fumadocs-mdx && next typegen && tsc --noEmit",
-    "lint": "oxlint src source.config.ts next.config.mjs postcss.config.mjs",
+    "deploy": "pnpm run build && wrangler pages deploy --branch main",
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@orama/orama": "3.1.18",
-    "fumadocs-core": "16.9.0",
-    "fumadocs-mdx": "15.0.7",
-    "fumadocs-ui": "16.9.0",
+    "fumadocs-core": "16.14.1",
+    "fumadocs-mdx": "15.2.2",
+    "fumadocs-ui": "16.14.1",
     "lucide-react": "1.16.0",
-    "next": "16.2.6",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "tailwind-merge": "3.6.0"
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router": "8.3.0",
+    "tailwind-merge": "3.6.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "4.3.0",
+    "@react-router/dev": "8.3.0",
+    "@tailwindcss/vite": "4.3.0",
     "@types/mdx": "2.0.13",
     "@types/node": "25.9.1",
     "@types/react": "19.2.15",
     "@types/react-dom": "19.2.3",
-    "postcss": "8.5.15",
     "serve": "14.2.6",
     "tailwindcss": "4.3.0",
     "typescript": "6.0.3",
+    "vite": "catalog:",
+    "vite-plus": "catalog:",
     "wrangler": "4.113.0"
   }
 }

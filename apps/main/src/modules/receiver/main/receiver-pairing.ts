@@ -123,7 +123,7 @@ export function createReceiverPairingController(options: PairingOptions) {
          lastSeenAt: pairedAt
       };
 
-      const written = await options.settingsStore.updateAppSettings((current) => ({
+      const written = await options.settingsStore.updateAppSettingsWith((current) => ({
          receiver: {
             pairedDevices: [...current.receiver.pairedDevices, device]
          }
@@ -166,7 +166,7 @@ export function createReceiverPairingController(options: PairingOptions) {
    async function persistLastSeen(deviceId: string, seenAt: string) {
       let stillPaired = false;
 
-      await options.settingsStore.updateAppSettings((current) => {
+      await options.settingsStore.updateAppSettingsWith((current) => {
          stillPaired = current.receiver.pairedDevices.some((candidate) => candidate.id === deviceId);
          if (!stillPaired) return {};
 

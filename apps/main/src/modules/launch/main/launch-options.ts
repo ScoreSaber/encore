@@ -2,7 +2,7 @@ import { beatSaberSteamAppId } from '@/modules/downloads/main/steam-client';
 import { launchFlags, type LaunchFlag, type ProtonLaunchPlan } from '@/modules/launch/contract';
 import type { StoreKind } from '@/modules/stores/contract';
 
-const flagArguments: Record<LaunchFlag, readonly string[]> = {
+const flagArguments = {
    'oculus-mode': ['-vrmode', 'oculus'],
    fpfc: ['fpfc'],
    debug: ['--verbose'],
@@ -17,6 +17,10 @@ const steamRunCommand = 'steam-run';
 const flatpakSpawnCommand = 'flatpak-spawn';
 const wineDllOverrides = 'winhttp=n,b';
 
+interface LaunchEnvironment {
+   [name: string]: string;
+}
+
 export function buildLaunchArgs(input: { flags: readonly LaunchFlag[]; args: readonly string[]; isStoreInstall: boolean }) {
    const args = input.isStoreInstall ? [] : [managedCopyArgument];
 
@@ -27,28 +31,30 @@ export function buildLaunchArgs(input: { flags: readonly LaunchFlag[]; args: rea
    return [...args, ...input.args];
 }
 
-export function buildLaunchEnv(input: { store: StoreKind | null; installPath: string; proton: ProtonLaunchPlan | null }): Record<string, string> {
-   const steamEnv: Record<string, string> =
-      input.store !== 'oculus'
-         ? {
-              SteamAppId: beatSaberSteamAppId,
-              SteamOverlayGameId: beatSaberSteamAppId,
-              SteamGameId: beatSaberSteamAppId
-           }
-         : {};
+export function buildLaunchEnv(input: { store: StoreKind | null; installPath: string; proton: ProtonLaunchPlan | null }): LaunchEnvironment {
+   const steamEnv: LaunchEnvironment = {};
+   if (input.store !== 'oculus') {
+      steamEnv.SteamAppId = beatSaberSteamAppId;
+      steamEnv.SteamOverlayGameId = beatSaberSteamAppId;
+      steamEnv.SteamGameId = beatSaberSteamAppId;
+   }
 
    if (!input.proton) return steamEnv;
 
-   return {
+   const environment: LaunchEnvironment = {
       ...steamEnv,
       WINEDLLOVERRIDES: wineDllOverrides,
       STEAM_COMPAT_DATA_PATH: input.proton.compatDataPath,
       STEAM_COMPAT_INSTALL_PATH: input.installPath,
       STEAM_COMPAT_CLIENT_INSTALL_PATH: input.proton.steamClientPath,
       STEAM_COMPAT_APP_ID: beatSaberSteamAppId,
-      SteamEnv: '1',
-      ...(input.proton.logPath ? { PROTON_LOG: '1', PROTON_LOG_DIR: input.proton.logPath } : {})
+      SteamEnv: '1'
    };
+   if (input.proton.logPath) {
+      environment.PROTON_LOG = '1';
+      environment.PROTON_LOG_DIR = input.proton.logPath;
+   }
+   return environment;
 }
 
 export function buildProtonCommand(input: {
