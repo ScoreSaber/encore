@@ -44,14 +44,15 @@ export default function PrivacyPolicy() {
             <h1 className="text-4xl font-medium tracking-[-0.045em] text-white sm:text-5xl">
               Privacy policy
             </h1>
-            <p className="mt-3 text-sm text-white/38">Last updated 10 August 2026</p>
+            <p className="mt-3 text-sm text-white/38">Last updated 25 August 2026</p>
           </header>
 
           <div className="pt-8">
             <p>
-              This policy explains how ScoreSaber handles optional usage telemetry from the Encore
-              desktop app. Encore is operated by ScoreSaber from Melbourne, Australia. The Encore
-              website does not use analytics cookies or run separate product analytics.
+              This policy explains how Stratheca Pty Ltd (ACN 701 710 081), trading as ScoreSaber,
+              handles optional usage telemetry from the Encore desktop app. Stratheca Pty Ltd
+              operates Encore from Melbourne, Australia. The Encore website does not use analytics
+              cookies or run separate product analytics.
             </p>
 
             <h2 className={headingClass}>What Encore collects</h2>
@@ -109,7 +110,8 @@ export default function PrivacyPolicy() {
               We use PostHog&apos;s US cloud service to receive and analyse telemetry. PostHog
               necessarily receives network information such as your IP address while handling a
               request, but Encore disables location enrichment and does not add your IP address to
-              its telemetry fields. PostHog processes this information for ScoreSaber under its own{" "}
+              its telemetry fields. PostHog processes this information for Stratheca Pty Ltd under
+              its own{" "}
               <a
                 className={linkClass}
                 href="https://posthog.com/privacy"
