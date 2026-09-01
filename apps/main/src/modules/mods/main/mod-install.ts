@@ -19,7 +19,7 @@ export const modContentLimits = {
    maxDownloadBytes: maxModArchiveBytes,
    maxArchiveBytes: maxModArchiveBytes,
    maxEntries: 2_000,
-   maxEntryBytes: 64 * 1024 * 1024,
+   maxEntryBytes: 128 * 1024 * 1024,
    maxTotalBytes: 256 * 1024 * 1024
 };
 
