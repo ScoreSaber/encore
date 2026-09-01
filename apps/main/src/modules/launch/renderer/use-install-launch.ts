@@ -62,6 +62,7 @@ type LaunchOptionsDraft = {
    requestKey: string;
    options: LaunchOptions;
    argsInput: string;
+   environmentInput: string;
 };
 
 export function useInstallLaunch(request: InstallActionRequest) {
@@ -98,6 +99,8 @@ export function useInstallLaunch(request: InstallActionRequest) {
    const options = activeDraft?.options ?? storedOptions;
    const flags = options.flags;
    const argsInput = activeDraft?.argsInput ?? formatLaunchArgs(options.args);
+   const environmentInput =
+      activeDraft?.environmentInput ?? formatLaunchArgs(Object.entries(options.environment).map(([name, value]) => `${name}=${value}`));
    const runAsAdmin = options.runAsAdmin;
    const closeEncore = options.closeEncore;
    const optionsReady = !optionsQuery.isPending;
@@ -137,15 +140,33 @@ export function useInstallLaunch(request: InstallActionRequest) {
    );
 
    const updateOptions = useCallback(
-      (next: LaunchOptions, nextArgsInput = formatLaunchArgs(next.args)) => {
-         setDraft({ requestKey, options: next, argsInput: nextArgsInput });
+      (next: LaunchOptions, input: { args?: string; environment?: string } = {}) => {
+         setDraft({
+            requestKey,
+            options: next,
+            argsInput: input.args ?? argsInput,
+            environmentInput: input.environment ?? environmentInput
+         });
          persistOptions(next);
       },
-      [persistOptions, requestKey]
+      [argsInput, environmentInput, persistOptions, requestKey]
    );
 
    const updateArgsInput = useCallback(
-      (input: string) => updateOptions({ ...options, args: parseLaunchArgs(input) }, input),
+      (input: string) => updateOptions({ ...options, args: parseLaunchArgs(input) }, { args: input }),
+      [options, updateOptions]
+   );
+
+   const updateEnvironmentInput = useCallback(
+      (input: string) => {
+         const environment = Object.fromEntries(
+            parseLaunchArgs(input).map((assignment) => {
+               const separator = assignment.indexOf('=');
+               return separator === -1 ? [assignment, ''] : [assignment.slice(0, separator), assignment.slice(separator + 1)];
+            })
+         );
+         updateOptions({ ...options, environment }, { environment: input });
+      },
       [options, updateOptions]
    );
 
@@ -233,11 +254,13 @@ export function useInstallLaunch(request: InstallActionRequest) {
       optionsReady,
       flags,
       argsInput,
+      environmentInput,
       runAsAdmin,
       closeEncore,
       failure,
       optionsFailure: optionsFailure?.requestKey === requestKey ? optionsFailure.message : null,
       setArgsInput: updateArgsInput,
+      setEnvironmentInput: updateEnvironmentInput,
       setRunAsAdmin: updateRunAsAdmin,
       setCloseEncore: updateCloseEncore,
       toggleFlag,

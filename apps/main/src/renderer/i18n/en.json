@@ -977,9 +977,14 @@
          "label": "Extra arguments",
          "placeholder": "--example value"
       },
+      "environment": {
+         "label": "Environment variables",
+         "placeholder": "SOME_ENV_VAR=1"
+      },
       "preview": {
          "executable": "Executable",
          "workingDirectory": "Working folder",
+         "environment": "Environment",
          "args": "Arguments",
          "noArgs": "No arguments",
          "proton": "Proton",

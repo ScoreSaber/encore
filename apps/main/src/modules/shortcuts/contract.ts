@@ -150,7 +150,7 @@ export function parseLaunchLink(value: string): LaunchLinkParse {
       request: {
          targetId: parsed.data.target,
          installId: parsed.data.install,
-         options: { flags: parsed.data.flags, args: parsed.data.args, runAsAdmin: parsed.data.admin, closeEncore: parsed.data.close }
+         options: { flags: parsed.data.flags, args: parsed.data.args, environment: {}, runAsAdmin: parsed.data.admin, closeEncore: parsed.data.close }
       }
    };
 }

@@ -78,9 +78,22 @@ export const launchArgSchema = z
    .refine((value) => !/\p{Cc}/u.test(value));
 export const launchArgsSchema = z.array(launchArgSchema).max(24);
 
+const launchEnvironmentNameSchema = z
+   .string()
+   .max(128)
+   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/);
+const launchEnvironmentValueSchema = z
+   .string()
+   .max(2048)
+   .refine((value) => !/\p{Cc}/u.test(value));
+const launchEnvironmentSchema = z
+   .record(launchEnvironmentNameSchema, launchEnvironmentValueSchema)
+   .refine((environment) => Object.keys(environment).length <= 24);
+
 export const launchOptionsSchema = z.object({
    flags: z.array(launchFlagSchema).max(launchFlags.length),
    args: launchArgsSchema,
+   environment: launchEnvironmentSchema.default({}),
    runAsAdmin: z.boolean(),
    closeEncore: z.boolean().default(false)
 });
@@ -162,6 +175,7 @@ export const launchOptionsResultSchema = z.union([
 
 export type LaunchPlatform = z.infer<typeof launchPlatformSchema>;
 export type LaunchFlag = z.infer<typeof launchFlagSchema>;
+export type LaunchEnvironment = z.infer<typeof launchEnvironmentSchema>;
 export type LaunchOptions = z.infer<typeof launchOptionsSchema>;
 export type LaunchOptionsRequest = z.infer<typeof launchOptionsRequestSchema>;
 export type LaunchRequestBody = z.infer<typeof launchRequestBodySchema>;
@@ -195,7 +209,7 @@ export function launchFlagsFor(platform: LaunchPlatform): readonly LaunchFlag[] 
 }
 
 export function createDefaultLaunchOptions(): LaunchOptions {
-   return { flags: [], args: [], runAsAdmin: false, closeEncore: false };
+   return { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: false };
 }
 
 export function unavailableLaunchPreview(request: { installId: InstallId }, issue: LaunchIssue, detail?: string): UnavailableLaunchPreview {

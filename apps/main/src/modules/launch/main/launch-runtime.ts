@@ -1,7 +1,7 @@
 import { Result, type Result as BetterResult } from 'better-result';
 
 import { readSteamClientState, type SteamClientState } from '@/modules/downloads/main/steam-client';
-import type { ProtonValidation } from '@/modules/launch/contract';
+import type { LaunchEnvironment, ProtonValidation } from '@/modules/launch/contract';
 import { readOculusClientState, type OculusClientState } from '@/modules/launch/main/oculus-client';
 import { ensureProtonCompatData, readLinuxLaunchHost, validateProtonFolder, type LinuxLaunchHost } from '@/modules/launch/main/proton';
 import type { OperationError } from '@/modules/operations/contract';
@@ -13,7 +13,7 @@ export type LaunchCommand = {
    executablePath: string;
    args: readonly string[];
    workingDirectory: string;
-   env: Record<string, string>;
+   env: LaunchEnvironment;
    runAsAdmin: boolean;
 };
 
@@ -109,13 +109,7 @@ export function createLaunchRuntime(options: { prepareWatchdog?: PrepareLaunchWa
    };
 }
 
-function spawnDetached(
-   executablePath: string,
-   args: readonly string[],
-   workingDirectory: string,
-   env: Record<string, string>,
-   error: OperationError
-) {
+function spawnDetached(executablePath: string, args: readonly string[], workingDirectory: string, env: LaunchEnvironment, error: OperationError) {
    return new Promise<BetterResult<SpawnedGameProcess, OperationError>>((resolve) => {
       const child = spawn(executablePath, [...args], {
          cwd: workingDirectory,

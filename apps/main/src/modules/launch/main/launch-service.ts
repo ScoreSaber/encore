@@ -249,7 +249,12 @@ export function createLaunchService(options: LaunchServiceOptions) {
 
       options.operations.update(operationId, { message: previewed.executablePath, progress: { phase: 'launching', percent: 75 } });
 
-      const env = buildLaunchEnv({ store: previewed.store, installPath: previewed.workingDirectory, proton: previewed.proton });
+      const env = buildLaunchEnv({
+         store: previewed.store,
+         installPath: previewed.workingDirectory,
+         proton: previewed.proton,
+         environment: previewed.options.environment
+      });
       const command = previewed.proton
          ? buildProtonCommand({
               proton: previewed.proton,

@@ -65,7 +65,7 @@ describe('settings store', () => {
       expect((await reloaded.getSnapshot()).library.installRoot).toBe(installRoot);
    });
 
-   test('defaults the resource saver off in an existing last launch', async () => {
+   test('defaults newer options in an existing last launch', async () => {
       const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
       tempRoots.push(dataPath);
       const library = createDefaultLibrarySettings('/games/encore');
@@ -87,7 +87,7 @@ describe('settings store', () => {
 
       const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
 
-      expect((await store.getSnapshot()).library.lastLaunch?.options.closeEncore).toBe(false);
+      expect((await store.getSnapshot()).library.lastLaunch?.options).toMatchObject({ environment: {}, closeEncore: false });
    });
 
    test('recovers usable fields without overwriting a damaged file', async () => {

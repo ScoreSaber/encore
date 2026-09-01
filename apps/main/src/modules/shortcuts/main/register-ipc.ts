@@ -1,6 +1,7 @@
 import { broadcastIpcEvent, defineIpcHandlers } from '@/ipc/main';
 import { createPendingIpcEvent } from '@/ipc/pending-event';
 import type { InstallDetailRequest } from '@/modules/installs/contract';
+import type { LaunchEnvironment } from '@/modules/launch/contract';
 import { modRepositoryLinkAction, parseModRepositoryLink } from '@/modules/mods/contract';
 import { queueRepositoryLink } from '@/modules/mods/main/repository-link-intake';
 import { encoreProtocol, type LaunchLinkEvent } from '@/modules/shortcuts/contract';
@@ -12,6 +13,7 @@ import type { ShortcutService } from '@/modules/shortcuts/main/shortcut-service'
 export function createShortcutsIpcModule(options: {
    shortcuts: ShortcutService;
    getInstall: (request: InstallDetailRequest) => Promise<{ name: string } | null>;
+   getLaunchEnvironment: (request: InstallDetailRequest) => Promise<LaunchEnvironment>;
 }) {
    const links = createPendingIpcEvent<LaunchLinkEvent>((event) => broadcastIpcEvent(shortcutsIpc.onLinkOpened, event));
 
@@ -21,7 +23,7 @@ export function createShortcutsIpcModule(options: {
          return;
       }
 
-      links.publish(await resolveLaunchLink(link, options.getInstall));
+      links.publish(await resolveLaunchLink(link, options.getInstall, options.getLaunchEnvironment));
    });
 
    return defineIpcHandlers(shortcutsIpc, {

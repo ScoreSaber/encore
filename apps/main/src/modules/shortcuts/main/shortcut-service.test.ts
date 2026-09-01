@@ -63,6 +63,7 @@ describe('shortcut service', () => {
       const options: LaunchOptions = {
          flags: ['fpfc'],
          args: ['--room', 'my room'],
+         environment: { SOME_ENV_VAR: '1' },
          runAsAdmin: false,
          closeEncore: true
       };
@@ -82,6 +83,7 @@ describe('shortcut service', () => {
       expect(vdfText(vdfMap(entries?.get('1'))?.get('AppName'))).toBe('Beat Saber 1.37.0');
       expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('encore://launch?target=local&install=install_abcdef012345');
       expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('close=1');
+      expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).not.toContain('SOME_ENV_VAR');
    });
 });
 
@@ -89,21 +91,25 @@ describe('launch link intake', () => {
    test('resolves a link against the installs that exist right now', async () => {
       const install = { id: 'install_abcdef012345', name: 'Beat Saber 1.37.0' };
       const getInstall = async (request: { installId: string }) => (request.installId === install.id ? install : null);
+      const getLaunchEnvironment = async () => ({ SOME_ENV_VAR: '1' });
 
-      expect(await resolveLaunchLink(`encore://launch?install=${install.id}&flag=fpfc`, getInstall)).toEqual({
+      expect(await resolveLaunchLink(`encore://launch?install=${install.id}&flag=fpfc`, getInstall, getLaunchEnvironment)).toEqual({
          status: 'ready',
          request: {
             targetId: 'local',
             installId: install.id,
-            options: { flags: ['fpfc'], args: [], runAsAdmin: false, closeEncore: false }
+            options: { flags: ['fpfc'], args: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: false, closeEncore: false }
          },
          installName: install.name
       });
-      expect(await resolveLaunchLink('encore://launch?install=install_000000000000', getInstall)).toEqual({
+      expect(await resolveLaunchLink('encore://launch?install=install_000000000000', getInstall, getLaunchEnvironment)).toEqual({
          status: 'rejected',
          issue: 'unknown-install',
          detail: 'install_000000000000'
       });
-      expect(await resolveLaunchLink('encore://launch?install=/bin/sh', getInstall)).toEqual({ status: 'rejected', issue: 'invalid-request' });
+      expect(await resolveLaunchLink('encore://launch?install=/bin/sh', getInstall, getLaunchEnvironment)).toEqual({
+         status: 'rejected',
+         issue: 'invalid-request'
+      });
    });
 });

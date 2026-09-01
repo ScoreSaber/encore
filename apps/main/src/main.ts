@@ -305,6 +305,11 @@ function registerIpcHandlers() {
 
       return result.status === 'ok' ? result.value : null;
    };
+   const getLaunchEnvironment = async ({ targetId, installId }: InstallDetailRequest) => {
+      const result = await targetRegistry.callTarget(launchModule, 'getOptions', targetId, { installId });
+
+      return result.status === 'ok' ? result.value.environment : {};
+   };
    const shortcutService = createShortcutService({
       runtime: createShortcutRuntime(),
       getInstall
@@ -359,7 +364,8 @@ function registerIpcHandlers() {
       createSharedContentIpcModule(sharedContentService),
       createShortcutsIpcModule({
          shortcuts: shortcutService,
-         getInstall
+         getInstall,
+         getLaunchEnvironment
       }),
       createSupportIpcModule(supportService),
       createUpdateIpcModule()

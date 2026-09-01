@@ -209,6 +209,20 @@ export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
    return (
       <CollapsibleContent className="flex flex-col gap-3 pb-1">
          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="launch-environment" className="text-xs">
+               {t('environment.label')}
+            </Label>
+            <Input
+               id="launch-environment"
+               className="max-w-md"
+               value={launch.environmentInput}
+               disabled={disabled}
+               placeholder={t('environment.placeholder')}
+               onChange={(event) => launch.setEnvironmentInput(event.target.value)}
+            />
+         </div>
+
+         <div className="flex flex-col gap-1.5">
             <Label htmlFor="launch-args" className="text-xs">
                {t('args.label')}
             </Label>
@@ -324,6 +338,12 @@ function LaunchCommand({ preview }: { preview: ReadyLaunchPreview }) {
       <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-1.5 rounded-md border px-3 py-2.5 text-xs">
          <CommandRow label={t('preview.executable')} value={preview.executablePath} />
          <CommandRow label={t('preview.workingDirectory')} value={preview.workingDirectory} />
+         {Object.keys(preview.options.environment).length > 0 ? (
+            <CommandRow
+               label={t('preview.environment')}
+               value={formatLaunchArgs(Object.entries(preview.options.environment).map(([name, value]) => `${name}=${value}`))}
+            />
+         ) : null}
          <CommandRow label={t('preview.args')} value={preview.args.length > 0 ? formatLaunchArgs(preview.args) : t('preview.noArgs')} />
 
          {preview.proton ? (

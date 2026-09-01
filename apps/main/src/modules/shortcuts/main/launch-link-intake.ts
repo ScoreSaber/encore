@@ -1,17 +1,20 @@
 import type { InstallDetailRequest } from '@/modules/installs/contract';
+import type { LaunchEnvironment } from '@/modules/launch/contract';
 import { parseLaunchLink, type LaunchLinkEvent } from '@/modules/shortcuts/contract';
 
 export async function resolveLaunchLink(
    link: string,
-   getInstall: (request: InstallDetailRequest) => Promise<{ name: string } | null>
+   getInstall: (request: InstallDetailRequest) => Promise<{ name: string } | null>,
+   getLaunchEnvironment: (request: InstallDetailRequest) => Promise<LaunchEnvironment>
 ): Promise<LaunchLinkEvent> {
    const parsed = parseLaunchLink(link);
    if (parsed.status === 'invalid') return { status: 'rejected', issue: parsed.issue };
 
-   const install = await getInstall({
+   const request = {
       targetId: parsed.request.targetId,
       installId: parsed.request.installId
-   });
+   };
+   const [install, environment] = await Promise.all([getInstall(request), getLaunchEnvironment(request)]);
    if (!install)
       return {
          status: 'rejected',
@@ -21,7 +24,10 @@ export async function resolveLaunchLink(
 
    return {
       status: 'ready',
-      request: parsed.request,
+      request: {
+         ...parsed.request,
+         options: { ...parsed.request.options, environment }
+      },
       installName: install.name
    };
 }

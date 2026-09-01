@@ -32,6 +32,7 @@ describe('launch service', () => {
       const options: LaunchOptions = {
          flags: ['debug', 'fpfc'],
          args: ['--room', 'my room', '--seed', '7'],
+         environment: { SOME_ENV_VAR: '1' },
          runAsAdmin: false,
          closeEncore: false
       };
@@ -44,10 +45,15 @@ describe('launch service', () => {
       expect(harness.spawned).toHaveLength(1);
       expect(harness.spawned[0]?.executablePath).toBe(join(install.path, 'Beat Saber.exe'));
       expect(harness.spawned[0]?.args).toEqual(['--no-yeet', 'fpfc', '--verbose', '--room', 'my room', '--seed', '7']);
+      expect(harness.spawned[0]?.env).toMatchObject({ SOME_ENV_VAR: '1', SteamAppId: '620980' });
       expect(harness.spawned[0]?.runAsAdmin).toBe(false);
       expect((await harness.launch.getState()).lastLaunch).toMatchObject({
          installId: install.id,
-         options: { flags: ['fpfc', 'debug'], args: ['--room', 'my room', '--seed', '7'] }
+         options: {
+            flags: ['fpfc', 'debug'],
+            args: ['--room', 'my room', '--seed', '7'],
+            environment: { SOME_ENV_VAR: '1' }
+         }
       });
       expect(harness.watchdogs).toEqual([]);
    });
@@ -58,7 +64,7 @@ describe('launch service', () => {
 
       const started = await harness.launch.start({
          installId: install.id,
-         options: { flags: [], args: [], runAsAdmin: false, closeEncore: true }
+         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: true }
       });
       expect(started.ok).toBe(true);
       if (!started.ok) return;
@@ -83,7 +89,7 @@ describe('launch service', () => {
 
       const started = await harness.launch.start({
          installId: install.id,
-         options: { flags: [], args: [], runAsAdmin: false, closeEncore: false }
+         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: false }
       });
       expect(started.ok).toBe(true);
       if (!started.ok) return;
@@ -105,7 +111,7 @@ describe('launch service', () => {
 
       const started = await harness.launch.start({
          installId: install.id,
-         options: { flags: [], args: [], runAsAdmin: false, closeEncore: true }
+         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: true }
       });
       expect(started.ok).toBe(true);
       if (!started.ok) return;
@@ -126,7 +132,7 @@ describe('launch service', () => {
 
       const started = await harness.launch.start({
          installId: install.id,
-         options: { flags: ['proton-logs'], args: [], runAsAdmin: true, closeEncore: false }
+         options: { flags: ['proton-logs'], args: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: true, closeEncore: false }
       });
       expect(started.ok).toBe(true);
       if (!started.ok) return;
@@ -142,7 +148,8 @@ describe('launch service', () => {
             STEAM_COMPAT_INSTALL_PATH: install.path,
             STEAM_COMPAT_CLIENT_INSTALL_PATH: join(harness.dataPath, 'steam'),
             PROTON_LOG: '1',
-            PROTON_LOG_DIR: join(install.path, 'Logs')
+            PROTON_LOG_DIR: join(install.path, 'Logs'),
+            SOME_ENV_VAR: '1'
          }
       });
       expect((await stat(join(harness.dataPath, 'compatdata'))).isDirectory()).toBe(true);
@@ -156,7 +163,7 @@ describe('launch service', () => {
 
       const preview = await harness.launch.preview({
          installId: install.id,
-         options: { flags: [], args: [], runAsAdmin: false, closeEncore: false }
+         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: false }
       });
 
       expect(preview).toMatchObject({
@@ -176,7 +183,19 @@ describe('launch service', () => {
       expect(
          await harness.launch.preview({
             installId: install.id,
-            options: { flags: [], args: ['--room\n--fpfc'], runAsAdmin: false, closeEncore: false }
+            options: { flags: [], args: ['--room\n--fpfc'], environment: {}, runAsAdmin: false, closeEncore: false }
+         })
+      ).toMatchObject({ status: 'unavailable', issue: 'invalid-options' });
+      expect(
+         await harness.launch.preview({
+            installId: install.id,
+            options: {
+               flags: [],
+               args: [],
+               environment: { 'x;Start-Process calc;#': '1' },
+               runAsAdmin: true,
+               closeEncore: false
+            }
          })
       ).toMatchObject({ status: 'unavailable', issue: 'invalid-options' });
       expect(harness.spawned).toEqual([]);
