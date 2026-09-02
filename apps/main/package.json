@@ -128,7 +128,6 @@
          "target": [
             "nsis"
          ],
-         "verifyUpdateCodeSignature": false,
          "artifactName": "${productName}-${version}-windows-${arch}.${ext}",
          "extraResources": [
             {

@@ -49,8 +49,8 @@ jobs:
            run: |
               set -euo pipefail
 
-              if [[ "${GITHUB_REF_TYPE:-}" != "branch" ]]; then
-                 echo "::error::Release workflow must be run from a branch."
+              if [[ "${GITHUB_REF_TYPE:-}" != "branch" || "${GITHUB_REF_NAME:-}" != "main" ]]; then
+                 echo "::error::Release workflow must be run from main."
                  exit 1
               fi
 
@@ -165,6 +165,9 @@ jobs:
          - version
          - build
       runs-on: ${{ matrix.os }}
+      permissions:
+         contents: read
+         id-token: write
       strategy:
          fail-fast: false
          matrix:
@@ -277,11 +280,42 @@ jobs:
            run: vp exec --filter encore -- node native/watchdog/build.ts
 
          - name: Package app
+           if: matrix.os != 'windows-latest'
            shell: bash
            env:
               APPIMAGE_EXTRACT_AND_RUN: '1'
               RELEASE_VERSION: ${{ needs.version.outputs.version }}
            run: vp exec --filter encore -- electron-builder ${{ matrix.package_args }} --config.extraMetadata.version="$RELEASE_VERSION" --publish never
+
+         - name: Azure login
+           if: matrix.os == 'windows-latest'
+           uses: azure/login@v3
+           with:
+              client-id: ${{ vars.AZURE_CLIENT_ID }}
+              tenant-id: ${{ vars.AZURE_TENANT_ID }}
+              subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+         - name: Sign and package Windows app
+           if: matrix.os == 'windows-latest'
+           shell: pwsh
+           env:
+              RELEASE_VERSION: ${{ needs.version.outputs.version }}
+           run: |
+              $arguments = @(
+                 "--win"
+                 "nsis"
+                 "--x64"
+                 "--config.extraMetadata.version=$env:RELEASE_VERSION"
+                 "--config.forceCodeSigning=true"
+                 "--config.win.azureSignOptions.publisherName=STRATHECA PTY LTD"
+                 "--config.win.azureSignOptions.endpoint=https://eus.codesigning.azure.net/"
+                 "--config.win.azureSignOptions.certificateProfileName=encore-release"
+                 "--config.win.azureSignOptions.codeSigningAccountName=strathecasigning"
+                 "--publish"
+                 "never"
+              )
+
+              vp exec --filter encore -- electron-builder @arguments
 
          - name: Upload release asset
            uses: actions/upload-artifact@v4
