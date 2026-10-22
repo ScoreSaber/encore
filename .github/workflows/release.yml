@@ -31,7 +31,7 @@ jobs:
          sha: ${{ steps.version.outputs.sha }}
       steps:
          - name: Checkout
-           uses: actions/checkout@v4
+           uses: actions/checkout@v5
            with:
               fetch-depth: 0
 
@@ -127,7 +127,7 @@ jobs:
       runs-on: ubuntu-latest
       steps:
          - name: Checkout
-           uses: actions/checkout@v4
+           uses: actions/checkout@v5
            with:
               ref: ${{ needs.version.outputs.sha }}
 
@@ -151,7 +151,7 @@ jobs:
            run: tar -C apps/main -czf encore-out.tar.gz out
 
          - name: Upload app build
-           uses: actions/upload-artifact@v4
+           uses: actions/upload-artifact@v6
            with:
               name: app-out
               path: encore-out.tar.gz
@@ -214,7 +214,7 @@ jobs:
                  linux_packages: flatpak flatpak-builder musl-tools xz-utils
       steps:
          - name: Checkout
-           uses: actions/checkout@v4
+           uses: actions/checkout@v5
            with:
               ref: ${{ needs.version.outputs.sha }}
 
@@ -226,7 +226,7 @@ jobs:
               run-install: false
 
          - name: Cache package downloads
-           uses: actions/cache@v4
+           uses: actions/cache@v5
            with:
               path: |
                  ~/.cache/electron
@@ -243,7 +243,7 @@ jobs:
            run: vp install --frozen-lockfile --ignore-scripts
 
          - name: Download app build
-           uses: actions/download-artifact@v4
+           uses: actions/download-artifact@v7
            with:
               name: app-out
               path: .release-build
@@ -256,7 +256,7 @@ jobs:
 
          - name: Cache Flatpak runtimes
            if: matrix.flatpak
-           uses: actions/cache@v4
+           uses: actions/cache@v5
            with:
               path: ~/.local/share/flatpak
               key: flatpak-25.08-${{ runner.os }}
@@ -318,7 +318,7 @@ jobs:
               vp exec --filter encore -- electron-builder @arguments
 
          - name: Upload release asset
-           uses: actions/upload-artifact@v4
+           uses: actions/upload-artifact@v6
            with:
               name: ${{ matrix.artifact }}
               path: ${{ matrix.artifact_paths }}
@@ -334,7 +334,7 @@ jobs:
       runs-on: ubuntu-latest
       steps:
          - name: Download release assets
-           uses: actions/download-artifact@v4
+           uses: actions/download-artifact@v7
            with:
               path: artifacts
               pattern: encore-*
@@ -373,7 +373,7 @@ jobs:
       runs-on: ubuntu-latest
       steps:
          - name: Checkout release branch
-           uses: actions/checkout@v4
+           uses: actions/checkout@v5
            with:
               ref: ${{ github.ref_name }}
 
