@@ -1,10 +1,8 @@
 import { z } from 'zod';
 
-import type { IpcResult } from '@/ipc/core';
 import type { InstallId } from '@/modules/installs/contract';
-import { operationErrorSchema, operationSnapshotSchema, type OperationSnapshot } from '@/modules/operations/contract';
+import { operationErrorSchema, operationSnapshotSchema } from '@/modules/operations/contract';
 import { storeKindSchema, type StoreKind } from '@/modules/stores/contract';
-import type { TargetId } from '@/modules/targets/contract';
 
 export const defaultVersionCatalogUrl = 'https://encore.scoresaber.com/versions/beat-saber.json';
 const steamManifestIdSchema = z.string().regex(/^\d+$/);
@@ -19,16 +17,16 @@ export const downloadVersionSchema = z.object({
    recommended: z.boolean()
 });
 
-export const downloadCatalogSourceSchema = z.enum(['cache', 'remote']);
+const downloadCatalogSourceSchema = z.enum(['cache', 'remote']);
 
-export const downloadCatalogProblemCodeSchema = z.enum([
+const downloadCatalogProblemCodeSchema = z.enum([
    'downloads.catalog.empty',
    'downloads.catalog.fetch-failed',
    'downloads.catalog.invalid',
    'downloads.catalog.write-failed'
 ]);
 
-export const downloadCatalogProblemSchema = z.object({
+const downloadCatalogProblemSchema = z.object({
    code: downloadCatalogProblemCodeSchema,
    message: z.string(),
    detail: z.string().optional()
@@ -43,7 +41,7 @@ export const downloadCatalogCacheSchema = z.object({
    versions: z.array(downloadVersionSchema)
 });
 
-export const downloadCatalogSnapshotSchema = z.object({
+const downloadCatalogSnapshotSchema = z.object({
    status: z.enum(['ready', 'unavailable']),
    source: downloadCatalogSourceSchema.nullable(),
    sourceUrl: z.string(),
@@ -52,7 +50,9 @@ export const downloadCatalogSnapshotSchema = z.object({
    problem: downloadCatalogProblemSchema.optional()
 });
 
-export const downloadIssueSchema = z.enum([
+export const targetDownloadCatalogSchema = downloadCatalogSnapshotSchema.extend({ stores: z.array(storeKindSchema).default(['steam', 'oculus']) });
+
+const downloadIssueSchema = z.enum([
    'binary-unavailable',
    'catalog-unavailable',
    'depot-not-empty',
@@ -64,7 +64,7 @@ export const downloadIssueSchema = z.enum([
    'unsupported-target'
 ]);
 
-export const downloadWarningSchema = z.enum(['depot-not-empty', 'meta-sign-in-opens', 'name-conflict', 'steam-console-opens']);
+const downloadWarningSchema = z.enum(['depot-not-empty', 'meta-sign-in-opens', 'name-conflict', 'steam-console-opens']);
 
 export const unavailableDownloadPreviewSchema = z.object({
    status: z.literal('unavailable'),
@@ -98,8 +98,6 @@ export const oculusDownloadPreviewSchema = z.object({
    binaryId: z.string()
 });
 
-const downloadPreviewSchema = z.union([unavailableDownloadPreviewSchema, steamDownloadPreviewSchema, oculusDownloadPreviewSchema]);
-
 export const downloadRequestSchema = z.object({
    store: storeKindSchema.default('steam'),
    version: z.string().trim().min(1)
@@ -118,16 +116,11 @@ export const downloadStartResultSchema = z.union([
 
 export type DownloadIssue = z.infer<typeof downloadIssueSchema>;
 export type DownloadWarning = z.infer<typeof downloadWarningSchema>;
-export type DownloadPreview = z.infer<typeof downloadPreviewSchema>;
 export type UnavailableDownloadPreview = z.infer<typeof unavailableDownloadPreviewSchema>;
 export type SteamDownloadPreview = z.infer<typeof steamDownloadPreviewSchema>;
 export type OculusDownloadPreview = z.infer<typeof oculusDownloadPreviewSchema>;
 export type ReadyDownloadPreview = SteamDownloadPreview | OculusDownloadPreview;
-export type TargetUnavailableDownloadPreview = { targetId: TargetId } & UnavailableDownloadPreview;
-export type TargetReadyDownloadPreview = { targetId: TargetId } & ReadyDownloadPreview;
 export type DownloadRequestBody = z.infer<typeof downloadRequestSchema>;
-export type DownloadRequest = { targetId: TargetId } & DownloadRequestBody;
-export type DownloadResult = IpcResult<OperationSnapshot>;
 
 export type DownloadOutcome = {
    installId: InstallId;
@@ -137,23 +130,8 @@ export type DownloadOutcome = {
    version: string;
    bytes: number;
    files: number;
+   protonRequested: boolean;
 };
 
 export type DownloadVersion = z.infer<typeof downloadVersionSchema>;
-export type DownloadCatalogProblem = z.infer<typeof downloadCatalogProblemSchema>;
 export type DownloadCatalogSnapshot = z.infer<typeof downloadCatalogSnapshotSchema>;
-
-export function unavailableDownloadPreview(input: {
-   store: StoreKind;
-   version: string | null;
-   issue: DownloadIssue;
-   detail?: string;
-}): UnavailableDownloadPreview {
-   const preview: UnavailableDownloadPreview = { status: 'unavailable', store: input.store, version: input.version, issue: input.issue };
-   if (input.detail) preview.detail = input.detail;
-   return preview;
-}
-
-export function versionSupportsStore(version: DownloadVersion, store: StoreKind) {
-   return store === 'oculus' ? version.oculusBinaryId !== null : true;
-}

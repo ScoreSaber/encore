@@ -1,21 +1,23 @@
+import { useState } from 'react';
+
 import { useTranslations } from 'use-intl';
 
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
-import { isOperationFinished, OperationOutcome, OperationProgress, PreviewRow } from '@/modules/operations/renderer/operation-progress';
+import { OperationFlowDialog } from '@/modules/operations/renderer/operation-flow-dialog';
+import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
 import {
    isConnectContentsAllowed,
    sharedContentsModeSchema,
    type ReadySharedConnectPreview,
+   type SharedConnectAction,
    type SharedContentsMode
 } from '@/modules/shared-content/contract';
-import { sharedContentIssueKeys, SharedFolderStateBadge } from '@/modules/shared-content/renderer/shared-folder-actions';
+import { SharedFolderStateBadge } from '@/modules/shared-content/renderer/shared-folder-actions';
 import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedConnect } from '@/modules/shared-content/renderer/use-shared-connect';
 import { useFormatters } from '@/renderer/i18n/formatters';
@@ -23,103 +25,39 @@ import { useFormatters } from '@/renderer/i18n/formatters';
 export function SharedConnectDialog({ connect }: { connect: SharedConnect }) {
    const t = useTranslations('sharedContent.connect');
    const actions = useTranslations('sharedContent.actions');
-   const issues = useTranslations('sharedContent.issues');
-   const common = useTranslations('common');
-   const { state, operation } = connect;
-   const running = state.status === 'starting' || (state.status === 'running' && !isOperationFinished(operation));
-   const action = state.status === 'idle' ? 'connect' : state.action;
-   const preview = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.preview : null;
+   const issues = useTranslations('problems.shared-content');
+   const { state } = connect.flow;
+   const [lastAction, setLastAction] = useState<SharedConnectAction>('connect');
+
+   if (state.status !== 'idle' && state.kind !== lastAction) setLastAction(state.kind);
+   const action = state.status === 'idle' ? lastAction : state.kind;
 
    return (
-      <Dialog
-         open={state.status !== 'idle'}
-         onOpenChange={(nextOpen) => {
-            if (nextOpen || running) return;
-
-            connect.dismiss();
+      <OperationFlowDialog
+         flow={connect.flow}
+         className="sm:max-w-2xl"
+         title={t(`${action}.title`)}
+         description={t(`${action}.description`)}
+         issue={(problem) => issues(problem.issue)}
+         preview={(ready, editable) => (
+            <>
+               <PreviewRow label={t('install')} value={ready.target.installName} />
+               <ConnectPreview preview={ready.preview} />
+               {editable ? (
+                  <>
+                     <ContentsChoice preview={ready.preview} onChange={connect.setContents} />
+                     <RiskyChoice preview={ready.preview} onChange={connect.setIncludeRisky} />
+                  </>
+               ) : null}
+            </>
+         )}
+         labels={{ failed: actions('result.failed'), completed: actions('result.completed'), cancelled: actions('result.cancelled') }}
+         confirm={{
+            label: t(`${action}.confirm`),
+            disabled: state.status === 'ready' && state.preview.folders.every((folder) => folder.step === 'skip'),
+            run: connect.confirm
          }}
-      >
-         <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-               <DialogTitle>{t(`${action}.title`)}</DialogTitle>
-               <DialogDescription>{t(`${action}.description`)}</DialogDescription>
-            </DialogHeader>
-
-            <div className="flex flex-col gap-3 text-sm">
-               {state.status !== 'idle' ? <PreviewRow label={t('install')} value={state.installName} /> : null}
-               {state.status === 'previewing' ? <p className="text-muted-foreground">{common('loading')}</p> : null}
-
-               {state.status === 'invalid' ? (
-                  <>
-                     <p>{issues(sharedContentIssueKeys[state.problem.issue])}</p>
-                     {state.problem.detail ? <p className="text-muted-foreground text-xs break-all">{state.problem.detail}</p> : null}
-                  </>
-               ) : null}
-
-               {state.status === 'failed' ? (
-                  <>
-                     <p>{actions('result.failed')}</p>
-                     <p className="text-muted-foreground text-xs break-all">{state.error.message}</p>
-                  </>
-               ) : null}
-
-               {preview ? <ConnectPreview preview={preview} /> : null}
-
-               {state.status === 'ready' ? (
-                  <>
-                     <ContentsChoice preview={state.preview} onChange={connect.setContents} />
-                     <RiskyChoice preview={state.preview} onChange={connect.setIncludeRisky} />
-                  </>
-               ) : null}
-
-               {state.status === 'starting' || (state.status === 'running' && !operation) ? (
-                  <OperationProgress percent={0} label={common('operation.preparing')} />
-               ) : null}
-
-               {state.status === 'running' && operation ? (
-                  <OperationOutcome
-                     operation={operation}
-                     labels={{
-                        progress: (values) => common('operation.progress', values),
-                        completed: actions('result.completed'),
-                        cancelled: actions('result.cancelled'),
-                        failed: actions('result.failed')
-                     }}
-                  />
-               ) : null}
-            </div>
-
-            <DialogFooter>
-               {state.status === 'ready' ? (
-                  <>
-                     <Button type="button" variant="outline" size="sm" onClick={connect.dismiss}>
-                        {common('cancel')}
-                     </Button>
-                     <Button
-                        type="button"
-                        size="sm"
-                        disabled={state.preview.folders.every((folder) => folder.step === 'skip')}
-                        onClick={() => void connect.confirm()}
-                     >
-                        {t(`${action}.confirm`)}
-                     </Button>
-                  </>
-               ) : null}
-
-               {running ? (
-                  <Button type="button" variant="outline" size="sm" disabled={state.status === 'starting'} onClick={connect.cancel}>
-                     {common('cancel')}
-                  </Button>
-               ) : null}
-
-               {state.status === 'invalid' || state.status === 'failed' || (state.status === 'running' && isOperationFinished(operation)) ? (
-                  <Button type="button" size="sm" onClick={connect.dismiss}>
-                     {common('close')}
-                  </Button>
-               ) : null}
-            </DialogFooter>
-         </DialogContent>
-      </Dialog>
+      />
    );
 }
 

@@ -1,88 +1,67 @@
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { Result } from 'better-result';
+import { expect, test } from 'vite-plus/test';
 
-import { createInstallRegistry } from '@/modules/installs/main/install-registry';
-import { createSettingsStore } from '@/modules/settings/main/settings-store';
-import type { StoreDetectionSnapshot, StoreInstallCandidate } from '@/modules/stores/contract';
+import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/main/install-registry.fixture';
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { constants, mkdir, open, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
-const cleanups: (() => Promise<void>)[] = [];
+test('leaves an unreadable install list untouched instead of replacing it with detected installs', async () => {
+   const { dataPath, registry, setCandidates } = await createInstallTestbed();
+   const registryPath = join(dataPath, 'installs.json');
+   const original = JSON.stringify({ schemaVersion: 1, installs: [{ id: 'library-original', unexpected: true }] });
+   await writeFile(registryPath, original, 'utf8');
+   setCandidates([{ store: 'steam', path: join(dataPath, 'steam', 'Beat Saber'), libraryPath: join(dataPath, 'steam'), appId: '620980' }]);
 
-afterEach(async () => {
-   for (const cleanup of cleanups.reverse()) {
-      await cleanup();
-   }
-   cleanups.length = 0;
+   expect(await registry.list()).toMatchObject({ installs: [], problems: [{ code: 'installs.registry.read-failed', path: registryPath }] });
+   expect(Result.isError(await registry.register({ source: 'library', path: join(dataPath, 'library', 'Beat Saber') }))).toBe(true);
+   expect(await readFile(registryPath, 'utf8')).toBe(original);
 });
 
-describe('install registry', () => {
-   test('keeps a store install id when the library moves and drops it when detection does', async () => {
-      const dataPath = await mkdtemp(join(tmpdir(), 'encore-installs-'));
-      const installRoot = join(dataPath, 'library');
-      await mkdir(installRoot, { recursive: true });
-      const settingsStore = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-      await settingsStore.updateLibrarySettings({ installRoot });
-
-      let candidates: StoreInstallCandidate[] = [];
-      const registry = createInstallRegistry({
-         dataPath,
-         settingsStore,
-         detectStores: (): Promise<StoreDetectionSnapshot> =>
-            Promise.resolve({
-               targetId: 'local',
-               platform: 'linux',
-               scannedAt: new Date().toISOString(),
-               stores: [],
-               candidates,
-               diagnostics: []
-            })
-      });
-      cleanups.push(async () => {
-         registry.dispose();
-         await rm(dataPath, { recursive: true, force: true });
-      });
-
-      const firstLibrary = join(dataPath, 'SteamLibrary');
-      await createInstall(firstLibrary);
-      candidates = [createCandidate(firstLibrary)];
-      const detected = (await registry.list()).installs[0];
-      if (!detected) throw new Error('store install was not detected');
-
-      const secondLibrary = join(dataPath, 'SteamLibrary2');
-      await createInstall(secondLibrary);
-      candidates = [createCandidate(secondLibrary)];
-      const moved = (await registry.rescan()).installs[0];
-      if (!moved) throw new Error('moved store install was not detected');
-
-      expect(moved).toMatchObject({
-         id: detected.id,
-         path: join(secondLibrary, 'steamapps', 'common', 'Beat Saber'),
-         store: 'steam',
-         version: '1.34.2',
-         status: 'ready'
-      });
-      expect((await registry.get(moved.id))?.aliases).toHaveLength(1);
-
-      candidates = [];
-      expect((await registry.rescan()).installs).toEqual([]);
-   });
-});
-
-async function createInstall(libraryPath: string) {
-   const installPath = join(libraryPath, 'steamapps', 'common', 'Beat Saber');
-   await mkdir(join(installPath, 'Beat Saber_Data'), { recursive: true });
-   await writeFile(join(installPath, 'Beat Saber_Data', 'globalgamemanagers'), 'public.app-category.games  1.34.2 ', 'latin1');
-}
-
-function createCandidate(libraryPath: string): StoreInstallCandidate {
-   return {
-      id: `steam:${libraryPath}`,
+test.skipIf(process.platform === 'win32')('shows an install registered while an older scan is still reading', async () => {
+   const { dataPath, installRoot, registry } = await createInstallTestbed();
+   const pausedPath = join(installRoot, 'Paused');
+   const versionPipe = join(pausedPath, 'Beat Saber_Data', 'globalgamemanagers');
+   await mkdir(join(pausedPath, 'Beat Saber_Data'), { recursive: true });
+   execFileSync('mkfifo', [versionPipe]);
+   const now = new Date().toISOString();
+   const paused = {
+      id: 'paused',
       targetId: 'local',
-      store: 'steam',
-      path: join(libraryPath, 'steamapps', 'common', 'Beat Saber'),
-      libraryPath,
-      appId: '620980'
+      source: 'library',
+      name: null,
+      pinned: false,
+      color: null,
+      store: null,
+      path: pausedPath,
+      aliases: [],
+      createdAt: now,
+      updatedAt: now
    };
+   await writeFile(join(dataPath, 'installs.json'), JSON.stringify({ schemaVersion: 1, installs: [paused] }), 'utf8');
+   const installPath = await writeInstallFolder(join(installRoot, 'Beat Saber'));
+
+   const olderScan = registry.list();
+   await sleep(0);
+   let settled = false;
+   const registering = registry.register({ source: 'library', path: installPath }).finally(() => {
+      settled = true;
+   });
+   while (!(await readFile(join(dataPath, 'installs.json'), 'utf8')).includes(installPath)) await sleep(5);
+   await sleep(50);
+
+   while (!settled) await (await openPipeWriter(versionPipe))?.close();
+   await olderScan;
+
+   expect(Result.isOk(await registering)).toBe(true);
+   expect((await registry.list()).installs).toContainEqual(expect.objectContaining({ path: installPath, status: 'ready' }));
+});
+
+async function openPipeWriter(pipePath: string) {
+   const opened = await Result.tryPromise(() => open(pipePath, constants.O_WRONLY | constants.O_NONBLOCK));
+   if (Result.isOk(opened)) return opened.value;
+   await sleep(5);
+   return null;
 }

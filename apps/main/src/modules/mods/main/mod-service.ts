@@ -1,103 +1,63 @@
 import { Result } from 'better-result';
 
-import { readRecent, setRecent } from '@/lib/content/content-cache';
-import { createPersistentCache } from '@/lib/content/content-cache';
-import { createContentFailure } from '@/lib/content/content-errors';
 import type { ContentIngestionService } from '@/lib/content/content-ingestion';
-import type { ContentProblem } from '@/lib/content/contract';
-import { copyPathWithProgress, deletePathWithProgress } from '@/lib/filesystem/operations';
-import { isSamePath, readPathInfo } from '@/lib/filesystem/path';
+import { createProblem, type Problem } from '@/lib/errors';
+import { deletePathWithProgress } from '@/lib/filesystem/operations';
+import { translate } from '@/lib/messages';
+import { percentOf } from '@/lib/progress';
 import type { InstallDetail, InstallId } from '@/modules/installs/contract';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
    bsipaModName,
    invalidModAction,
-   modPlatformForStore,
-   readyModsSnapshotSchema,
    unavailableModsSnapshot,
    type ModChangesPreview,
    type ModChangesRequest,
    type ModImportPreview,
    type ModImportRequest,
    type ModInstallPreview,
-   type ModIssue,
-   type ModOperationResult,
-   type ModPlatform,
-   type ModRemoval,
    type ModRequest,
    type ModSelectionRequest,
    type ModsSnapshot,
    type ModUninstallPreview,
    type ModUninstallRequest,
-   type ModWarning,
-   type ReadyModsSnapshot,
-   type ReadyModChangesPreview,
-   type ReadyModImportPreview,
    type ReadyModUninstallPreview
 } from '@/modules/mods/contract';
-import { createModCatalogService, type ModCatalogService } from '@/modules/mods/main/mod-catalog';
-import type { ModIndex } from '@/modules/mods/main/mod-index';
-import { importModArchive, installModVersion, maxModArchiveBytes } from '@/modules/mods/main/mod-install';
+import type { ModCatalogService } from '@/modules/mods/main/mod-catalog';
+import { createModContexts, type ModProblem } from '@/modules/mods/main/mod-context';
+import { importMod as writeImportedMod, installModVersion } from '@/modules/mods/main/mod-install';
 import { createModPatcher, type ModPatcher } from '@/modules/mods/main/mod-patcher';
-import { modFileCandidates, modFolders, modRemovableFolders, resolveModContentPath } from '@/modules/mods/main/mod-paths';
-import { buildInstallPlan, percentOf, progressFor, summarizeMods, toPlanEntry, type PlannedMod } from '@/modules/mods/main/mod-plan';
-import { scanInstalledMods, type ModScan } from '@/modules/mods/main/mod-scan';
-import type { OperationError } from '@/modules/operations/contract';
-import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
+import { progressFor, type PlannedMod } from '@/modules/mods/main/mod-plan';
+import { planModChanges, planModImport, planModInstall, planModUninstall } from '@/modules/mods/main/mod-previews';
+import type { ModRepositoryService } from '@/modules/mods/main/repo-service';
+import type { OperationSerializable, OperationSnapshot } from '@/modules/operations/contract';
+import type { CreateOperationInput, OperationRegistry } from '@/modules/operations/main/operation-registry';
+import type { AppLogWriter } from '@/modules/support/main/app-log';
 
-import { basename, extname, join } from 'node:path';
+import { join } from 'node:path';
 
-const issueMessages = {
-   'catalog-unavailable': 'BeatMods could not be reached',
-   'inspect-failed': 'the install folder could not be inspected',
-   'not-found': 'the install is not in the registry anymore',
-   'nothing-selected': 'no mod was selected',
-   'unknown-version': 'the Beat Saber version of this install is unknown',
-   'unsupported-file': 'only a .dll or a .zip can be imported as a mod',
-   'unsupported-target': 'this target cannot manage mods'
-};
-
-const importExtensions = ['.dll', '.zip'];
-
-export type ModServiceOptions = {
+type ModServiceOptions = {
    registry: InstallRegistry;
    operations: OperationRegistry;
    ingestion: ContentIngestionService;
    dataPath: string;
-   catalog?: ModCatalogService;
+   log: AppLogWriter;
+   catalog: ModCatalogService;
+   repositories: Pick<ModRepositoryService, 'checkDownloadHost'>;
    patcher?: ModPatcher;
 };
 
+type ModWork = (operationId: string, signal: AbortSignal) => Promise<Result<OperationSerializable, Problem>>;
+
 export type ModService = ReturnType<typeof createModService>;
 
-type ModContext = {
-   install: InstallDetail;
-   gameVersion: string;
-   platform: ModPlatform;
-   index: ModIndex;
-};
-
-type ModProblem = {
-   issue: ModIssue;
-   detail?: string;
-};
-
 export function createModService(options: ModServiceOptions) {
-   const catalogs = options.catalog ?? createModCatalogService({ dataPath: options.dataPath });
    const patcher = options.patcher ?? createModPatcher();
-   const modFailure = createContentFailure<ModIssue>('mods', issueMessages);
-   const scans = new Map<InstallId, { installPath: string; scan: ModScan }>();
-   const snapshots = createPersistentCache({ dataPath: options.dataPath, name: 'mods', valueSchema: readyModsSnapshotSchema, maxEntries: 12 });
-   const maxCachedScans = 8;
+   const contexts = createModContexts({ registry: options.registry, catalog: options.catalog, dataPath: options.dataPath, log: options.log });
 
    async function getMods(request: ModRequest): Promise<ModsSnapshot> {
-      const install = await options.registry.get(request.installId);
-      if (install?.version) {
-         const platform = modPlatformForStore(install.store);
-         const correlation = `${install.path}\0${platform}\0${install.version}`;
-         const cached = await snapshots.get(request.installId, correlation);
-         if (cached) return { ...cached, installId: request.installId, source: 'cache' };
-      }
+      const cached = await contexts.cachedSnapshot(request.installId);
+      if (cached) return { ...cached, installId: request.installId, source: 'cache' };
 
       return snapshot(request, false);
    }
@@ -107,199 +67,199 @@ export function createModService(options: ModServiceOptions) {
    }
 
    async function snapshot(request: ModRequest, refresh: boolean): Promise<ModsSnapshot> {
-      const context = await loadContext(request.installId, refresh);
-      if (Result.isError(context)) return unavailableModsSnapshot(request, context.error.issue, context.error.detail);
+      const next = await contexts.snapshot(request.installId, refresh);
+      return Result.isOk(next) ? next.value : unavailableModsSnapshot(request, next.error.issue, next.error.detail);
+   }
 
-      const scan = await scanMods(context.value, refresh);
+   function planInstall(request: ModSelectionRequest) {
+      return Result.gen(async function* () {
+         const context = yield* Result.await(contexts.load(request.installId));
+         const plan = yield* planModInstall(request, context, patcher.supported);
+         return Result.ok({ install: context.install, ...plan });
+      });
+   }
 
-      const next: ReadyModsSnapshot = {
-         status: 'ready',
-         installId: request.installId,
-         installPath: context.value.install.path,
-         gameVersion: context.value.gameVersion,
-         platform: context.value.platform,
-         source: context.value.index.source,
-         updatedAt: context.value.index.updatedAt,
-         sources: context.value.index.sources,
-         mods: summarizeMods(context.value.index, scan),
-         external: scan.external,
-         bsipaInstalled: scan.bsipaInstalled
-      };
-      await snapshots.set(request.installId, `${context.value.install.path}\0${context.value.platform}\0${context.value.gameVersion}`, next);
+   function planChanges(request: ModChangesRequest) {
+      return Result.gen(async function* () {
+         const context = yield* Result.await(contexts.load(request.installId));
+         const plan = yield* Result.await(planModChanges(request, context, patcher.supported));
+         return Result.ok({ install: context.install, ...plan });
+      });
+   }
 
-      return next;
+   function planUninstall(request: ModUninstallRequest) {
+      return Result.gen(async function* () {
+         const context = yield* Result.await(contexts.load(request.installId));
+         const preview = yield* Result.await(planModUninstall(request, context, patcher.supported));
+         return Result.ok({ install: context.install, preview });
+      });
+   }
+
+   function planImport(request: ModImportRequest) {
+      return Result.gen(async function* () {
+         const context = yield* Result.await(contexts.load(request.installId));
+         const preview = yield* Result.await(planModImport(request, context));
+         return Result.ok({ install: context.install, preview });
+      });
    }
 
    async function previewInstall(request: ModSelectionRequest): Promise<ModInstallPreview> {
-      const context = await loadContext(request.installId, false);
-      if (Result.isError(context)) return invalid(request, context.error);
-      if (request.modIds.length === 0) return invalid(request, { issue: 'nothing-selected' });
-
-      const scan = await scanMods(context.value);
-      const plan = buildInstallPlan(context.value.index, scan, request.modIds);
-      return buildInstallPreview(request, context.value, scan, plan, request.modIds);
-   }
-
-   function buildInstallPreview(
-      request: ModRequest,
-      context: ModContext,
-      scan: ModScan,
-      plan: ReturnType<typeof buildInstallPlan>,
-      selectedIds: string[]
-   ): ModInstallPreview {
-      if (plan.mods.length === 0) return invalid(request, { issue: 'not-found', detail: selectedIds.join(', ') });
-
-      const warnings: ModWarning[] = [];
-      if (plan.mods.some((planned) => planned.entry.isBsipa)) {
-         warnings.push('bsipa-first');
-         warnings.push(patcher.supported ? 'patcher-runs' : 'patcher-unsupported');
-      }
-      if (plan.missingDependencies) warnings.push('missing-dependency');
-      if (plan.mods.some((planned) => scan.installed.has(planned.entry.modId))) warnings.push('replaces-installed');
-      if (plan.mods.some((planned) => planned.entry.sourceKind === 'unofficial')) warnings.push('unofficial-source');
-      if (plan.mods.some((planned) => planned.entry.sourceKind === 'unofficial' && planned.entry.claimedIdentity !== null)) {
-         warnings.push('claimed-identity');
-      }
-
-      return {
-         status: 'ok',
-         installId: request.installId,
-         installPath: context.install.path,
-         pendingPath: join(context.install.path, modFolders.pending),
-         downloadHosts: [...new Set(plan.mods.map((planned) => planned.entry.downloadHost))],
-         mods: plan.mods.map(toPlanEntry),
-         downloadBytes: plan.mods.reduce((total, planned) => total + (planned.entry.sizeBytes ?? 0), 0),
-         warnings
-      };
+      const plan = await planInstall(request);
+      return Result.isOk(plan) ? plan.value.preview : invalid(request, plan.error);
    }
 
    async function previewChanges(request: ModChangesRequest): Promise<ModChangesPreview> {
-      const context = await loadContext(request.installId, false);
-      if (Result.isError(context)) return invalid(request, context.error);
-      if (request.installModIds.length === 0 || request.removeModIds.length === 0) return invalid(request, { issue: 'nothing-selected' });
-
-      const scan = await scanMods(context.value);
-      const uninstall = await buildUninstallPreview({ ...request, scope: 'selection', modIds: request.removeModIds }, context.value, scan);
-      if (uninstall.status === 'invalid') return uninstall;
-
-      const plannedScan = scanWithoutMods(scan, request.removeModIds);
-      const plan = buildInstallPlan(context.value.index, plannedScan, request.installModIds);
-      const install = buildInstallPreview(request, context.value, scan, plan, request.installModIds);
-      if (install.status === 'invalid') return install;
-
-      return {
-         status: 'ok',
-         installId: request.installId,
-         install,
-         uninstall,
-         warnings: [...new Set([...install.warnings, ...uninstall.warnings])]
-      };
+      const plan = await planChanges(request);
+      return Result.isOk(plan) ? plan.value.preview : invalid(request, plan.error);
    }
 
-   async function applyChanges(request: ModChangesRequest): Promise<ModOperationResult> {
-      const previewed = await previewChanges(request);
-      if (previewed.status === 'invalid') return failure(request, previewed);
+   async function previewUninstall(request: ModUninstallRequest): Promise<ModUninstallPreview> {
+      const plan = await planUninstall(request);
+      return Result.isOk(plan) ? plan.value.preview : invalid(request, plan.error);
+   }
 
-      const context = await loadContext(request.installId, false);
-      if (Result.isError(context)) return failure(request, context.error);
+   async function previewImport(request: ModImportRequest): Promise<ModImportPreview> {
+      const plan = await planImport(request);
+      return Result.isOk(plan) ? plan.value.preview : invalid(request, plan.error);
+   }
 
-      const scan = await scanMods(context.value);
-      const plan = buildInstallPlan(context.value.index, scanWithoutMods(scan, request.removeModIds), request.installModIds);
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'download',
-         title: 'Apply mod changes',
-         message: context.value.install.name,
-         progress: { phase: 'preparing', current: 0, total: 2, percent: 0, unit: 'steps' },
-         metadata: {
-            installId: request.installId,
-            install: previewed.install.mods.map((entry) => entry.name),
-            remove: previewed.uninstall.mods.map((entry) => entry.name)
+   async function installMods(request: ModSelectionRequest) {
+      const plan = await planInstall(request);
+      if (Result.isError(plan)) return failure(request, plan.error);
+
+      const { install, preview, planned } = plan.value;
+      return start(
+         install.id,
+         {
+            kind: 'download',
+            title: translate('mods.operations.install', { count: planned.length }),
+            message: install.name,
+            progress: { phase: 'preparing', current: 0, total: planned.length, percent: 0, unit: 'items' },
+            metadata: { installId: request.installId, mods: preview.mods.map((entry) => entry.name) }
          },
-         cancel: () => controller.abort()
+         (operationId, signal) => writeInstall(operationId, install, planned, signal)
+      );
+   }
+
+   async function applyChanges(request: ModChangesRequest) {
+      const plan = await planChanges(request);
+      if (Result.isError(plan)) return failure(request, plan.error);
+
+      const { install, preview, planned } = plan.value;
+      return start(
+         install.id,
+         {
+            kind: 'download',
+            title: translate('mods.operations.apply'),
+            message: install.name,
+            progress: { phase: 'preparing', current: 0, total: 2, percent: 0, unit: 'steps' },
+            metadata: {
+               installId: request.installId,
+               install: preview.install.mods.map((entry) => entry.name),
+               remove: preview.uninstall.mods.map((entry) => entry.name)
+            }
+         },
+         async (operationId, signal) => {
+            const uninstalled = await writeUninstall(operationId, install, preview.uninstall, signal);
+            if (Result.isError(uninstalled)) return uninstalled;
+
+            const installed = await writeInstall(operationId, install, planned, signal);
+            if (Result.isError(installed)) return installed;
+
+            return Result.ok({
+               installId: install.id,
+               installedMods: installed.value.mods,
+               removedMods: uninstalled.value.mods,
+               files: installed.value.files + uninstalled.value.files,
+               bytes: installed.value.bytes
+            });
+         }
+      );
+   }
+
+   async function uninstallMods(request: ModUninstallRequest) {
+      const plan = await planUninstall(request);
+      if (Result.isError(plan)) return failure(request, plan.error);
+
+      const { install, preview } = plan.value;
+      return start(
+         install.id,
+         {
+            kind: 'delete',
+            title:
+               request.scope === 'all'
+                  ? translate('mods.operations.removeAll', { name: install.name })
+                  : translate('mods.operations.remove', { count: preview.mods.length }),
+            message: install.path,
+            progress: { phase: 'preparing', current: 0, total: preview.fileCount, percent: 0, unit: 'files' },
+            metadata: { installId: request.installId, scope: request.scope }
+         },
+         (operationId, signal) => writeUninstall(operationId, install, preview, signal)
+      );
+   }
+
+   async function importMod(request: ModImportRequest, disposeSource?: () => void | Promise<void>): Promise<Result<OperationSnapshot, Problem>> {
+      const plan = await planImport(request);
+      if (Result.isError(plan)) {
+         await disposeSource?.();
+         return failure(request, plan.error);
+      }
+
+      const { install, preview } = plan.value;
+      return start(
+         install.id,
+         {
+            kind: 'import',
+            title: translate('mods.operations.import', { name: preview.name }),
+            message: preview.destinationPath,
+            progress: { phase: 'preparing', current: 0, total: preview.sizeBytes, percent: 0, unit: 'bytes' },
+            metadata: { installId: request.installId, sourcePath: preview.sourcePath }
+         },
+         async (operationId, signal) => {
+            const imported = await writeImportedMod({
+               ingestion: options.ingestion,
+               installPath: install.path,
+               sourcePath: preview.sourcePath,
+               kind: preview.kind,
+               name: preview.name,
+               signal,
+               onProgress: (progress) => options.operations.update(operationId, { progress })
+            });
+            if (Result.isError(imported))
+               return Result.err(createProblem('mods.import-failed', { name: preview.name, detail: imported.error.message }));
+
+            return Result.ok({ installId: install.id, name: preview.name, files: imported.value.files });
+         },
+         disposeSource
+      );
+   }
+
+   function start(installId: InstallId, operation: Omit<CreateOperationInput, 'cancel'>, work: ModWork, cleanup?: () => void | Promise<void>) {
+      const created = options.operations.start(operation, async (operationId, signal) => {
+         try {
+            const result = await work(operationId, signal);
+            if (Result.isError(result)) options.operations.fail(operationId, result.error);
+            else options.operations.complete(operationId, result.value);
+         } finally {
+            contexts.forget(installId);
+            await cleanup?.();
+         }
       });
 
-      void runChanges(operation.id, context.value.install, previewed, plan.mods, controller.signal);
-
-      return { ok: true, value: operation };
-   }
-
-   async function installMods(request: ModSelectionRequest): Promise<ModOperationResult> {
-      const context = await loadContext(request.installId, false);
-      if (Result.isError(context)) return failure(request, context.error);
-
-      const previewed = await previewInstall(request);
-      if (previewed.status === 'invalid') return failure(request, previewed);
-
-      const scan = await scanMods(context.value);
-      const plan = buildInstallPlan(context.value.index, scan, request.modIds);
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'download',
-         title: `Install ${plan.mods.length} mod${plan.mods.length === 1 ? '' : 's'}`,
-         message: context.value.install.name,
-         progress: { phase: 'preparing', current: 0, total: plan.mods.length, percent: 0, unit: 'items' },
-         metadata: { installId: request.installId, mods: previewed.mods.map((entry) => entry.name) },
-         cancel: () => controller.abort()
-      });
-
-      void runInstall(operation.id, context.value.install, plan.mods, controller.signal);
-
-      return { ok: true, value: operation };
-   }
-
-   async function runInstall(operationId: string, install: InstallDetail, planned: PlannedMod[], signal: AbortSignal) {
-      try {
-         const installed = await writeInstall(operationId, install, planned, signal);
-         if (Result.isError(installed)) options.operations.fail(operationId, installed.error);
-         else options.operations.complete(operationId, installed.value);
-      } finally {
-         forgetScan(install.id);
-      }
-   }
-
-   async function runChanges(
-      operationId: string,
-      install: InstallDetail,
-      previewed: ReadyModChangesPreview,
-      planned: PlannedMod[],
-      signal: AbortSignal
-   ) {
-      try {
-         const uninstalled = await writeUninstall(operationId, install, previewed.uninstall, signal);
-         if (Result.isError(uninstalled)) {
-            options.operations.fail(operationId, uninstalled.error);
-            return;
-         }
-
-         const installed = await writeInstall(operationId, install, planned, signal);
-         if (Result.isError(installed)) {
-            options.operations.fail(operationId, installed.error);
-            return;
-         }
-
-         const outcome = {
-            installId: install.id,
-            installedMods: installed.value.mods,
-            removedMods: uninstalled.value.mods,
-            files: installed.value.files + uninstalled.value.files,
-            bytes: installed.value.bytes
-         };
-         options.operations.complete(operationId, outcome);
-      } finally {
-         forgetScan(install.id);
-      }
+      return Result.ok(created);
    }
 
    async function writeInstall(operationId: string, install: InstallDetail, planned: PlannedMod[], signal: AbortSignal) {
       let files = 0;
       let bytes = 0;
 
-      for (const [index, mod] of planned.entries()) {
-         const { entry } = mod;
-         options.operations.update(operationId, {
-            progress: progressFor(index, planned.length, entry.name, 0)
-         });
+      for (const [index, { entry }] of planned.entries()) {
+         options.operations.update(operationId, { progress: progressFor(index, planned.length, entry.name, 0) });
+
+         const permitted = await options.repositories.checkDownloadHost(entry.downloadHost);
+         if (Result.isError(permitted)) {
+            return Result.err<InstallOutcome, Problem>(createProblem('mods.install-failed', { name: entry.name, detail: permitted.error.message }));
+         }
 
          const installed = await installModVersion({
             ingestion: options.ingestion,
@@ -307,131 +267,42 @@ export function createModService(options: ModServiceOptions) {
             entry,
             signal,
             onProgress: (progress) => {
-               options.operations.update(operationId, {
-                  progress: progressFor(index, planned.length, entry.name, progress.percent ?? 0)
-               });
+               options.operations.update(operationId, { progress: progressFor(index, planned.length, entry.name, progress.percent ?? 0) });
             }
          });
-         if (Result.isError(installed)) return Result.err(operationError(entry.name, installed.error));
+         if (Result.isError(installed)) {
+            return Result.err<InstallOutcome, Problem>(createProblem('mods.install-failed', { name: entry.name, detail: installed.error.message }));
+         }
 
          files += installed.value.files;
          bytes += installed.value.bytes;
 
-         if (!mod.entry.isBsipa) continue;
-
-         if (!patcher.supported || (await patcher.isPatched(install.path))) continue;
+         if (!entry.isBsipa || !(await patcher.canPatch()) || (await patcher.isPatched(install.path))) continue;
 
          const patched = await patcher.patch(install.path);
-         if (Result.isError(patched)) return Result.err(patched.error);
+         if (Result.isError(patched)) return Result.err<InstallOutcome, Problem>(patched.error);
       }
 
-      const outcome = {
-         installId: install.id,
-         mods: planned.length,
-         files,
-         bytes
-      };
-      return Result.ok(outcome);
+      return Result.ok<InstallOutcome, Problem>({ installId: install.id, mods: planned.length, files, bytes });
    }
 
-   async function previewUninstall(request: ModUninstallRequest): Promise<ModUninstallPreview> {
-      const context = await loadContext(request.installId, false);
-      if (Result.isError(context)) return invalid(request, context.error);
-
-      const scan = await scanMods(context.value);
-      return buildUninstallPreview(request, context.value, scan);
-   }
-
-   async function buildUninstallPreview(request: ModUninstallRequest, context: ModContext, scan: ModScan): Promise<ModUninstallPreview> {
-      const selection = request.scope === 'all' ? [...scan.installed.keys()] : request.modIds;
-      if (selection.length === 0 && request.scope === 'selection') return invalid(request, { issue: 'nothing-selected' });
-
-      const mods = await Promise.all(selection.map((modId) => describeRemoval(context, scan, modId)));
-      const removals = mods.filter((removal) => removal !== null);
-      const external = request.scope === 'all' ? scan.external : [];
-      const folders = request.scope === 'all' ? modRemovableFolders.map((folder) => join(context.install.path, folder)) : [];
-
-      const warnings: ModWarning[] = [];
-      if (external.length > 0) warnings.push('removes-external');
-      if (removals.some((removal) => context.index.byModId.get(removal.modId)?.isBsipa) && patcher.supported) warnings.push('patcher-runs');
-
-      return {
-         status: 'ok',
-         installId: request.installId,
-         installPath: context.install.path,
-         scope: request.scope,
-         mods: removals,
-         external,
-         folders,
-         fileCount: removals.reduce((total, removal) => total + removal.files.length, 0) + external.length,
-         warnings
-      };
-   }
-
-   async function uninstallMods(request: ModUninstallRequest): Promise<ModOperationResult> {
-      const previewed = await previewUninstall(request);
-      if (previewed.status === 'invalid') return failure(request, previewed);
-
-      const install = await options.registry.get(request.installId);
-      if (!install) return failure(request, { issue: 'not-found' });
-
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'delete',
-         title:
-            request.scope === 'all'
-               ? `Remove every mod from ${install.name}`
-               : `Remove ${previewed.mods.length} mod${previewed.mods.length === 1 ? '' : 's'}`,
-         message: install.path,
-         progress: { phase: 'preparing', current: 0, total: previewed.fileCount, percent: 0, unit: 'files' },
-         metadata: { installId: request.installId, scope: request.scope },
-         cancel: () => controller.abort()
-      });
-
-      void runUninstall(operation.id, install, previewed, controller.signal);
-
-      return { ok: true, value: operation };
-   }
-
-   async function runUninstall(operationId: string, install: InstallDetail, previewed: ReadyModUninstallPreview, signal: AbortSignal) {
-      try {
-         const uninstalled = await writeUninstall(operationId, install, previewed, signal);
-         if (Result.isError(uninstalled)) options.operations.fail(operationId, uninstalled.error);
-         else options.operations.complete(operationId, uninstalled.value);
-      } finally {
-         forgetScan(install.id);
-      }
-   }
-
-   async function writeUninstall(operationId: string, install: InstallDetail, previewed: ReadyModUninstallPreview, signal: AbortSignal) {
-      const removesBsipa = previewed.mods.some((removal) => removal.name.trim().toLowerCase() === bsipaModName);
-      if (removesBsipa && patcher.supported && (await patcher.hasPatcher(install.path))) {
+   async function writeUninstall(operationId: string, install: InstallDetail, preview: ReadyModUninstallPreview, signal: AbortSignal) {
+      const removesBsipa = preview.mods.some((removal) => removal.name.trim().toLowerCase() === bsipaModName);
+      if (removesBsipa && (await patcher.canPatch()) && (await patcher.hasPatcher(install.path))) {
          const reverted = await patcher.revert(install.path);
-         if (Result.isError(reverted)) return Result.err(reverted.error);
+         if (Result.isError(reverted)) return Result.err<UninstallOutcome, Problem>(reverted.error);
       }
 
       const paths = [
-         ...previewed.mods.flatMap((removal) => removal.files),
-         ...previewed.external.map((external) => join(install.path, ...external.path.split('/'))),
-         ...previewed.folders
+         ...preview.mods.flatMap((removal) => removal.files),
+         ...preview.external.map((external) => join(install.path, ...external.path.split('/'))),
+         ...preview.folders
       ];
 
       let files = 0;
       for (const [index, path] of paths.entries()) {
-         const deleted = await deletePathWithProgress({
-            targetPath: path,
-            root: install.path,
-            allowMissing: true,
-            scope: 'content',
-            signal
-         });
-         if (Result.isError(deleted)) {
-            return Result.err({
-               code: deleted.error.code,
-               message: deleted.error.message,
-               details: { path: deleted.error.path }
-            });
-         }
+         const deleted = await deletePathWithProgress({ targetPath: path, root: install.path, allowMissing: true, signal });
+         if (Result.isError(deleted)) return Result.err<UninstallOutcome, Problem>(deleted.error);
 
          files += deleted.value.files;
          options.operations.update(operationId, {
@@ -439,212 +310,7 @@ export function createModService(options: ModServiceOptions) {
          });
       }
 
-      const outcome = {
-         installId: install.id,
-         mods: previewed.mods.length,
-         files
-      };
-      return Result.ok(outcome);
-   }
-
-   async function previewImport(request: ModImportRequest): Promise<ModImportPreview> {
-      const context = await loadContext(request.installId, false);
-      if (Result.isError(context)) return invalid(request, context.error);
-
-      const extension = extname(request.sourcePath).toLowerCase();
-      if (!importExtensions.includes(extension)) return invalid(request, { issue: 'unsupported-file', detail: extension });
-
-      const info = await readPathInfo(request.sourcePath);
-      if (Result.isError(info) || info.value.kind !== 'file') return invalid(request, { issue: 'inspect-failed', detail: request.sourcePath });
-      if (info.value.sizeBytes > maxModArchiveBytes) {
-         return invalid(request, { issue: 'unsupported-file', detail: 'the file is larger than Encore imports' });
-      }
-
-      const name = request.sourceName ?? basename(request.sourcePath);
-      const destination =
-         extension === '.dll'
-            ? join(context.value.install.path, modFolders.pluginsPending, name)
-            : join(context.value.install.path, modFolders.pending);
-
-      return {
-         status: 'ok',
-         installId: request.installId,
-         sourcePath: request.sourcePath,
-         kind: extension === '.dll' ? 'dll' : 'zip',
-         name,
-         sizeBytes: info.value.sizeBytes,
-         destinationPath: destination,
-         warnings: ['unverified-source']
-      };
-   }
-
-   async function importMod(request: ModImportRequest, disposeSource?: () => void | Promise<void>): Promise<ModOperationResult> {
-      const previewed = await previewImport(request);
-      if (previewed.status === 'invalid') {
-         await disposeSource?.();
-         return failure(request, previewed);
-      }
-
-      const install = await options.registry.get(request.installId);
-      if (!install) {
-         await disposeSource?.();
-         return failure(request, { issue: 'not-found' });
-      }
-
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'import',
-         title: `Import ${previewed.name}`,
-         message: previewed.destinationPath,
-         progress: { phase: 'preparing', current: 0, total: previewed.sizeBytes, percent: 0, unit: 'bytes' },
-         metadata: { installId: request.installId, sourcePath: previewed.sourcePath },
-         cancel: () => controller.abort()
-      });
-
-      void runImport(operation.id, install, previewed, controller.signal, disposeSource);
-
-      return { ok: true, value: operation };
-   }
-
-   async function runImport(
-      operationId: string,
-      install: InstallDetail,
-      previewed: ReadyModImportPreview,
-      signal: AbortSignal,
-      disposeSource?: () => void | Promise<void>
-   ) {
-      try {
-         await writeImport(operationId, install, previewed, signal);
-      } finally {
-         forgetScan(install.id);
-         await disposeSource?.();
-      }
-   }
-
-   async function writeImport(operationId: string, install: InstallDetail, previewed: ReadyModImportPreview, signal: AbortSignal) {
-      const imported =
-         previewed.kind === 'zip'
-            ? await importModArchive({
-                 ingestion: options.ingestion,
-                 installPath: install.path,
-                 sourcePath: previewed.sourcePath,
-                 signal,
-                 onProgress: (progress) => {
-                    options.operations.update(operationId, { progress });
-                 }
-              })
-            : await importModFile(install.path, previewed, signal);
-
-      if (Result.isError(imported)) return options.operations.fail(operationId, operationError(previewed.name, imported.error));
-
-      const outcome = {
-         installId: install.id,
-         name: previewed.name,
-         files: imported.value.files
-      };
-      options.operations.complete(operationId, outcome);
-   }
-
-   async function importModFile(installPath: string, previewed: ReadyModImportPreview, signal: AbortSignal) {
-      const destination = resolveModContentPath(installPath, `${modFolders.pluginsPending}/${previewed.name}`);
-      if (!destination) {
-         return Result.err<{ files: number }, ContentProblem>({
-            code: 'content.ingest.layout-rejected',
-            message: 'the file name cannot be written into the plugins folder',
-            entry: previewed.name
-         });
-      }
-
-      const copied = await copyPathWithProgress({
-         sourcePath: previewed.sourcePath,
-         destinationPath: destination.absolutePath,
-         destinationRoot: installPath,
-         overwrite: true,
-         scope: 'content',
-         signal
-      });
-
-      return Result.isError(copied)
-         ? Result.err<{ files: number }, ContentProblem>({
-              code: 'content.commit.failed',
-              message: 'the plugin could not be written into the install',
-              path: destination.relativePath,
-              detail: copied.error.code
-           })
-         : Result.ok<{ files: number }, ContentProblem>({ files: copied.value.files });
-   }
-
-   async function loadContext(installId: string, refresh: boolean): Promise<Result<ModContext, ModProblem>> {
-      const install = await options.registry.get(installId);
-      if (!install) return Result.err<ModContext, ModProblem>({ issue: 'not-found' });
-
-      const gameVersion = install.version;
-      if (!gameVersion) return Result.err<ModContext, ModProblem>({ issue: 'unknown-version' });
-
-      const platform = modPlatformForStore(install.store);
-      const request = { gameVersion, platform };
-      const index = refresh ? await catalogs.refresh(request) : await catalogs.get(request);
-      if (Result.isError(index)) {
-         return Result.err<ModContext, ModProblem>({ issue: 'catalog-unavailable', detail: index.error.detail ?? index.error.message });
-      }
-
-      return Result.ok<ModContext, ModProblem>({
-         install,
-         gameVersion,
-         platform,
-         index: index.value
-      });
-   }
-
-   async function scanMods(context: ModContext, refresh = false) {
-      const cached = readRecent(scans, context.install.id);
-      if (!refresh && cached && isSamePath(cached.installPath, context.install.path)) return cached.scan;
-
-      const scan = await scanInstalledMods({ installPath: context.install.path, index: context.index, lookupHash: catalogs.lookupHash });
-      setRecent(scans, context.install.id, { installPath: context.install.path, scan }, maxCachedScans);
-
-      return scan;
-   }
-
-   function forgetScan(installId: InstallId) {
-      scans.delete(installId);
-      void snapshots.remove(installId);
-   }
-
-   async function describeRemoval(context: ModContext, scan: ModScan, modId: string): Promise<ModRemoval | null> {
-      const installed = scan.installed.get(modId);
-      const entry = context.index.byModId.get(modId);
-      if (!installed || !entry) return null;
-
-      const candidates = entry.files.flatMap((file) => modFileCandidates(context.install.path, file.path, entry.isBsipa));
-      const files = await Promise.all(
-         candidates.map(async (candidate) => {
-            const info = await readPathInfo(candidate.absolutePath);
-            return Result.isOk(info) && info.value.kind === 'file' ? candidate.absolutePath : null;
-         })
-      );
-
-      return {
-         modId,
-         name: entry.name,
-         version: installed.version,
-         files: [...new Set(files.filter((file) => file !== null))]
-      };
-   }
-
-   function scanWithoutMods(scan: ModScan, modIds: string[]): ModScan {
-      const installed = new Map(scan.installed);
-      for (const modId of modIds) installed.delete(modId);
-
-      return { ...scan, installed };
-   }
-
-   function operationError(name: string, problem: ContentProblem): OperationError {
-      return {
-         code: problem.code,
-         message: `${name}: ${problem.message}`,
-         details: { entry: problem.entry, path: problem.path, detail: problem.detail }
-      };
+      return Result.ok<UninstallOutcome, Problem>({ installId: install.id, mods: preview.mods.length, files });
    }
 
    function invalid(request: ModRequest, problem: ModProblem) {
@@ -652,7 +318,7 @@ export function createModService(options: ModServiceOptions) {
    }
 
    function failure(request: ModRequest, problem: ModProblem) {
-      return modFailure(request.installId, problem.issue, problem.detail);
+      return Result.err(createProblem(`mods.${problem.issue}`, { installId: request.installId, detail: problem.detail }));
    }
 
    return {
@@ -668,3 +334,6 @@ export function createModService(options: ModServiceOptions) {
       importMod
    };
 }
+
+type UninstallOutcome = { installId: InstallId; mods: number; files: number };
+type InstallOutcome = UninstallOutcome & { bytes: number };

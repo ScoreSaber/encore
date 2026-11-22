@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react';
 import { CircleCheckIcon, InfoIcon, Loader2Icon, OctagonXIcon, TriangleAlertIcon } from 'lucide-react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
-import { useTheme } from '@/renderer/theme/theme-provider';
+import { useTheme } from '@/renderer/theme/theme';
 
 const toasterStyle: CSSProperties & {
    '--normal-bg': string;

@@ -12,6 +12,7 @@ const buttonVariants = cva(
          variant: {
             default: 'bg-primary text-primary-foreground hover:bg-primary/90',
             destructive: 'bg-destructive text-white hover:bg-destructive/90 dark:bg-destructive/60',
+            'destructive-outline': 'border border-destructive/40 bg-background text-destructive shadow-xs hover:bg-destructive/10 dark:bg-input/30',
             outline:
                'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
             secondary: 'bg-secondary/60 text-secondary-foreground hover:bg-secondary/40',
@@ -20,7 +21,8 @@ const buttonVariants = cva(
             'menu-filled': 'border bg-background/35 text-foreground/80 hover:border-primary/35 hover:bg-background/35 hover:text-primary',
             'ghost-icon': 'text-muted-foreground/50 hover:text-primary active:!scale-100',
             filter: 'bg-secondary/35 text-muted-foreground hover:bg-accent/50 hover:text-foreground border',
-            link: 'text-primary cursor-pointer underline-offset-4 hover:underline active:!scale-100'
+            link: 'text-primary cursor-pointer underline-offset-4 hover:underline active:!scale-100',
+            'link-muted': 'text-muted-foreground cursor-pointer underline-offset-4 hover:underline active:!scale-100'
          },
          size: {
             default: 'h-9 px-4 py-2 has-[>svg]:px-3',

@@ -2,15 +2,16 @@ import { Result } from 'better-result';
 import { buf as crc32 } from 'crc-32';
 
 import { causeCode } from '@/lib/errors';
+import { writeFileAtomic } from '@/lib/filesystem/atomic-write';
 import { pathExists } from '@/lib/filesystem/path';
 import { parseBinaryVdf, serializeBinaryVdf, vdfMap, vdfText, type BinaryVdfMap } from '@/modules/shortcuts/main/binary-vdf';
 
-import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const shortcutsRootKey = 'shortcuts';
 
-export type SteamShortcutProblem = {
+type SteamShortcutProblem = {
    issue: 'steam-client-missing' | 'steam-user-missing' | 'steam-file-unreadable' | 'write-failed';
    detail?: string;
 };
@@ -21,7 +22,7 @@ export type SteamShortcutFile = {
    entries: BinaryVdfMap;
 };
 
-export type SteamShortcutEntry = {
+type SteamShortcutEntry = {
    appName: string;
    executablePath: string;
    startDirectory: string;
@@ -57,7 +58,7 @@ export async function readSteamShortcuts(path: string): Promise<Result<SteamShor
 
    const parsed = await Result.tryPromise({
       try: async () => parseBinaryVdf(await readFile(path)),
-      catch: (cause) => causeCode(cause)
+      catch: causeCode
    });
 
    if (Result.isError(parsed)) return Result.err({ issue: 'steam-file-unreadable', detail: parsed.error });
@@ -109,23 +110,11 @@ export function upsertSteamShortcut(file: SteamShortcutFile, entry: SteamShortcu
 }
 
 export async function writeSteamShortcuts(file: SteamShortcutFile): Promise<Result<void, SteamShortcutProblem>> {
-   const temporaryPath = `${file.path}.encore-tmp`;
-
-   const written = await Result.tryPromise({
-      try: async () => {
-         await mkdir(dirname(file.path), { recursive: true });
-         await writeFile(temporaryPath, serializeBinaryVdf(file.root));
-         await rename(temporaryPath, file.path);
-      },
-      catch: (cause) => causeCode(cause)
-   });
-
-   if (Result.isError(written)) return Result.err({ issue: 'write-failed', detail: written.error });
-
-   return Result.ok(undefined);
+   const written = await writeFileAtomic(file.path, serializeBinaryVdf(file.root));
+   return written.mapError((error) => ({ issue: 'write-failed', detail: error.detail }));
 }
 
-export function steamShortcutAppId(entry: SteamShortcutEntry) {
+function steamShortcutAppId(entry: SteamShortcutEntry) {
    return crc32(Buffer.from(`${quoteForSteam(entry.executablePath)}${entry.appName}`, 'utf8')) | 0x8000_0000;
 }
 

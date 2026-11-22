@@ -1,10 +1,10 @@
 import { Result } from 'better-result';
 
+import { createProblem } from '@/lib/errors';
 import { scanInBatches } from '@/lib/filesystem/scan';
 import { modelTypes, type LocalModelSummary, type ModelFolderSummary, type ModelProblem, type ModelType } from '@/modules/models/contract';
 import { computeModelHash } from '@/modules/models/main/model-hash';
 import { modelDisplayName, modelExtension, modelFolderPath } from '@/modules/models/main/model-paths';
-import { createModelProblem } from '@/modules/models/main/model-problem';
 
 import { readdir, stat } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -14,16 +14,15 @@ export type ModelScanCacheEntry = {
    model: LocalModelSummary;
 };
 
-export type ModelScanCache = Map<string, ModelScanCacheEntry>;
+type ModelScanCache = Map<string, ModelScanCacheEntry>;
 
-export type ModelScanOptions = {
+type ModelScanOptions = {
    installPath: string;
    cache?: ModelScanCache;
-   signal?: AbortSignal;
    onProgress?: (progress: { scanned: number; total: number }) => void;
 };
 
-export type ModelScanResult = {
+type ModelScanResult = {
    status: 'missing' | 'ready';
    folders: ModelFolderSummary[];
    models: LocalModelSummary[];
@@ -73,7 +72,7 @@ export async function scanModelFolders(options: ModelScanOptions): Promise<Model
 async function listModelFiles(folderPath: string, type: ModelType) {
    const entries = await Result.tryPromise({
       try: () => readdir(folderPath, { withFileTypes: true }),
-      catch: (cause) => createModelProblem('models.root.unreadable', 'this model folder could not be read', { type, cause })
+      catch: (cause) => createProblem('models.root.unreadable', { type, cause })
    });
 
    if (Result.isError(entries)) {
@@ -88,12 +87,11 @@ async function listModelFiles(folderPath: string, type: ModelType) {
 }
 
 async function readModel(entry: ScanEntry, cache?: ModelScanCache): Promise<LocalModelSummary> {
-   const id = modelId(entry.type, entry.fileName);
+   const id = `${entry.type}:${entry.fileName}`;
    const path = join(entry.folderPath, entry.fileName);
    const stats = await Result.tryPromise({
       try: () => stat(path),
-      catch: (cause) =>
-         createModelProblem('models.file.unreadable', 'this model file could not be read', { type: entry.type, fileName: entry.fileName, cause })
+      catch: (cause) => createProblem('models.file.unreadable', { type: entry.type, fileName: entry.fileName, cause })
    });
 
    if (Result.isError(stats)) return emptyModel(entry, id, path, stats.error);
@@ -145,10 +143,6 @@ function emptyModel(entry: ScanEntry, id: string, path: string, problem: ModelPr
       isDuplicate: false,
       problem
    };
-}
-
-export function modelId(type: ModelType, fileName: string) {
-   return `${type}:${fileName}`;
 }
 
 function markDuplicates(models: LocalModelSummary[]) {

@@ -1,68 +1,42 @@
 import { useTranslations } from 'use-intl';
 
-import { ActionScopeRows, ContentActionDialog } from '@/components/content/content-action-dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
+import { InstallScopeRows } from '@/modules/installs/renderer/install-scope-rows';
+import { OperationFlowDialog } from '@/modules/operations/renderer/operation-flow-dialog';
 import { PreviewList } from '@/modules/operations/renderer/operation-progress';
 import type { TargetPlaylistCollectionRequest } from '@/modules/playlists/api';
-import type { PlaylistActionIssue } from '@/modules/playlists/contract';
 import type { PlaylistActions } from '@/modules/playlists/renderer/use-playlist-actions';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<PlaylistActionIssue, 'playlists.issues'> = {
-   'install-not-found': 'installNotFound',
-   'inspect-failed': 'inspectFailed',
-   'invalid-source': 'invalidSource',
-   'no-missing-maps': 'noMissingMaps',
-   'no-selection': 'noSelection',
-   'no-source': 'noSource',
-   'not-found': 'notFound',
-   'playlists-missing': 'playlistsMissing',
-   'source-unavailable': 'sourceUnavailable',
-   'unsupported-target': 'unsupportedTarget'
-};
 
 export function PlaylistActionDialog({ request, actions }: { request: TargetPlaylistCollectionRequest; actions: PlaylistActions }) {
    const t = useTranslations('playlists.actions');
-   const issues = useTranslations('playlists.issues');
-   const common = useTranslations('common');
+   const issues = useTranslations('problems.playlists');
    const format = useFormatters();
-   const { state } = actions;
+   const { state } = actions.flow;
    const kind = state.status === 'idle' ? 'delete' : state.kind;
-   const preview = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.preview : null;
+   const deleting = (state.status === 'ready' || state.status === 'starting' || state.status === 'running') && state.kind === 'delete' ? state : null;
 
    return (
-      <ContentActionDialog
-         state={state}
-         operation={actions.operation}
-         title={kind === 'delete' && preview ? t('delete.action', { count: preview.names.length }) : t(`${kind}.title`)}
+      <OperationFlowDialog
+         flow={actions.flow}
+         title={deleting ? t('delete.action', { count: deleting.preview.names.length }) : t(`${kind}.title`)}
          description={t(`${kind}.description`)}
-         issue={
-            state.status === 'invalid' ? (
+         issue={(problem) => issues(problem.issue)}
+         preview={(ready, editable) =>
+            ready.preview ? (
                <>
-                  <p>{issues(issueKeys[state.problem.issue])}</p>
-                  {state.problem.detail ? <p className="text-muted-foreground text-xs break-all">{state.problem.detail}</p> : null}
-               </>
-            ) : null
-         }
-         preview={
-            preview ? (
-               <>
-                  <ActionScopeRows request={request} showPath={false} compact />
-                  <PreviewList items={preview.names.map((name, index) => ({ id: `${index}:${name}`, label: name }))} />
-                  <p className="text-muted-foreground text-xs">{t('delete.sizeValue', { size: format.bytes(preview.sizeBytes) })}</p>
-                  {preview.deleteMaps ? (
+                  <InstallScopeRows request={request} compact />
+                  <PreviewList items={ready.preview.names.map((name, index) => ({ id: `${index}:${name}`, label: name }))} />
+                  <p className="text-muted-foreground text-xs">{t('delete.sizeValue', { size: format.bytes(ready.preview.sizeBytes) })}</p>
+                  {ready.preview.deleteMaps ? (
                      <p className="text-muted-foreground text-xs">
-                        {t('delete.mapsValue', { count: preview.mapCount, size: format.bytes(preview.mapSizeBytes) })}
+                        {t('delete.mapsValue', { count: ready.preview.mapCount, size: format.bytes(ready.preview.mapSizeBytes) })}
                      </p>
                   ) : null}
-                  {state.status === 'ready' ? (
+                  {editable ? (
                      <label className="flex items-start gap-2">
-                        <Checkbox
-                           checked={state.preview.deleteMaps}
-                           onCheckedChange={(next) => void actions.previewDelete(state.selection, next === true)}
-                        />
+                        <Checkbox checked={ready.preview.deleteMaps} onCheckedChange={(next) => actions.setDeleteMaps(next === true)} />
                         <span>
                            {t('delete.alsoMaps')}
                            <span className="text-muted-foreground block text-xs">{t('delete.alsoMapsHint')}</span>
@@ -72,18 +46,8 @@ export function PlaylistActionDialog({ request, actions }: { request: TargetPlay
                </>
             ) : null
          }
-         confirm={actions.confirm}
-         cancel={actions.cancel}
-         dismiss={actions.dismiss}
-         labels={{
-            loading: common('loading'),
-            failed: t('result.failed'),
-            preparing: common('operation.preparing'),
-            progress: (values) => common('operation.progress', values),
-            completed: t('result.completed'),
-            cancelled: t('result.cancelled'),
-            confirm: t('delete.confirm')
-         }}
+         labels={{ failed: t('result.failed'), completed: t('result.completed'), cancelled: t('result.cancelled') }}
+         confirm={{ label: t('delete.confirm'), variant: 'destructive', run: actions.confirm }}
       />
    );
 }

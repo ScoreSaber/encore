@@ -2,8 +2,8 @@ import type { AppPackaging, PackageFormat } from '@/modules/app/contract';
 import { playlistFileExtension } from '@/modules/playlists/contract';
 import { encoreProtocol } from '@/modules/shortcuts/contract';
 
-export const packagedProtocolSchemes = [encoreProtocol];
-export const packagedFileAssociations = [playlistFileExtension];
+const packagedProtocolSchemes = [encoreProtocol];
+const packagedFileAssociations = [playlistFileExtension];
 
 type PackageEnvironment = {
    packaged: boolean;

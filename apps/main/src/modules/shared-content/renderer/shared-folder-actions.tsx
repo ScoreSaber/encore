@@ -3,38 +3,55 @@ import { useTranslations } from 'use-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/components/utils';
 
-import type { SharedContentIssue, SharedFolderLinkState, SharedFolderStatus } from '@/modules/shared-content/contract';
-import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
+import type { SharedFolderLinkState, SharedFolderStatus } from '@/modules/shared-content/contract';
 import type { SharedContentActions } from '@/modules/shared-content/renderer/use-shared-content-actions';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
 
 const linkedStates = new Set<SharedFolderLinkState>(['broken', 'foreign', 'linked']);
 const repairStates = new Set<SharedFolderLinkState>(['broken', 'foreign']);
 
-export const sharedContentIssueKeys: MessageKeyMap<SharedContentIssue, 'sharedContent.issues'> = {
-   'already-linked': 'alreadyLinked',
-   'inspect-failed': 'inspectFailed',
-   'install-not-found': 'installNotFound',
-   'link-unsupported': 'linkUnsupported',
-   'not-linked': 'notLinked',
-   'nothing-to-connect': 'nothingToConnect',
-   'path-blocked': 'pathBlocked',
-   'shared-root-unavailable': 'sharedRootUnavailable',
-   'unknown-folder': 'unknownFolder',
-   'unknown-root': 'unknownRoot',
-   'unsupported-target': 'unsupportedTarget'
-};
+export function LinkStateIcon({ linked, tone, label }: { linked: boolean; tone: 'good' | 'warning' | 'bad' | 'muted'; label: string }) {
+   const Icon = linked ? Link2 : Link2Off;
+
+   return (
+      <Tooltip>
+         <TooltipTrigger asChild>
+            <span role="img" aria-label={label} className="pointer-events-auto inline-flex shrink-0">
+               <Icon
+                  className={cn(
+                     'size-4',
+                     tone === 'good' && 'text-status-success',
+                     tone === 'warning' && 'text-status-warning',
+                     tone === 'bad' && 'text-destructive',
+                     tone === 'muted' && 'text-muted-foreground/60'
+                  )}
+               />
+            </span>
+         </TooltipTrigger>
+         <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+   );
+}
+
+export function SharedFolderStateIcon({ state }: { state: SharedFolderLinkState }) {
+   const t = useTranslations('sharedContent');
+
+   return (
+      <LinkStateIcon
+         linked={state === 'linked' || state === 'foreign'}
+         tone={state === 'linked' ? 'good' : state === 'foreign' ? 'warning' : state === 'broken' || state === 'blocked' ? 'bad' : 'muted'}
+         label={t(`states.${state}`)}
+      />
+   );
+}
 
 export function SharedFolderStateBadge({ state }: { state: SharedFolderLinkState }) {
    const t = useTranslations('sharedContent');
 
    return (
-      <Badge
-         className="px-1.5 py-0 text-[10px] leading-4"
-         variant={state === 'linked' ? 'default' : state === 'broken' || state === 'blocked' ? 'destructive' : 'outline'}
-      >
+      <Badge size="sm" variant={state === 'linked' ? 'default' : state === 'broken' || state === 'blocked' ? 'destructive' : 'outline'}>
          {t(`states.${state}`)}
       </Badge>
    );
@@ -52,18 +69,17 @@ export function SharedFolderActionButtons({
    linkable: boolean;
 }) {
    const t = useTranslations('sharedContent.actions');
-   const folderLabel = useSharedFolderLabel();
    const linked = linkedStates.has(folder.state);
 
    return (
-      <ButtonGroup aria-label={folderLabel(folder.id, folder.relativePath)}>
+      <div className="flex flex-wrap gap-2">
          {linked ? null : (
             <Button
                type="button"
                variant="outline"
                size="sm"
                disabled={disabled || !linkable || folder.state === 'blocked'}
-               onClick={() => void actions.preview('link', folder.id)}
+               onClick={() => void actions.open('link', folder.id)}
             >
                <Link2 data-icon="inline-start" />
                {t('link.action')}
@@ -71,24 +87,18 @@ export function SharedFolderActionButtons({
          )}
 
          {repairStates.has(folder.state) ? (
-            <Button
-               type="button"
-               variant="outline"
-               size="sm"
-               disabled={disabled || !linkable}
-               onClick={() => void actions.preview('repair', folder.id)}
-            >
+            <Button type="button" variant="outline" size="sm" disabled={disabled || !linkable} onClick={() => void actions.open('repair', folder.id)}>
                <Wrench data-icon="inline-start" />
                {t('repair.action')}
             </Button>
          ) : null}
 
          {linked ? (
-            <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void actions.preview('unlink', folder.id)}>
+            <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => void actions.open('unlink', folder.id)}>
                <Link2Off data-icon="inline-start" />
                {t('unlink.action')}
             </Button>
          ) : null}
-      </ButtonGroup>
+      </div>
    );
 }

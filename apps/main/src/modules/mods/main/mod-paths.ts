@@ -1,7 +1,7 @@
 import { Result } from 'better-result';
 
 import { parseArchiveEntryPath } from '@/lib/archive/path';
-import { beatSaberDataDirectoryName } from '@/modules/installs/main/install-root';
+import { beatSaberDataDirectoryName } from '@/modules/installs/main/beat-saber-files';
 
 import { join } from 'node:path';
 
@@ -30,7 +30,7 @@ export const bsipaInjectorPath = join(beatSaberDataDirectoryName, 'Managed', 'IP
 export const bsipaPatcherName = 'IPA.exe';
 export const bsipaLoaderName = 'winhttp.dll';
 
-export type ModFilePath = {
+type ModFilePath = {
    relativePath: string;
    absolutePath: string;
 };
@@ -54,7 +54,7 @@ export function modFileCandidates(installPath: string, contentPath: string, isBs
    return [...resolved.values()];
 }
 
-export function bsipaContentPath(contentPath: string) {
+function bsipaContentPath(contentPath: string) {
    const segments = contentPath.replaceAll('\\', '/').split('/');
    const withoutIpa = segments[0] === modFolders.ipa ? segments.slice(1) : segments;
 

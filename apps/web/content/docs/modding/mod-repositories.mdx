@@ -3,7 +3,7 @@ title: Unofficial mod repositories
 description: Host mods for Encore with a static JSON repository
 ---
 
-Encore installs mods from BeatMods by default. An unofficial repository is a static JSON file that anyone can host
+Encore uses BeatMods for PC installs and BSQuest for Quest installs by default. An unofficial repository is a static JSON file that anyone can host
 
 They're opt-in and disabled until the user reviews the repository and accepts the risk. ScoreSaber can still block individual repositories through its repository policy
 
@@ -13,8 +13,9 @@ The format is loosely based on VRChat Creator Companion repositories. Read their
 
 Each package lists its versions and each version points to a downloadable archive
 
-- The archive and every installed file need a hash. Encore checks both and uses the file hashes to recognise the installed mod later
-- Files can only land under `Plugins/` or `Libs/`. A repository can't replace the mod loader or write into the game root
+- PC archives and every installed file need a hash. Encore checks both and uses the file hashes to recognise the installed mod later
+- PC files can only land under `Plugins/` or `Libs/`. A repository can't replace the mod loader or write into the game root
+- Quest versions point to hashed QMOD archives. Encore validates the manifest and installs files into the Quest modding layout
 
 We'll probably want to create some kind of cool GitHub action to automate repository generation from releases or something, not quite sure yet.
 
@@ -81,11 +82,12 @@ Rools:
 - `schemaVersion` must be `1`
 - A listing needs `id`, `name`, `owner` and `packages`. Encore already has the URL it fetched, so the document doesn't repeat it
 - A package needs `id`, `name` and at least one version
-- `identity` is optional and must be a BeatMods mod ID written as `beatmods:<mod id>`
-- A version needs `version`, an HTTPS `downloadUrl`, `hash` and at least one file with its own hash
+- `identity` is optional and uses `beatmods:<mod id>` for PC or `bsquest:<manifest id>` for Quest
+- A version needs `version`, an HTTPS `downloadUrl` and `hash`. PC versions also need at least one file with its own hash
 - Use `sha256` for new repositories. `md5` is accepted for existing mod metadata
-- An empty or missing `gameVersions` or `platforms` list matches every install. Otherwise the version has to include the current game version and `steampc`, `oculuspc` or `universalpc`
-- Every file path is normalised like an archive entry and must stay under `Plugins/` or `Libs/`
+- An empty or missing `gameVersions` list matches every game version. Quest versions can name the full store build or its semantic version
+- An empty or missing `platforms` list matches PC installs. Use `steampc`, `oculuspc` or `universalpc` for PC, or explicitly include `quest` for Quest
+- Every listed PC file path is normalised like an archive entry and must stay under `Plugins/` or `Libs/`
 - `description` is optional Markdown. Encore strips raw HTML and anything other than HTTPS links and images
 - Optional URLs are only opened or loaded when they're plain HTTPS addresses without credentials or a custom port
 - A malformed version or package is dropped. A malformed listing is refused
@@ -93,6 +95,31 @@ Rools:
 Package IDs only need to be unique inside their repository. Dependencies refer to another package ID from that repository. Use `beatmods:<mod id>` to depend on a mod from BeatMods, such as `beatmods:1` for BSIPA. The mod ID is the number in its BeatMods page URL
 
 Keep older compatible versions in the listing. Encore uses their file hashes to recognise an installed version and offer the latest matching update under the same repository package ID
+
+## Quest packages
+
+Set the package ID to the `id` in the QMOD's `mod.json`. Each Quest version must include `"platforms": ["quest"]` and an HTTPS URL ending in `.qmod`. A Quest-only version can omit `files`; the QMOD manifest declares its installed files
+
+```json
+{
+  "id": "ExampleQuestMod",
+  "name": "Example Quest Mod",
+  "versions": [
+    {
+      "version": "1.0.0",
+      "gameVersions": ["1.40.8"],
+      "platforms": ["quest"],
+      "downloadUrl": "https://example.com/ExampleQuestMod.qmod",
+      "hash": { "algorithm": "sha256", "value": "<64 hex characters>" },
+      "dependencies": ["bsquest:beatsaber-hook"]
+    }
+  ]
+}
+```
+
+Place this package in the listing's `packages` array. Dependencies use package IDs from the same repository or `bsquest:<manifest id>` for the official Quest source. The QMOD's own dependency and game compatibility checks still apply, and its modloader must be `Scotland2`
+
+An optional `identity` such as `bsquest:ExampleQuestMod` lets the package participate in the same source resolution choices as an official Quest mod
 
 ## Repository policy
 

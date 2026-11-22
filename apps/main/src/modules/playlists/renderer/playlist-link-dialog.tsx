@@ -1,56 +1,44 @@
 import { useTranslations } from 'use-intl';
 
-import { ContentLinkDialog } from '@/components/content/content-link-dialog';
-
+import { createProblem } from '@/lib/errors';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { PlaylistLinkIssue } from '@/modules/playlists/contract';
-import { usePlaylistLink } from '@/modules/playlists/renderer/use-playlist-link';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
+import type { PlaylistLinkEvent, PlaylistLinkSource } from '@/modules/playlists/contract';
+import { ContentLinkDialog } from '@/modules/shared-content/renderer/content-link-dialog';
+import { useContentLink, type ContentLinkPreset } from '@/modules/shared-content/renderer/use-content-link';
+import { localTargetId } from '@/modules/targets/contract';
 
-const issueKeys: MessageKeyMap<PlaylistLinkIssue, 'playlists.link.issues'> = {
-   'invalid-source': 'invalidSource',
-   'unsupported-link': 'unsupportedLink'
+const playlistLink: ContentLinkPreset<PlaylistLinkEvent, PlaylistLinkSource, Extract<PlaylistLinkEvent, { status: 'rejected' }>> = {
+   client: window.encore.playlists,
+   capability: 'manage-playlists',
+   read: (event) => (event.status === 'rejected' ? { problem: event } : { source: event.source }),
+   sharedFolderIds: () => ['playlists'],
+   supportsTarget: (source, target) => source.kind === 'url' || target.id === localTargetId,
+   start: (source, targetId, installId) =>
+      source.kind === 'url'
+         ? window.encore.playlists.startDownload({ targetId, installId, url: source.url })
+         : window.encore.playlists.importPlaylists({ targetId, installId, paths: [source.path] }),
+   failures: {
+      start: createProblem('playlists.start-failed'),
+      pending: createProblem('playlists.link-intake-failed')
+   }
 };
 
 export function PlaylistLinkDialog() {
    const t = useTranslations('playlists.link');
    const actions = useTranslations('playlists.actions');
-   const common = useTranslations('common');
-   const link = usePlaylistLink();
-   const { state } = link;
-   const source = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.source : null;
+   const link = useContentLink(playlistLink, t('success'));
 
    return (
       <ContentLinkDialog
-         state={state}
-         operation={link.operation}
-         destinations={link.destinations}
-         selectedDestinationKey={link.selectedDestinationKey}
-         selectDestination={link.selectDestination}
-         confirm={link.confirm}
-         cancel={link.cancel}
-         dismiss={link.dismiss}
-         hidden={link.dialogHidden}
-         remember={{ checked: link.remember, label: common('rememberDownload'), onCheckedChange: link.setRemember }}
-         issue={
-            state.status === 'rejected' ? (
-               <>
-                  <p>{t(`issues.${issueKeys[state.issue]}`)}</p>
-                  {state.detail ? <p className="text-muted-foreground text-xs break-all">{state.detail}</p> : null}
-               </>
-            ) : null
-         }
-         preview={
-            source ? (
-               <PreviewRow label={t(source.kind === 'url' ? 'address' : 'file')} value={source.kind === 'url' ? source.url : source.fileName} />
-            ) : null
-         }
+         link={link}
+         issue={(problem) => t(`issues.${problem.issue}`)}
+         preview={(source) => (
+            <PreviewRow label={t(source.kind === 'url' ? 'address' : 'file')} value={source.kind === 'url' ? source.url : source.fileName} />
+         )}
          labels={{
             title: t('title'),
             description: t('description'),
             failed: actions('result.failed'),
-            preparing: common('operation.preparing'),
-            progress: (values) => common('operation.progress', values),
             completed: actions('result.completed'),
             cancelled: actions('result.cancelled'),
             noInstalls: t('noInstalls'),

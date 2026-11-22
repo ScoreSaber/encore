@@ -1,61 +1,47 @@
 import { useTranslations } from 'use-intl';
 
-import { ContentLinkDialog } from '@/components/content/content-link-dialog';
-
-import type { ModelLinkIssue } from '@/modules/models/contract';
-import { useModelLink } from '@/modules/models/renderer/use-model-link';
+import { createProblem } from '@/lib/errors';
+import { modelSharedFolderIds, type ModelLinkEvent } from '@/modules/models/contract';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
+import { ContentLinkDialog } from '@/modules/shared-content/renderer/content-link-dialog';
+import { useContentLink, type ContentLinkPreset } from '@/modules/shared-content/renderer/use-content-link';
 
-const issueKeys: MessageKeyMap<ModelLinkIssue, 'models.link.issues'> = {
-   'invalid-id': 'invalidId',
-   'unsupported-link': 'unsupportedLink'
+const modelLink: ContentLinkPreset<ModelLinkEvent, Extract<ModelLinkEvent, { status: 'ready' }>, Extract<ModelLinkEvent, { status: 'rejected' }>> = {
+   client: window.encore.models,
+   capability: 'manage-models',
+   read: (event) => (event.status === 'rejected' ? { problem: event } : { source: event }),
+   sharedFolderIds: (source) => {
+      const folderId = source.model ? modelSharedFolderIds[source.model.type] : null;
+      return folderId ? [folderId] : [];
+   },
+   start: (source, targetId, installId) => window.encore.models.startDownload({ targetId, installId, source: { kind: 'modelsaber', id: source.id } }),
+   failures: {
+      start: createProblem('models.start-failed'),
+      pending: createProblem('models.link-intake-failed')
+   }
 };
 
 export function ModelLinkDialog() {
    const t = useTranslations('models.link');
    const actions = useTranslations('models.actions');
-   const common = useTranslations('common');
    const tabs = useTranslations('models.tabs');
-   const link = useModelLink();
-   const { state } = link;
-   const source = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.source : null;
+   const link = useContentLink(modelLink, t('success'));
 
    return (
       <ContentLinkDialog
-         state={state}
-         operation={link.operation}
-         destinations={link.destinations}
-         selectedDestinationKey={link.selectedDestinationKey}
-         selectDestination={link.selectDestination}
-         confirm={link.confirm}
-         cancel={link.cancel}
-         dismiss={link.dismiss}
-         hidden={link.dialogHidden}
-         remember={{ checked: link.remember, label: common('rememberDownload'), onCheckedChange: link.setRemember }}
-         issue={
-            state.status === 'rejected' ? (
-               <>
-                  <p>{t(`issues.${issueKeys[state.issue]}`)}</p>
-                  {state.detail ? <p className="text-muted-foreground text-xs break-all">{state.detail}</p> : null}
-               </>
-            ) : null
-         }
-         preview={
-            source ? (
-               <>
-                  <PreviewRow label={t('model')} value={source.model ? source.model.name : t('unknownModel', { id: source.id })} />
-                  {source.model ? <PreviewRow label={t('author')} value={source.model.author} /> : null}
-                  {source.model ? <PreviewRow label={t('type')} value={tabs(source.model.type)} /> : null}
-               </>
-            ) : null
-         }
+         link={link}
+         issue={(problem) => t(`issues.${problem.issue}`)}
+         preview={(source) => (
+            <>
+               <PreviewRow label={t('model')} value={source.model ? source.model.name : t('unknownModel', { id: source.id })} />
+               {source.model ? <PreviewRow label={t('author')} value={source.model.author} /> : null}
+               {source.model ? <PreviewRow label={t('type')} value={tabs(source.model.type)} /> : null}
+            </>
+         )}
          labels={{
             title: t('title'),
             description: t('description'),
             failed: actions('result.failed'),
-            preparing: common('operation.preparing'),
-            progress: (values) => common('operation.progress', values),
             completed: actions('result.completed'),
             cancelled: actions('result.cancelled'),
             noInstalls: t('noInstalls'),

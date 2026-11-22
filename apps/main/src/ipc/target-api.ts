@@ -1,25 +1,12 @@
-import type { IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 
-import { ipcTransportValueSchema, type IpcEventDefinition, type IpcRequestDefinition, type IpcTransportValue } from '@/ipc/core';
-import {
-   hasSnapshotStream,
-   type DomainApi,
-   ProcedureOutput,
-   SnapshotOutput,
-   TargetApiModule,
-   TargetCall,
-   TargetCallResult,
-   TargetDispatcher,
-   TargetProcedure,
-   TargetSnapshot
-} from '@/lib/api';
-import { localTargetId, targetIdSchema } from '@/modules/targets/contract';
+import type { AnyIpcEventDefinition, IpcDescriptor, IpcEventDefinition, IpcRequestDefinition } from '@/ipc/core';
+import type { DomainApi, ProcedureOutput, SnapshotOutput, TargetCall, TargetCallResult, TargetProcedure, TargetSnapshot } from '@/lib/api';
+import { targetIdRequestSchema } from '@/modules/targets/contract';
 
 type TargetIpcProcedure<Procedure extends TargetProcedure> = IpcRequestDefinition<
    TargetCallResult<ProcedureOutput<Procedure>>,
-   TargetCall<Procedure>,
-   'procedure'
+   TargetCall<Procedure>
 >;
 
 type TargetIpcDescriptor<Api extends DomainApi> = {
@@ -28,66 +15,43 @@ type TargetIpcDescriptor<Api extends DomainApi> = {
 
 export function createTargetIpcDescriptor<Api extends DomainApi>(api: Api): TargetIpcDescriptor<Api>;
 export function createTargetIpcDescriptor(api: DomainApi) {
-   const descriptor: Record<string, IpcRequestDefinition | IpcEventDefinition> = Object.fromEntries(
+   const descriptor: Record<string, IpcRequestDefinition | AnyIpcEventDefinition> = Object.fromEntries(
       Object.entries(api.procedures).map(([method, procedure]) => [
          method,
          {
-            kind: 'procedure',
+            kind: 'request',
             channel: `${api.namespace}:${method}`,
-            requestSchema: procedure.input ? z.object({ targetId: targetIdSchema }).and(procedure.input) : z.object({ targetId: targetIdSchema })
+            requestSchema: procedure.input ? targetIdRequestSchema.and(procedure.input) : targetIdRequestSchema
          }
       ])
    );
-   if (api.snapshot) descriptor.onSnapshot = { kind: 'event', channel: `${api.namespace}:snapshot` };
+   if (api.snapshot) descriptor.onSnapshot = targetSnapshotEvent({ namespace: api.namespace, snapshot: api.snapshot });
 
    return descriptor;
 }
 
-export type RemoteSnapshotSubscriber = <Snapshot extends z.ZodType>(
-   api: { namespace: string; snapshot: Snapshot },
-   listener: (event: TargetSnapshot<z.output<Snapshot>>) => void
-) => () => void;
+type DomainIpcDescriptors<Apis extends Record<string, DomainApi>, Desktop extends Record<string, IpcDescriptor>> = {
+   [Domain in keyof Apis | keyof Desktop]: (Domain extends keyof Apis ? TargetIpcDescriptor<Apis[Domain]> : unknown) &
+      (Domain extends keyof Desktop ? Desktop[Domain] : unknown);
+};
 
-type SnapshotBroadcaster = <Snapshot>(definition: IpcEventDefinition<TargetSnapshot<Snapshot>>, snapshot: TargetSnapshot<Snapshot>) => void;
-
-export function createTargetIpcModules(
-   modules: readonly TargetApiModule[],
-   dispatch: TargetDispatcher,
-   subscribeRemote: RemoteSnapshotSubscriber,
-   broadcast: SnapshotBroadcaster
-) {
-   for (const module of modules) forwardSnapshots(module, subscribeRemote, broadcast);
-
-   return modules.map((module) => createErasedTargetIpcModule(module, dispatch));
-}
-
-function forwardSnapshots(module: TargetApiModule, subscribeRemote: RemoteSnapshotSubscriber, broadcast: SnapshotBroadcaster) {
-   if (!hasSnapshotStream(module)) return;
-
-   const event = createTargetIpcDescriptor(module.api).onSnapshot;
-   module.subscribeJson((snapshot) => broadcast(event, { targetId: localTargetId, snapshot }));
-   subscribeRemote(module.api, (snapshot) => broadcast(event, snapshot));
-}
-
-function createErasedTargetIpcModule(local: TargetApiModule, dispatch: TargetDispatcher) {
-   const descriptor: Record<string, IpcRequestDefinition> = createTargetIpcDescriptor(local.api);
-   const invokeDispatch = z
-      .function({
-         input: [z.custom<TargetApiModule>(), z.string(), targetIdSchema, z.record(z.string(), ipcTransportValueSchema)]
+export function createDomainIpcDescriptors<Apis extends Record<string, DomainApi>, Desktop extends Record<string, IpcDescriptor>>(
+   apis: Apis,
+   desktop: Desktop
+): DomainIpcDescriptors<Apis, Desktop>;
+export function createDomainIpcDescriptors(apis: Record<string, DomainApi>, desktop: Record<string, IpcDescriptor>) {
+   const domains = new Set([...Object.keys(apis), ...Object.keys(desktop)]);
+   return Object.fromEntries(
+      [...domains].map((domain) => {
+         const api = apis[domain];
+         return [domain, { ...(api && createTargetIpcDescriptor(api)), ...desktop[domain] }];
       })
-      .parse(dispatch);
+   );
+}
 
-   return Object.keys(local.api.procedures).map((method) => {
-      const definition = descriptor[method];
-      if (!definition) throw new Error(`Unknown target IPC procedure: ${local.api.namespace}.${method}`);
-
-      return {
-         definition,
-         handler: async (_event: IpcMainInvokeEvent, ...args: IpcTransportValue[]) => {
-            const call = z.object({ targetId: targetIdSchema }).loose().parse(args[0]);
-            const { targetId, ...input } = call;
-            return ipcTransportValueSchema.parse(await invokeDispatch(local, method, targetId, input));
-         }
-      };
-   });
+export function targetSnapshotEvent<Snapshot extends z.ZodType>(api: {
+   namespace: string;
+   snapshot: Snapshot;
+}): IpcEventDefinition<TargetSnapshot<z.output<Snapshot>>> {
+   return { kind: 'event', channel: `${api.namespace}:snapshot` };
 }

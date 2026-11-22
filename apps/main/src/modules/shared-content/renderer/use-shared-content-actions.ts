@@ -1,8 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 
-import type { IpcError } from '@/ipc/core';
-import type { OperationId } from '@/modules/operations/contract';
-import { useOperations } from '@/modules/operations/renderer/use-operations';
+import { createProblem } from '@/lib/errors';
+import { useOperationFlow } from '@/modules/operations/renderer/use-operation-flow';
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
 import {
    defaultContentsMode,
@@ -12,78 +11,55 @@ import {
    type SharedContentsMode,
    type SharedFolderId
 } from '@/modules/shared-content/contract';
-import { inlineTargetIpcResult } from '@/renderer/ipc-result';
+import { unwrapTarget } from '@/renderer/ipc-result';
 
-type SharedContentActionState =
-   | { status: 'idle' }
-   | { status: 'previewing'; action: SharedContentAction }
-   | { status: 'invalid'; action: SharedContentAction; problem: SharedContentActionProblem }
-   | { status: 'ready' | 'starting'; action: SharedContentAction; preview: ReadySharedContentPreview }
-   | { status: 'running'; action: SharedContentAction; operationId: OperationId; preview: ReadySharedContentPreview }
-   | { status: 'failed'; action: SharedContentAction; error: IpcError };
+type SharedContentReady = { kind: SharedContentAction; preview: ReadySharedContentPreview };
 
 export type SharedContentActions = ReturnType<typeof useSharedContentActions>;
 
 export function useSharedContentActions(request: TargetSharedContentRequest) {
    const sharedContent = window.encore.sharedContent;
-   const { operations, cancelOperation } = useOperations(request.targetId);
-   const [state, setState] = useState<SharedContentActionState>({ status: 'idle' });
+   const flow = useOperationFlow<SharedContentReady, SharedContentActionProblem>(request.targetId);
+   const { preview, start, state } = flow;
 
-   const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
-
-   const preview = useCallback(
-      async (action: SharedContentAction, folderId: SharedFolderId, contents?: SharedContentsMode, current?: ReadySharedContentPreview) => {
-         const selectedContents = contents ?? defaultContentsMode(action);
-         setState(current ? { status: 'ready', action, preview: { ...current, contents: selectedContents } } : { status: 'previewing', action });
-
-         const response = await sharedContent.preview({ ...request, folderId, action, contents: selectedContents }).catch(() => null);
-         if (!response || response.status !== 'ok') {
-            setState({ status: 'failed', action, error: { code: 'shared-content.preview-failed', message: 'that folder could not be read' } });
-            return;
-         }
-
-         const previewed = response.value;
-         setState(previewed.status === 'ok' ? { status: 'ready', action, preview: previewed } : { status: 'invalid', action, problem: previewed });
-      },
-      [request, sharedContent]
+   const load = useCallback(
+      (action: SharedContentAction, folderId: SharedFolderId, contents: SharedContentsMode, pending?: SharedContentReady) =>
+         preview(
+            action,
+            async () => {
+               const previewed = unwrapTarget(await sharedContent.preview({ ...request, folderId, action, contents }));
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: action, preview: previewed }
+                  : { status: 'invalid', kind: action, problem: previewed };
+            },
+            createProblem('shared-content.preview-failed'),
+            pending
+         ),
+      [preview, request, sharedContent]
    );
+
+   const open = useCallback((action: SharedContentAction, folderId: SharedFolderId) => load(action, folderId, defaultContentsMode(action)), [load]);
 
    const setContents = useCallback(
       (contents: SharedContentsMode) => {
-         if (state.status !== 'ready') return;
+         if (state.status !== 'ready' && state.status !== 'repreviewing') return;
 
-         void preview(state.action, state.preview.folderId, contents, state.preview);
+         void load(state.kind, state.preview.folderId, contents, { kind: state.kind, preview: { ...state.preview, contents } });
       },
-      [preview, state]
+      [load, state]
    );
 
-   const confirm = useCallback(async () => {
-      if (state.status !== 'ready') return;
-
-      const pending = state.preview;
-      setState({ status: 'starting', action: state.action, preview: pending });
-
-      const started = await inlineTargetIpcResult(
-         () => sharedContent.start({ ...request, folderId: pending.folderId, action: state.action, contents: pending.contents }),
-         { code: 'shared-content.start-failed', message: 'the change could not be started' }
-      );
-
-      setState(
-         started.ok
-            ? { status: 'running', action: state.action, operationId: started.value.id, preview: pending }
-            : { status: 'failed', action: state.action, error: started.error }
-      );
-   }, [request, sharedContent, state]);
-
-   const cancel = useCallback(() => {
-      if (state.status !== 'running') return;
-
-      void cancelOperation(state.operationId);
-   }, [cancelOperation, state]);
-
-   const dismiss = useCallback(() => setState({ status: 'idle' }), []);
+   const confirm = useCallback(
+      (ready: SharedContentReady) =>
+         void start(
+            ready,
+            () => sharedContent.start({ ...request, folderId: ready.preview.folderId, action: ready.kind, contents: ready.preview.contents }),
+            createProblem('shared-content.start-failed')
+         ),
+      [request, sharedContent, start]
+   );
 
    const openFolder = useCallback((folderId: SharedFolderId) => sharedContent.openSharedFolder({ ...request, folderId }), [request, sharedContent]);
 
-   return { state, operation, preview, setContents, confirm, cancel, dismiss, openFolder };
+   return { flow, open, setContents, confirm, openFolder };
 }

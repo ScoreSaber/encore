@@ -7,25 +7,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-import type { BSManagerIssue, BSManagerVersion, ReadyBSManagerPlan } from '@/modules/bsmanager/contract';
+import type { BSManagerVersion, ReadyBSManagerPlan } from '@/modules/bsmanager/contract';
 import type { BSManagerAdopter } from '@/modules/bsmanager/renderer/use-bsmanager-adoption';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<BSManagerIssue, 'bsmanager.issues'> = {
-   'inspect-failed': 'inspectFailed',
-   'not-bsmanager': 'notBSManager',
-   'not-found': 'notFound',
-   'nothing-selected': 'nothingSelected',
-   'nothing-to-clean': 'nothingToClean',
-   'nothing-to-adopt': 'nothingToAdopt',
-   'register-failed': 'registerFailed',
-   'unsupported-target': 'unsupportedTarget'
-};
 
 export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
    const t = useTranslations('bsmanager');
    const common = useTranslations('common');
+   const problems = useTranslations('problems.bsmanager');
    const { state, selected } = adopter;
    const open = state.status !== 'idle';
    const busy = state.status === 'adopting';
@@ -50,7 +39,7 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
 
                {state.status === 'invalid' ? (
                   <>
-                     <p>{t(`issues.${issueKeys[state.plan.issue]}`)}</p>
+                     <p>{problems(state.plan.issue)}</p>
                      {state.plan.detail ? <p className="text-muted-foreground text-xs break-all">{state.plan.detail}</p> : null}
                   </>
                ) : null}
@@ -88,7 +77,7 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
                         {common('cancel')}
                      </Button>
                      <Button type="button" size="sm" disabled={busy || selected.length === 0} onClick={() => void adopter.confirm()}>
-                        {t('confirm')}
+                        {busy ? t('adding') : t('add', { count: selected.length })}
                      </Button>
                   </>
                ) : null}
@@ -104,7 +93,7 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
                      <Button type="button" variant="outline" size="sm" onClick={adopter.dismiss}>
                         {common('close')}
                      </Button>
-                     <RefreshButton label={common('retry')} variant="default" onClick={() => void adopter.open()} />
+                     <RefreshButton label={common('retry')} variant="default" onClick={adopter.open} />
                   </>
                ) : null}
             </DialogFooter>

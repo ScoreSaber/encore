@@ -1,94 +1,116 @@
 import { Result } from 'better-result';
-import { Zip, ZipDeflate } from 'fflate';
-import { z } from 'zod';
+import { Zip, ZipDeflate, ZipPassThrough } from 'fflate';
 
-import { createFilesystemProblem, type FilesystemProblem } from '@/lib/filesystem/path';
+import type { ContentProblem } from '@/lib/content/contract';
+import { createProblem } from '@/lib/errors';
+import { publishAtomic } from '@/lib/filesystem/atomic-write';
+import type { FilesystemProblem } from '@/lib/filesystem/path';
+import type { OperationProgress } from '@/modules/operations/contract';
 
-import { once } from 'node:events';
-import { createReadStream, createWriteStream, type WriteStream } from 'node:fs';
-import { rename, rm } from 'node:fs/promises';
-import { finished } from 'node:stream/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { finished, pipeline } from 'node:stream/promises';
 
-export type ZipSourceFile = {
+type ZipSourceFile = {
    archivePath: string;
    sourcePath: string;
 };
 
-export async function writeZipAtomic(destinationPath: string, files: readonly ZipSourceFile[], signal?: AbortSignal) {
-   const partialPath = `${destinationPath}.part`;
-   const output = createWriteStream(partialPath, { flags: 'w' });
-   const written = await Result.tryPromise({
-      try: async () => {
-         await streamZip(output, files, signal);
-         await renameCompleteArchive(partialPath, destinationPath);
-      },
-      catch: (cause): FilesystemProblem =>
-         createFilesystemProblem('filesystem.operation.write-failed', 'failed to write zip archive', destinationPath, cause)
-   });
+type ZipExportRequest<Item> = {
+   items: readonly Item[];
+   destinationPath: string;
+   maxBytes: number;
+   signal?: AbortSignal;
+   onProgress?: (progress: OperationProgress) => void;
+   labelOf: (item: Item) => string;
+   filesOf: (item: Item) => Promise<ZipSourceFile[]>;
+};
 
-   if (Result.isError(written)) {
-      output.destroy();
-      await Result.tryPromise({ try: () => finished(output), catch: () => null });
-      await Result.tryPromise({
-         try: () => rm(partialPath, { force: true }),
-         catch: (cause): FilesystemProblem =>
-            createFilesystemProblem('filesystem.operation.write-failed', 'failed to remove incomplete zip archive', partialPath, cause)
+export async function exportZip<Item extends { sizeBytes: number }>(
+   request: ZipExportRequest<Item>
+): Promise<Result<ZipExportSummary, ContentProblem>> {
+   const files: ZipSourceFile[] = [];
+   const totalBytes = request.items.reduce((total, item) => total + item.sizeBytes, 0);
+   let bytes = 0;
+
+   for (const item of request.items) {
+      if (request.signal?.aborted) return Result.err(createProblem('content.export.cancelled'));
+
+      const collected = await Result.tryPromise({
+         try: async () => {
+            const itemFiles = await request.filesOf(item);
+            const sizes = await Promise.all(itemFiles.map(async (file) => (await stat(file.sourcePath)).size));
+            return { itemFiles, size: sizes.reduce((total, size) => total + size, 0) };
+         },
+         catch: (cause): ContentProblem => createProblem('content.export.unreadable', { item: request.labelOf(item), cause })
       });
+      if (Result.isError(collected)) return Result.err(collected.error);
+
+      bytes += collected.value.size;
+      if (bytes > request.maxBytes) return Result.err(createProblem('content.export.too-large'));
+
+      files.push(...collected.value.itemFiles);
+      request.onProgress?.({ phase: 'reading', label: request.labelOf(item), current: bytes, total: totalBytes, unit: 'bytes' });
    }
 
-   return written;
+   if (files.length === 0) return Result.err(createProblem('content.export.empty'));
+
+   request.onProgress?.({ phase: 'compressing', current: bytes, total: bytes, percent: 100, unit: 'bytes' });
+
+   const written = await publishAtomic(request.destinationPath, (partialPath) => writeZip(partialPath, files, request.signal));
+   if (Result.isError(written)) {
+      return Result.err(
+         request.signal?.aborted
+            ? createProblem('content.export.cancelled')
+            : createProblem('content.export.write-failed', { detail: written.error.detail })
+      );
+   }
+
+   return Result.ok({ bytes, files: files.length });
 }
 
-async function streamZip(output: WriteStream, files: readonly ZipSourceFile[], signal?: AbortSignal) {
-   let needsDrain = false;
-   let zipError: Error | null = null;
-   let outputError: Error | null = null;
-   output.on('error', (error) => {
-      outputError = error;
-   });
-   const flush = async () => {
-      if (outputError) throw outputError;
-      if (!needsDrain) return;
+type ZipExportSummary = { bytes: number; files: number };
 
-      await once(output, 'drain');
-      needsDrain = false;
-      if (outputError) throw outputError;
-   };
+async function writeZip(partialPath: string, files: readonly ZipSourceFile[], signal?: AbortSignal) {
+   const output = createWriteStream(partialPath, { flags: 'w' });
+   const streamed = await Result.tryPromise({
+      try: () => pipeline(zipFiles(files, { compression: 'deflate', signal }), output),
+      catch: (cause): FilesystemProblem => createProblem('filesystem.operation.write-failed', { path: partialPath, cause })
+   });
+   if (Result.isError(streamed)) {
+      output.destroy();
+      await Result.tryPromise(() => finished(output));
+   }
+
+   return streamed;
+}
+
+export async function* zipFiles(files: readonly ZipSourceFile[], options: { compression: 'store' | 'deflate'; signal?: AbortSignal }) {
+   const ready: Uint8Array[] = [];
+   let failure: Error | null = null;
    const archive = new Zip((error, data) => {
-      if (error) {
-         zipError = error;
-         output.destroy(error);
-         return;
-      }
-
-      if (data.byteLength > 0 && !output.write(data)) needsDrain = true;
+      if (error) failure = error;
+      else if (data.byteLength > 0) ready.push(data);
    });
+   function* flush() {
+      if (failure) throw failure;
+      yield* ready.splice(0);
+   }
 
    for (const file of files) {
-      if (signal?.aborted) throw signal.reason ?? new Error('zip export aborted');
-
-      const entry = new ZipDeflate(file.archivePath, { level: 6 });
+      const entry = options.compression === 'store' ? new ZipPassThrough(file.archivePath) : new ZipDeflate(file.archivePath, { level: 6 });
       archive.add(entry);
 
-      for await (const chunk of createReadStream(file.sourcePath, { signal })) {
-         entry.push(z.instanceof(Uint8Array).parse(chunk));
-         await flush();
-         if (zipError) throw zipError;
+      for await (const chunk of createReadStream(file.sourcePath, { signal: options.signal })) {
+         if (!(chunk instanceof Uint8Array)) throw new TypeError('Expected binary chunk');
+         entry.push(chunk);
+         yield* flush();
       }
 
       entry.push(new Uint8Array(), true);
-      await flush();
-      if (zipError) throw zipError;
+      yield* flush();
    }
 
    archive.end();
-   await flush();
-   if (zipError) throw zipError;
-
-   output.end();
-   await finished(output);
-}
-
-async function renameCompleteArchive(partialPath: string, destinationPath: string) {
-   await rename(partialPath, destinationPath);
+   yield* flush();
 }

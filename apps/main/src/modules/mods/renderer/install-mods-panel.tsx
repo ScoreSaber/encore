@@ -1,66 +1,117 @@
 import { useMemo, useRef, useState } from 'react';
 
-import { ArrowUp, ChevronRight, Download, FolderInput, GripVertical, ListChecks, MoreHorizontal, RotateCcw, Settings2, Trash2 } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
+import { ArrowUp, Download, FolderInput, ListChecks, MoreHorizontal, RotateCcw, Settings2, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { CollectionToolbar } from '@/components/collection/collection-toolbar';
+import { matchesQuery } from '@/components/collection/selection';
 import { RefreshButton } from '@/components/refresh-button';
 import { EmptyPanel, ErrorPanel, LoadingPanel, WarningLine } from '@/components/state/state-panel';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MasterDetail, MasterDetailList, MasterDetailPane, MasterDetailRow } from '@/components/ui/master-detail';
-import { cn } from '@/components/utils';
+import { MasterDetail, MasterDetailList, MasterDetailPane } from '@/components/ui/master-detail';
 
-import type { InstallSummary } from '@/modules/installs/contract';
-import { knownModCategories, type ExternalMod, type ModSummary, type ReadyModsSnapshot } from '@/modules/mods/contract';
-import { groupMods, orderModGroups, type ModGroup } from '@/modules/mods/renderer/grouping';
+import { installListQueryOptions } from '@/modules/installs/renderer/queries';
+import { useInstalls } from '@/modules/installs/renderer/use-installs';
+import type { TargetModRequest } from '@/modules/mods/api';
+import { knownModCategories, type ReadyModsSnapshot } from '@/modules/mods/contract';
+import { groupMods, orderModGroups } from '@/modules/mods/renderer/grouping';
 import { ManageModSourcesDialog } from '@/modules/mods/renderer/manage-mod-sources-dialog';
+import { ModActionDialog } from '@/modules/mods/renderer/mod-action-dialog';
 import { ModDetailPanel } from '@/modules/mods/renderer/mod-detail-panel';
-import { modIssueKeys } from '@/modules/mods/renderer/mod-issue-keys';
-import { SelectInstallModsDialog } from '@/modules/mods/renderer/select-install-mods-dialog';
-import type { InstallMods } from '@/modules/mods/renderer/use-install-mods';
-import { createDefaultModGroupSettings, type ModGroupSettings } from '@/modules/settings/contract';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { ExternalFiles, ModGroupSection } from '@/modules/mods/renderer/mod-group-section';
+import { SelectInstallModsDialog, type ModSourceInstall } from '@/modules/mods/renderer/select-install-mods-dialog';
+import { useInstallMods, type InstallMods } from '@/modules/mods/renderer/use-install-mods';
+import { QuestPatchBanner } from '@/modules/quest/renderer/quest-patch-banner';
+import { createDefaultModGroupSettings } from '@/modules/settings/contract';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
 import type { TargetId } from '@/modules/targets/contract';
-import { matchesQuery } from '@/renderer/collection/view';
-import { useFormatters } from '@/renderer/i18n/formatters';
+import { useTargets } from '@/modules/targets/renderer/use-targets';
 
 const defaultModGroupSettings = createDefaultModGroupSettings();
 
-export function InstallModsPanel({ mods, targetId, otherInstalls }: { mods: InstallMods; targetId: TargetId; otherInstalls: InstallSummary[] }) {
+export function InstallModsTab({ request, active }: { request: TargetModRequest; active: boolean }) {
+   const mods = useInstallMods(request);
+   const installs = useInstalls(request.targetId);
+   const { targets } = useTargets();
+   const target = targets.find((candidate) => candidate.id === request.targetId);
+   const quest = target?.kind === 'quest';
+   const sourceTargets = targets.filter(
+      (candidate) => candidate.status === 'ready' && candidate.capabilities.includes('manage-mods') && (candidate.kind === 'quest') === quest
+   );
+   const sourceQueries = useQueries({ queries: sourceTargets.map((candidate) => installListQueryOptions(candidate.id)) });
+   const otherInstalls = sourceTargets.flatMap((candidate, index) =>
+      (sourceQueries[index]?.data?.installs ?? [])
+         .filter((install) => candidate.id !== request.targetId || install.id !== request.installId)
+         .map((install) => ({ targetId: candidate.id, targetName: candidate.name, install }))
+   );
+   const patchRecoveryAvailable =
+      (target?.capabilities.includes('patch-game') ?? false) &&
+      (installs.snapshot?.installs.some((install) => install.id === request.installId && install.status === 'incomplete') ?? false);
+
+   return (
+      <>
+         {active ? (
+            <InstallModsPanel mods={mods} targetId={request.targetId} otherInstalls={otherInstalls} patchRecoveryAvailable={patchRecoveryAvailable} />
+         ) : null}
+         <ModActionDialog request={request} mods={mods} />
+      </>
+   );
+}
+
+function InstallModsPanel({
+   mods,
+   targetId,
+   otherInstalls,
+   patchRecoveryAvailable
+}: {
+   mods: InstallMods;
+   targetId: TargetId;
+   otherInstalls: ModSourceInstall[];
+   patchRecoveryAvailable: boolean;
+}) {
    const t = useTranslations('mods');
    const common = useTranslations('common');
    const { snapshot, status } = mods;
 
-   if (status === 'loading' && !snapshot) return <LoadingPanel />;
-
-   if (status === 'error' || !snapshot) return <ErrorPanel message={t('loadError')} onRetry={mods.reload} />;
-
-   if (snapshot.status === 'unavailable') {
-      return (
-         <EmptyPanel title={t('unavailable.title')} description={t(`issues.${modIssueKeys[snapshot.issue]}`)}>
-            {snapshot.detail ? <p className="text-xs break-all">{snapshot.detail}</p> : null}
-            <RefreshButton label={common('retry')} onClick={mods.refresh} />
-         </EmptyPanel>
-      );
-   }
-
-   return <ReadyMods mods={mods} targetId={targetId} snapshot={snapshot} otherInstalls={otherInstalls} />;
+   return (
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+         {patchRecoveryAvailable ? <QuestPatchBanner targetId={targetId} onPatched={mods.reload} /> : null}
+         {status === 'loading' && !snapshot ? (
+            <LoadingPanel />
+         ) : status === 'error' || !snapshot ? (
+            <ErrorPanel message={t('loadError')} onRetry={mods.reload} />
+         ) : snapshot.status === 'unavailable' ? (
+            <EmptyPanel title={t('unavailable.title')} description={t(`issues.${snapshot.issue}`, { platform: mods.platform })}>
+               {snapshot.detail ? <p className="text-xs break-all">{snapshot.detail}</p> : null}
+               <RefreshButton label={common('retry')} onClick={mods.refresh} />
+            </EmptyPanel>
+         ) : (
+            <ReadyMods
+               mods={mods}
+               targetId={targetId}
+               snapshot={snapshot}
+               otherInstalls={otherInstalls}
+               patchRecoveryAvailable={patchRecoveryAvailable}
+            />
+         )}
+      </div>
+   );
 }
 
 function ReadyMods({
    mods,
    targetId,
    snapshot,
-   otherInstalls
+   otherInstalls,
+   patchRecoveryAvailable
 }: {
    mods: InstallMods;
    targetId: TargetId;
    snapshot: ReadyModsSnapshot;
-   otherInstalls: InstallSummary[];
+   otherInstalls: ModSourceInstall[];
+   patchRecoveryAvailable: boolean;
 }) {
    const t = useTranslations('mods');
    const common = useTranslations('common');
@@ -71,13 +122,10 @@ function ReadyMods({
    const [activeItemId, setActiveItemId] = useState<string | null>(null);
    const [externalOpen, setExternalOpen] = useState(true);
    const [draggedGroupId, setDraggedGroupId] = useState<string | null>(null);
-   const [pendingGroupSettings, setPendingGroupSettings] = useState<ModGroupSettings | null>(null);
-   const groupSettingsWrite = useRef(0);
    const sourcesChanged = useRef(false);
-   const storedGroupSettings = settings.snapshot?.app.modGroups ?? defaultModGroupSettings;
-   const groupSettings = pendingGroupSettings ?? storedGroupSettings;
+   const groupSettings = settings.snapshot?.app.modGroups ?? defaultModGroupSettings;
    const categoryLabels = useMemo(() => new Map<string, string>(knownModCategories.map((category) => [category, t(`category.${category}`)])), [t]);
-   const busy = mods.state.status !== 'idle' || mods.status === 'loading';
+   const busy = mods.flow.state.status !== 'idle' || mods.status === 'loading';
    const ticked = new Set(mods.selected);
    const toInstall = snapshot.mods.filter((mod) => mod.state === 'available' && ticked.has(mod.modId)).map((mod) => mod.modId);
    const toUpdate = snapshot.mods.filter((mod) => mod.state === 'update-available' && ticked.has(mod.modId)).map((mod) => mod.modId);
@@ -105,21 +153,13 @@ function ReadyMods({
    if (filtering || externalOpen) visibleIds.push(...visibleExternal.map((file) => `external:${file.id}`));
    const activeMod = snapshot.mods.find((mod) => mod.modId === activeItemId) ?? null;
    const activeExternal = snapshot.external.find((file) => `external:${file.id}` === activeItemId) ?? null;
-
-   function saveGroupSettings(next: ModGroupSettings) {
-      const write = ++groupSettingsWrite.current;
-      setPendingGroupSettings(next);
-      void settings.updateApp({ modGroups: next }).then((result) => {
-         if (write !== groupSettingsWrite.current) return;
-         setPendingGroupSettings(result.ok ? result.value.app.modGroups : storedGroupSettings);
-      });
-   }
+   const resolvedActiveItemId = activeMod ? activeMod.modId : activeExternal ? `external:${activeExternal.id}` : null;
 
    function setGroupOpen(groupId: string, open: boolean) {
       const collapsed = new Set(groupSettings.collapsed);
       if (open) collapsed.delete(groupId);
       else collapsed.add(groupId);
-      saveGroupSettings({ ...groupSettings, collapsed: [...collapsed] });
+      void settings.updateApp({ modGroups: { ...groupSettings, collapsed: [...collapsed] } });
    }
 
    function moveGroup(groupId: string, targetId: string) {
@@ -133,7 +173,7 @@ function ReadyMods({
       visibleOrder.splice(from, 1);
       visibleOrder.splice(target, 0, groupId);
       const rememberedOnly = groupSettings.order.filter((id) => !visibleOrder.includes(id));
-      saveGroupSettings({ ...groupSettings, order: [...visibleOrder, ...rememberedOnly] });
+      void settings.updateApp({ modGroups: { ...groupSettings, order: [...visibleOrder, ...rememberedOnly] } });
    }
 
    function moveGroupBy(groupId: string, offset: number) {
@@ -185,7 +225,7 @@ function ReadyMods({
          >
             {toUpdate.length + toRemove.length + toInstall.length > 0 ? (
                <>
-                  <ButtonGroup aria-label={t('pending.hint')}>
+                  <div className="flex flex-wrap gap-2">
                      {toUpdate.length > 0 ? (
                         <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void mods.previewInstall(toUpdate)}>
                            <ArrowUp data-icon="inline-start" />
@@ -216,7 +256,7 @@ function ReadyMods({
                            {t('install.action', { count: toInstall.length })}
                         </Button>
                      ) : null}
-                  </ButtonGroup>
+                  </div>
                   {toInstall.length + toRemove.length > 0 ? (
                      <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={mods.resetSelection}>
                         <RotateCcw data-icon="inline-start" />
@@ -230,8 +270,7 @@ function ReadyMods({
          {otherInstalls.length > 0 ? (
             <SelectInstallModsDialog
                open={installSelectionOpen}
-               targetId={targetId}
-               installs={otherInstalls}
+               sources={otherInstalls}
                currentMods={snapshot.mods}
                onOpenChange={setInstallSelectionOpen}
                onSelect={mods.select}
@@ -242,20 +281,32 @@ function ReadyMods({
             open={sourcesOpen}
             onOpenChange={(open) => {
                setSourcesOpen(open);
-               if (!open && sourcesChanged.current) mods.refresh();
+               if (!open && sourcesChanged.current) {
+                  sourcesChanged.current = false;
+                  mods.refresh();
+               }
             }}
             onChanged={() => {
                sourcesChanged.current = true;
             }}
          />
 
-         {!snapshot.bsipaInstalled ? <WarningLine>{t('bsipaMissing')}</WarningLine> : null}
+         {!snapshot.bsipaInstalled && !patchRecoveryAvailable ? (
+            snapshot.platform === 'quest' ? (
+               <QuestPatchBanner targetId={targetId} onPatched={mods.reload} />
+            ) : (
+               <WarningLine>{t('bsipaMissing')}</WarningLine>
+            )
+         ) : null}
 
          {snapshot.mods.length + snapshot.external.length === 0 ? (
-            <EmptyPanel title={t('empty.title')} description={t('empty.description', { version: snapshot.gameVersion })} />
+            <EmptyPanel
+               title={t('empty.title')}
+               description={t('empty.description', { version: snapshot.gameVersion.replace(/_\d+$/, ''), platform: mods.platform })}
+            />
          ) : (
             <MasterDetail>
-               <MasterDetailList itemIds={visibleIds} selectedId={activeItemId} onSelect={setActiveItemId} aria-label={t('title')}>
+               <MasterDetailList itemIds={visibleIds} selectedId={resolvedActiveItemId} onSelect={setActiveItemId} aria-label={t('title')}>
                   {groups.length === 0 && visibleExternal.length === 0 ? <p className="text-muted-foreground px-3 py-6">{t('filterEmpty')}</p> : null}
                   {groups.map((group) => (
                      <ModGroupSection
@@ -266,7 +317,7 @@ function ReadyMods({
                         canReorder={!filtering && orderedGroups.length > 1}
                         dragging={draggedGroupId === group.id}
                         ticked={ticked}
-                        activeModId={activeItemId}
+                        activeModId={resolvedActiveItemId}
                         disabled={busy}
                         onOpenChange={(open) => setGroupOpen(group.id, open)}
                         onDragStart={() => setDraggedGroupId(group.id)}
@@ -286,7 +337,7 @@ function ReadyMods({
                         files={visibleExternal}
                         open={filtering || externalOpen}
                         canCollapse={!filtering}
-                        activeItemId={activeItemId}
+                        activeItemId={resolvedActiveItemId}
                         onOpenChange={setExternalOpen}
                         onSelect={setActiveItemId}
                      />
@@ -299,215 +350,5 @@ function ReadyMods({
             </MasterDetail>
          )}
       </div>
-   );
-}
-
-function ExternalFiles({
-   files,
-   open,
-   canCollapse,
-   activeItemId,
-   onOpenChange,
-   onSelect
-}: {
-   files: ExternalMod[];
-   open: boolean;
-   canCollapse: boolean;
-   activeItemId: string | null;
-   onOpenChange: (open: boolean) => void;
-   onSelect: (id: string) => void;
-}) {
-   const t = useTranslations('mods');
-   const format = useFormatters();
-
-   return (
-      <Collapsible open={open} onOpenChange={onOpenChange}>
-         <SectionHeader>
-            <span className="-ml-1 size-5 shrink-0" />
-            <CollapsibleTrigger asChild>
-               <button
-                  type="button"
-                  disabled={!canCollapse}
-                  className="group flex min-w-0 flex-1 items-center gap-2 overflow-hidden text-left whitespace-nowrap"
-                  aria-label={t(open ? 'groups.collapse' : 'groups.expand', { name: t('external.category') })}
-               >
-                  <ChevronRight className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                  <span className="truncate font-medium">{t('external.category')}</span>
-               </button>
-            </CollapsibleTrigger>
-         </SectionHeader>
-
-         <CollapsibleContent>
-            {files.map((file) => {
-               const itemId = `external:${file.id}`;
-
-               return (
-                  <MasterDetailRow key={file.id} id={itemId} aria-selected={itemId === activeItemId} onClick={() => onSelect(itemId)}>
-                     <Checkbox className="pointer-events-none" checked disabled aria-label={file.name} />
-                     <span className="min-w-0 flex-1 truncate">{file.name}</span>
-                     <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{format.bytes(file.sizeBytes)}</span>
-                  </MasterDetailRow>
-               );
-            })}
-         </CollapsibleContent>
-      </Collapsible>
-   );
-}
-
-function ModGroupSection({
-   group,
-   open,
-   canCollapse,
-   canReorder,
-   dragging,
-   ticked,
-   activeModId,
-   disabled,
-   onOpenChange,
-   onDragStart,
-   onDragEnd,
-   onDrop,
-   onMove,
-   onToggle,
-   onSelect
-}: {
-   group: ModGroup;
-   open: boolean;
-   canCollapse: boolean;
-   canReorder: boolean;
-   dragging: boolean;
-   ticked: Set<string>;
-   activeModId: string | null;
-   disabled: boolean;
-   onOpenChange: (open: boolean) => void;
-   onDragStart: () => void;
-   onDragEnd: () => void;
-   onDrop: () => void;
-   onMove: (offset: number) => void;
-   onToggle: (modId: string) => void;
-   onSelect: (modId: string) => void;
-}) {
-   const t = useTranslations('mods');
-
-   return (
-      <Collapsible
-         open={open}
-         onOpenChange={onOpenChange}
-         className={cn('transition-opacity', dragging && 'opacity-50')}
-         onDragOver={(event) => {
-            if (canReorder) event.preventDefault();
-         }}
-         onDrop={(event) => {
-            event.preventDefault();
-            onDrop();
-         }}
-      >
-         <SectionHeader>
-            <button
-               type="button"
-               draggable={canReorder}
-               disabled={!canReorder}
-               aria-label={t('groups.reorder', { name: group.label })}
-               aria-description={t('groups.reorderHint')}
-               className={cn(
-                  '-ml-1 flex size-5 shrink-0 items-center justify-center rounded-sm',
-                  canReorder ? 'hover:bg-accent cursor-grab active:cursor-grabbing' : 'cursor-default opacity-40'
-               )}
-               onDragStart={(event) => {
-                  event.dataTransfer.effectAllowed = 'move';
-                  event.dataTransfer.setData('text/plain', group.id);
-                  onDragStart();
-               }}
-               onDragEnd={onDragEnd}
-               onKeyDown={(event) => {
-                  if (!canReorder || !event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
-                  event.preventDefault();
-                  onMove(event.key === 'ArrowUp' ? -1 : 1);
-               }}
-            >
-               <GripVertical className="size-3.5" />
-            </button>
-
-            <CollapsibleTrigger asChild>
-               <button
-                  type="button"
-                  disabled={!canCollapse}
-                  className="group flex min-w-0 flex-1 items-center gap-2 text-left"
-                  aria-label={t(open ? 'groups.collapse' : 'groups.expand', { name: group.label })}
-               >
-                  <ChevronRight className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                  <span className="text-foreground min-w-0 truncate font-medium">{group.label}</span>
-               </button>
-            </CollapsibleTrigger>
-         </SectionHeader>
-
-         <CollapsibleContent>
-            {group.mods.map((mod) => (
-               <ModRow
-                  key={mod.modId}
-                  mod={mod}
-                  checked={ticked.has(mod.modId)}
-                  active={mod.modId === activeModId}
-                  disabled={disabled}
-                  onToggle={() => onToggle(mod.modId)}
-                  onSelect={() => onSelect(mod.modId)}
-               />
-            ))}
-         </CollapsibleContent>
-      </Collapsible>
-   );
-}
-
-function SectionHeader({ children }: { children: React.ReactNode }) {
-   return (
-      <div className="bg-muted/20 text-muted-foreground sticky top-0 z-10 flex min-h-10 items-center gap-2 border-b px-2 py-2 text-xs backdrop-blur">
-         {children}
-      </div>
-   );
-}
-
-function ModRow({
-   mod,
-   checked,
-   active,
-   disabled,
-   onToggle,
-   onSelect
-}: {
-   mod: ModSummary;
-   checked: boolean;
-   active: boolean;
-   disabled: boolean;
-   onToggle: () => void;
-   onSelect: () => void;
-}) {
-   const t = useTranslations('mods');
-   const pending = mod.state === 'available' ? (checked ? 'install' : null) : checked ? null : 'remove';
-
-   return (
-      <MasterDetailRow id={mod.modId} aria-selected={active} onClick={onSelect}>
-         <Checkbox
-            className={cn(active && !checked && 'border-accent-foreground/40')}
-            checked={checked}
-            disabled={disabled}
-            aria-label={mod.name}
-            onClick={(event) => event.stopPropagation()}
-            onCheckedChange={onToggle}
-         />
-         <span className="min-w-0 flex-1 truncate font-medium">{mod.name}</span>
-         {pending ? (
-            <span className={cn('shrink-0 whitespace-nowrap text-xs', pending === 'install' ? 'text-primary' : 'text-destructive')}>
-               {t(`pending.${pending}`)}
-            </span>
-         ) : null}
-         {mod.state === 'update-available' ? (
-            <ArrowUp className="text-status-warning size-3.5 shrink-0" aria-label={t('states.updateAvailable')} />
-         ) : null}
-         <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
-            {mod.state === 'update-available' && mod.installedVersion
-               ? t('versionPair', { installed: mod.installedVersion, latest: mod.latestVersion })
-               : (mod.installedVersion ?? mod.latestVersion)}
-         </span>
-      </MasterDetailRow>
    );
 }

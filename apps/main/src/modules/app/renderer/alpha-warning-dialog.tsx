@@ -5,13 +5,13 @@ import alarmaUrl from './alarma.webp';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
 
 export function AlphaWarningDialog() {
    const t = useTranslations('app.alphaWarning');
    const settings = useSettings();
    const open = settings.snapshot !== null && !settings.snapshot.app.alphaWarningAccepted;
-   const busy = settings.saveStatus === 'saving';
+   const busy = settings.saving;
 
    return (
       <Dialog open={open} onOpenChange={() => undefined}>
@@ -26,7 +26,9 @@ export function AlphaWarningDialog() {
                   {t('title')}
                   <img src={alarmaUrl} alt="" aria-hidden="true" draggable={false} className="size-7 rounded-sm" />
                </DialogTitle>
-               <DialogDescription className="not-sr-only text-sm leading-normal whitespace-pre-line">{t('body')}</DialogDescription>
+               <DialogDescription variant="visible" className="whitespace-pre-line">
+                  {t('body')}
+               </DialogDescription>
             </DialogHeader>
 
             <DialogFooter className="w-full flex-row justify-between sm:justify-between">

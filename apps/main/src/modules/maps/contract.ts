@@ -2,43 +2,43 @@ import { z } from 'zod';
 
 import type { IpcResult } from '@/ipc/core';
 import { installIdSchema } from '@/modules/installs/contract';
-import type { OperationSnapshot } from '@/modules/operations/contract';
+import { operationErrorSchema, operationSnapshotSchema, type OperationSnapshot } from '@/modules/operations/contract';
 
 export const mapHashSchema = z
    .string()
    .trim()
    .pipe(z.hash('sha1'))
    .transform((hash) => hash.toLowerCase());
-export const mapIdSchema = z.string().min(1);
+const mapIdSchema = z.string().min(1);
 export const maxMapCoversPerRequest = 8;
 
 export type MapHash = z.infer<typeof mapHashSchema>;
 export type MapId = z.infer<typeof mapIdSchema>;
 
-export const mapProblemCodeSchema = z.enum([
-   'maps.export.cancelled',
-   'maps.export.failed',
+const mapProblemCodeSchema = z.enum([
    'maps.folder.unreadable',
    'maps.hash.failed',
    'maps.info.invalid',
    'maps.info.missing',
+   'maps.info.not-a-map',
+   'maps.info.not-json',
+   'maps.info.unreadable',
    'maps.info.unsafe-filename',
    'maps.info.unsupported-version',
    'maps.root.unreadable'
 ]);
 
-export const mapProblemSchema = z.object({
+const mapProblemSchema = z.object({
    code: mapProblemCodeSchema,
    message: z.string(),
    folderName: z.string().optional(),
    detail: z.string().optional()
 });
 
-export const mapCollectionStatusSchema = z.enum(['missing', 'ready', 'scanning', 'unsupported']);
+const mapCollectionStatusSchema = z.enum(['missing', 'ready', 'scanning', 'unsupported']);
 
-export type MapProblemCode = z.infer<typeof mapProblemCodeSchema>;
 export type MapProblem = z.infer<typeof mapProblemSchema>;
-export type MapCollectionStatus = z.infer<typeof mapCollectionStatusSchema>;
+type MapCollectionStatus = z.infer<typeof mapCollectionStatusSchema>;
 
 export const mapDifficultySummarySchema = z.object({
    characteristic: z.string(),
@@ -96,18 +96,18 @@ export type MapSelectionRequest = z.infer<typeof mapSelectionRequestSchema>;
 export type MapDetailRequest = z.infer<typeof mapDetailRequestSchema>;
 export type MapCoversRequest = z.infer<typeof mapCoversRequestSchema>;
 
-export const mapCoverSchema = z.object({ mapId: mapIdSchema, dataUrl: z.string() });
+const mapCoverSchema = z.object({ mapId: mapIdSchema, dataUrl: z.string() });
 export const mapCoversResultSchema = z.object({
    covers: z.array(mapCoverSchema),
    deferredMapIds: z.array(mapIdSchema)
 });
 
-export const beatSaverListingSchema = z.object({
+const beatSaverListingSchema = z.object({
    url: z.string(),
    description: z.string()
 });
 
-export const mapMetadataResultSchema = z.object({
+const mapMetadataResultSchema = z.object({
    beatSaver: beatSaverListingSchema.nullable(),
    scoreSaberUrl: z.string().nullable()
 });
@@ -117,9 +117,7 @@ export type BeatSaverListing = z.infer<typeof beatSaverListingSchema>;
 export type MapMetadataResult = z.infer<typeof mapMetadataResultSchema>;
 export type MapMetadataRequest = z.infer<typeof mapMetadataRequestSchema>;
 
-export type MapOpenFolderResult = { status: 'opened' } | { status: 'unsupported' } | { status: 'failed'; message: string };
-
-export const mapActionIssueSchema = z.enum([
+const mapActionIssueSchema = z.enum([
    'already-installed',
    'install-not-found',
    'inspect-failed',
@@ -133,14 +131,14 @@ export const mapActionIssueSchema = z.enum([
 
 export type MapActionIssue = z.infer<typeof mapActionIssueSchema>;
 
-export const mapActionProblemSchema = z.object({
+const mapActionProblemSchema = z.object({
    status: z.literal('invalid'),
    installId: z.string(),
    issue: mapActionIssueSchema,
    detail: z.string().optional()
 });
 
-export const readyMapDeletePreviewSchema = z.object({
+const readyMapDeletePreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    mapsPath: z.string(),
@@ -158,18 +156,38 @@ export type MapDeletePreview = z.infer<typeof mapDeletePreviewSchema>;
 
 export type MapOperationResult = IpcResult<OperationSnapshot>;
 
-export const mapDownloadSourceSchema = z.object({
+const mapSyncSideSchema = z.object({ targetId: z.string().min(1), installId: installIdSchema });
+export const mapSyncRequestSchema = z.object({ first: mapSyncSideSchema, second: mapSyncSideSchema });
+
+export type MapSyncSide = z.infer<typeof mapSyncSideSchema>;
+export type MapSyncRequest = z.infer<typeof mapSyncRequestSchema>;
+export const mapSyncPreviewSchema = z.object({
+   toFirst: z.number().int().nonnegative(),
+   toSecond: z.number().int().nonnegative(),
+   problem: z.string().nullable(),
+   runsOn: z.string().nullable()
+});
+
+export type MapSyncPreview = z.infer<typeof mapSyncPreviewSchema>;
+export const mapSyncStartResultSchema = z.union([
+   z.object({ ok: z.literal(true), value: z.object({ targetId: z.string(), operation: operationSnapshotSchema }) }),
+   z.object({ ok: z.literal(false), error: operationErrorSchema })
+]);
+
+export type MapSyncStarted = Extract<z.infer<typeof mapSyncStartResultSchema>, { ok: true }>['value'];
+
+const mapDownloadSourceSchema = z.object({
    kind: z.literal('beatsaver'),
    key: z.string().min(1)
 });
 
 export type MapDownloadSource = z.infer<typeof mapDownloadSourceSchema>;
 
-export const mapSearchIssueSchema = z.enum(['fetch-failed', 'invalid-response', 'unsupported']);
+const mapSearchIssueSchema = z.enum(['fetch-failed', 'invalid-response', 'unsupported']);
 
 export type MapSearchIssue = z.infer<typeof mapSearchIssueSchema>;
 
-export const beatSaverMapSummarySchema = z.object({
+const beatSaverMapSummarySchema = z.object({
    key: z.string(),
    hash: mapHashSchema,
    title: z.string(),
@@ -218,28 +236,24 @@ export const mapDownloadRequestSchema = mapCollectionRequestSchema.extend({
 export type MapSearchRequest = z.infer<typeof mapSearchRequestSchema>;
 export type MapDownloadRequest = z.infer<typeof mapDownloadRequestSchema>;
 
-export type MapImportChoice = { status: 'selected'; paths: string[] } | { status: 'cancelled' } | { status: 'unsupported' };
-
 export type MapImportRequest = MapCollectionRequest & {
    paths: string[];
 };
-
-export type MapExportChoice = { status: 'selected'; path: string } | { status: 'cancelled' } | { status: 'unsupported' };
 
 export type MapExportRequest = MapSelectionRequest & {
    destinationPath: string;
 };
 
-export const mapLinkSchemeSchema = z.enum(['beatsaver', 'web+bsmap']);
+const mapLinkSchemeSchema = z.enum(['beatsaver', 'web+bsmap']);
 export const mapLinkSchemes = mapLinkSchemeSchema.options;
 
-export type MapLinkScheme = z.infer<typeof mapLinkSchemeSchema>;
+type MapLinkScheme = z.infer<typeof mapLinkSchemeSchema>;
 
 const mapLinkIssueSchema = z.enum(['invalid-key', 'unsupported-link']);
 
-export type MapLinkIssue = z.infer<typeof mapLinkIssueSchema>;
+type MapLinkIssue = z.infer<typeof mapLinkIssueSchema>;
 
-export type MapLinkParse = { status: 'ok'; scheme: MapLinkScheme; key: string } | { status: 'invalid'; issue: MapLinkIssue };
+type MapLinkParse = { status: 'ok'; scheme: MapLinkScheme; key: string } | { status: 'invalid'; issue: MapLinkIssue };
 
 export type MapLinkEvent =
    | { status: 'ready'; key: string; map: BeatSaverMapSummary | null }

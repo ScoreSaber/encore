@@ -1,82 +1,108 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import type { IpcError } from '@/ipc/core';
-import { hasSnapshotStream, type TargetApiModule } from '@/lib/api';
-import { causeFailure } from '@/lib/errors';
+import type { ApiImplementation } from '@/lib/api';
+import { createProblem, type Problem } from '@/lib/errors';
 import type { SecretStoreAvailability } from '@/lib/security/secret-store';
-import type { ReceiverActionResult, ReceiverListenAddress, ReceiverPairingResult, ReceiverState } from '@/modules/receiver/contract';
-import { listLanAddresses, wildcardInterfaceName, type LanAddress } from '@/modules/receiver/main/lan';
+import { createSerialQueue } from '@/lib/state/machine';
+import { receiverAddressUrl } from '@/modules/receiver/address';
+import type { ReceiverListenAddress, ReceiverPairingSession, ReceiverState } from '@/modules/receiver/contract';
+import { isPrivateAddress, listLanAddresses, type LanAddress } from '@/modules/receiver/main/lan';
 import { createReceiverEventHub } from '@/modules/receiver/main/receiver-events';
 import type { ReceiverIdentityStore } from '@/modules/receiver/main/receiver-identity';
 import { createReceiverPairingController } from '@/modules/receiver/main/receiver-pairing';
 import { coreRoutes } from '@/modules/receiver/main/routes/core-routes';
 import { createReceiverRequestHandler } from '@/modules/receiver/main/routes/route-table';
 import { defineReceiverApiRoutes } from '@/modules/receiver/main/target-api';
-import { receiverDeviceNameSchema, receiverTargetCapabilities } from '@/modules/receiver/protocol';
+import { receiverAttachedTargetIdSchema, receiverTargetCapabilities } from '@/modules/receiver/protocol';
 import type { PairedDevice, SettingsSnapshot } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
-import type { Target } from '@/modules/targets/contract';
+import type { Target, TargetEvent } from '@/modules/targets/contract';
 import { getLocalTarget } from '@/modules/targets/main/local-target';
 
 import { createServer, type Server } from 'node:https';
+import { isIP } from 'node:net';
 import { hostname } from 'node:os';
 import type { Duplex } from 'node:stream';
 
-export const defaultReceiverPort = 38_567;
-export const maxReceiverConnections = 64;
-export const receiverHeadersTimeoutMs = 10_000;
+const maxReceiverConnections = 64;
+const receiverHeadersTimeoutMs = 10_000;
 
 type ReceiverServerOptions = {
    settingsStore: SettingsStore;
    identityStore: ReceiverIdentityStore;
-   apiModules: readonly TargetApiModule[];
+   implementations: readonly ApiImplementation[];
    getSecretStoreAvailability: () => SecretStoreAvailability;
-   platform?: NodeJS.Platform;
+   getTarget?: () => Target;
+   attached?: ReceiverAttachedTargets;
+   name?: string;
    port?: number;
    listAddresses?: () => LanAddress[];
-   heartbeatIntervalMs?: number;
 };
+
+type ReceiverActionResult = Result<ReceiverState, Problem>;
 
 type ActiveReceiverServer = {
    server: Server;
    sockets: Set<Duplex>;
    addresses: ReceiverListenAddress[];
+   bindHost: string;
+   requestedPort: number;
+};
+
+type ReceiverAttachedTargets = {
+   listTargets: () => Target[];
+   subscribe: (listener: (event: TargetEvent) => void) => () => void;
+   implementations: readonly ApiImplementation[];
 };
 
 export type ReceiverServerController = ReturnType<typeof createReceiverServer>;
-export type ReceiverRemoteTarget = Target & { kind: 'remote' };
+type ReceiverRemoteTarget = Target & { kind: 'remote' };
 export type ReceiverRouteContext = ReturnType<typeof createReceiverRouteContext>;
 
 function createReceiverRouteContext(
    pairing: ReturnType<typeof createReceiverPairingController>,
    events: ReturnType<typeof createReceiverEventHub>,
-   platform: NodeJS.Platform
+   getTarget: () => Target,
+   listAttached: () => Target[],
+   name: string
 ) {
+   const servedCapabilities = (target: Target) => target.capabilities.filter((capability) => receiverTargetCapabilities.includes(capability));
+   const getHostTarget = (): ReceiverRemoteTarget => {
+      const local = getTarget();
+      return { ...local, kind: 'remote', id: 'receiver-local', capabilities: servedCapabilities(local) };
+   };
+   const getAttachedTargets = () =>
+      listAttached().flatMap((target) =>
+         target.kind === 'quest' && receiverAttachedTargetIdSchema.safeParse(target.id).success
+            ? [{ ...target, kind: target.kind, capabilities: servedCapabilities(target) }]
+            : []
+      );
+
    return {
-      name: hostname(),
+      name,
       pairing,
       events,
-      getTarget: (): ReceiverRemoteTarget => {
-         const local = getLocalTarget(platform);
+      getTargets: () => ({ target: getHostTarget(), attached: getAttachedTargets() }),
+      resolveTarget: (targetId: string | undefined) => {
+         if (targetId === undefined) return { targetId: getTarget().id, capabilities: getHostTarget().capabilities, attached: false };
 
-         return {
-            ...local,
-            kind: 'remote',
-            id: 'receiver-local',
-            capabilities: local.capabilities.filter((capability) => receiverTargetCapabilities.includes(capability))
-         };
-      }
+         const target = getAttachedTargets().find((candidate) => candidate.id === targetId);
+         return target ? { targetId: target.id, capabilities: target.capabilities, attached: true } : null;
+      },
+      servesTarget: (targetId: string) => targetId === getTarget().id || getAttachedTargets().some((target) => target.id === targetId)
    };
 }
 
 export function createReceiverServer(options: ReceiverServerOptions) {
-   const handleReceiverRequest = createReceiverRequestHandler([...coreRoutes, ...defineReceiverApiRoutes(options.apiModules)]);
-   const port = options.port ?? defaultReceiverPort;
+   const getTarget = options.getTarget ?? getLocalTarget;
+   const attached = options.attached;
+   const handleReceiverRequest = createReceiverRequestHandler([
+      ...coreRoutes,
+      ...defineReceiverApiRoutes({ host: options.implementations, attached: attached?.implementations ?? [] })
+   ]);
    const listAddresses = options.listAddresses ?? listLanAddresses;
-   const events = createReceiverEventHub({
-      heartbeatIntervalMs: options.heartbeatIntervalMs
-   });
+   const events = createReceiverEventHub((connectedDevices) => setState({ connectedDevices }));
    const listeners = new Set<(state: ReceiverState) => void>();
    const pairing = createReceiverPairingController({
       settingsStore: options.settingsStore,
@@ -93,49 +119,81 @@ export function createReceiverServer(options: ReceiverServerOptions) {
       interfaces: [],
       pairing: null,
       identity: null,
-      secureStorage: describeSecureStorage()
+      secureStorage: describeSecureStorage(),
+      connectedDevices: []
    };
 
-   for (const module of options.apiModules) {
-      if (!hasSnapshotStream(module)) continue;
+   const routeContext = createReceiverRouteContext(pairing, events, getTarget, () => attached?.listTargets() ?? [], options.name ?? hostname());
 
-      module.subscribeJson((snapshot) => {
-         events.broadcast({ type: 'snapshot', namespace: module.api.namespace, value: snapshot });
+   for (const { api, subscribe } of options.implementations) {
+      subscribe?.((event) => {
+         if (event.targetId === getTarget().id) events.broadcast({ type: 'snapshot', namespace: api.namespace, value: event.snapshot });
+      });
+   }
+   for (const { api, subscribe } of attached?.implementations ?? []) {
+      subscribe?.((event) => {
+         if (routeContext.resolveTarget(event.targetId)?.attached) {
+            events.broadcast({ type: 'snapshot', namespace: api.namespace, targetId: event.targetId, value: event.snapshot });
+         }
+      });
+   }
+   attached?.subscribe(() => events.broadcast({ type: 'target', ...routeContext.getTargets() }));
+   const lifecycle = createSerialQueue();
+
+   function schedule(action: () => Promise<ReceiverActionResult>) {
+      return lifecycle.run(action);
+   }
+
+   function start(snapshot?: SettingsSnapshot) {
+      return schedule(() => startServer(snapshot));
+   }
+
+   function stop(status: ReceiverState['status'] = 'stopped') {
+      return schedule(() => stopServer(status));
+   }
+
+   async function reconcile(snapshot?: SettingsSnapshot) {
+      await schedule(async () => {
+         const settings = snapshot ?? (await options.settingsStore.getSnapshot());
+         return settings.app.receiver.enabled ? startServer(settings) : stopServer('disabled');
       });
    }
 
-   const routeContext = createReceiverRouteContext(pairing, events, options.platform ?? process.platform);
+   async function closeActiveServer() {
+      pairing.clear();
+      events.closeAll();
 
-   async function reconcile(snapshot?: SettingsSnapshot) {
-      const settings = snapshot ?? (await options.settingsStore.getSnapshot());
+      const server = activeServer;
+      activeServer = null;
 
-      if (settings.app.receiver.enabled) {
-         await start(settings);
-         return;
-      }
-
-      await stop('disabled');
+      if (server) await closeServer(server);
    }
 
-   async function start(snapshot?: SettingsSnapshot): Promise<ReceiverActionResult> {
+   async function startServer(snapshot?: SettingsSnapshot): Promise<ReceiverActionResult> {
       const settings = snapshot ?? (await options.settingsStore.getSnapshot());
       const interfaces = listAddresses();
+      const receiverSettings = settings.app.receiver;
+      const port = options.port ?? receiverSettings.port;
+      const selected = receiverSettings.bindHost
+         ? { host: receiverSettings.bindHost, interfaceName: 'custom' }
+         : selectInterface(interfaces, receiverSettings.interfaceName);
 
-      if (activeServer) {
+      if (activeServer && activeServer.bindHost === selected?.host && activeServer.requestedPort === port) {
          setState({
             enabled: true,
             status: 'running',
             addresses: activeServer.addresses,
-            interfaces
+            interfaces,
+            message: undefined
          });
          return okState();
       }
 
-      const selected = selectInterface(interfaces, settings.app.receiver.interfaceName);
+      if (activeServer) await closeActiveServer();
       if (!selected) {
-         const message = settings.app.receiver.interfaceName
-            ? `Network interface "${settings.app.receiver.interfaceName}" is not available`
-            : 'No LAN interface is available';
+         const problem = receiverSettings.interfaceName
+            ? createProblem('receiver.lan.interface-missing', { interfaceName: receiverSettings.interfaceName })
+            : createProblem('receiver.lan.unavailable');
 
          setState({
             enabled: true,
@@ -143,9 +201,9 @@ export function createReceiverServer(options: ReceiverServerOptions) {
             addresses: [],
             interfaces,
             pairing: null,
-            message
+            message: problem.message
          });
-         return errorResult('receiver.lan.unavailable', message);
+         return Result.err(problem);
       }
 
       setState({
@@ -157,7 +215,23 @@ export function createReceiverServer(options: ReceiverServerOptions) {
          message: undefined
       });
 
-      const identity = await options.identityStore.load();
+      const identityResult = await Result.tryPromise({
+         try: () => options.identityStore.load(),
+         catch: (cause) => createProblem('receiver.listen.failed', { cause })
+      });
+      if (Result.isError(identityResult)) {
+         setState({
+            enabled: true,
+            status: 'error',
+            addresses: [],
+            interfaces,
+            pairing: null,
+            message: identityResult.error.message
+         });
+         return Result.err(identityResult.error);
+      }
+
+      const identity = identityResult.value;
       setState({
          identity: {
             fingerprint: identity.fingerprint,
@@ -168,9 +242,12 @@ export function createReceiverServer(options: ReceiverServerOptions) {
 
       const sockets = new Set<Duplex>();
       const server = createServer({ cert: identity.certificatePem, key: identity.privateKeyPem }, (request, response) => {
-         void handleReceiverRequest(request, response, routeContext).catch(() => {
-            if (!response.headersSent) response.writeHead(500);
-            response.end();
+         void Result.tryPromise({
+            try: () => handleReceiverRequest(request, response, routeContext),
+            catch: () => {
+               if (!response.headersSent) response.writeHead(500);
+               response.end();
+            }
          });
       });
       server.maxConnections = maxReceiverConnections;
@@ -186,10 +263,7 @@ export function createReceiverServer(options: ReceiverServerOptions) {
 
       const listenResult = await Result.tryPromise({
          try: () => listenOn(server, selected, interfaces, port, sockets),
-         catch: (cause): IpcError => ({
-            code: 'receiver.listen.failed',
-            message: causeFailure('Failed to start receiver', cause)
-         })
+         catch: (cause) => createProblem('receiver.listen.failed', { cause })
       });
 
       if (Result.isError(listenResult)) {
@@ -203,7 +277,7 @@ export function createReceiverServer(options: ReceiverServerOptions) {
             message: listenResult.error.message
          });
 
-         return { ok: false, error: listenResult.error };
+         return Result.err(listenResult.error);
       }
 
       events.open();
@@ -220,14 +294,8 @@ export function createReceiverServer(options: ReceiverServerOptions) {
       return okState();
    }
 
-   async function stop(status: ReceiverState['status'] = 'stopped'): Promise<ReceiverActionResult> {
-      pairing.clear();
-      events.closeAll();
-
-      const server = activeServer;
-      activeServer = null;
-
-      if (server) await closeServer(server);
+   async function stopServer(status: ReceiverState['status']): Promise<ReceiverActionResult> {
+      await closeActiveServer();
 
       setState({
          enabled: false,
@@ -239,33 +307,19 @@ export function createReceiverServer(options: ReceiverServerOptions) {
       return okState();
    }
 
-   function startPairing(): ReceiverPairingResult {
-      if (!activeServer || state.status !== 'running') {
-         return {
-            ok: false,
-            error: {
-               code: 'receiver.not-running',
-               message: 'Receiver is not running'
-            }
-         };
-      }
+   function startPairing(): Result<ReceiverPairingSession, Problem> {
+      if (!activeServer || state.status !== 'running') return Result.err(createProblem('receiver.not-running'));
 
-      return {
-         ok: true,
-         value: pairing.start()
-      };
+      return Result.ok(pairing.start());
    }
 
    async function renameDevice(deviceId: string, name: string): Promise<ReceiverActionResult> {
-      const parsed = receiverDeviceNameSchema.safeParse(name);
-      if (!parsed.success) return errorResult('receiver.device-name.invalid', 'Device name is required');
-
       const snapshot = await options.settingsStore.getSnapshot();
       if (!snapshot.app.receiver.pairedDevices.some((device) => device.id === deviceId)) {
-         return errorResult('receiver.device.not-found', 'Paired device was not found');
+         return Result.err(createProblem('receiver.device.not-found'));
       }
 
-      return writePairedDevices((devices) => devices.map((device) => (device.id === deviceId ? { ...device, name: parsed.data } : device)));
+      return writePairedDevices((devices) => devices.map((device) => (device.id === deviceId ? { ...device, name } : device)));
    }
 
    async function revokeDevice(deviceId: string): Promise<ReceiverActionResult> {
@@ -275,24 +329,25 @@ export function createReceiverServer(options: ReceiverServerOptions) {
       return written;
    }
 
-   async function selectInterfaceName(interfaceName: string | null): Promise<ReceiverActionResult> {
-      const interfaces = listAddresses();
-      if (interfaceName !== null && !interfaces.some((candidate) => candidate.interfaceName === interfaceName)) {
-         return errorResult('receiver.interface.not-found', 'Network interface is not available');
-      }
+   function selectInterfaceName(interfaceName: string | null): Promise<ReceiverActionResult> {
+      return schedule(async () => {
+         const interfaces = listAddresses();
+         if (interfaceName !== null && !interfaces.some((candidate) => candidate.interfaceName === interfaceName)) {
+            return Result.err(createProblem('receiver.interface.not-found'));
+         }
 
-      const written = await options.settingsStore.updateAppSettings({
-         receiver: { interfaceName }
+         const written = await options.settingsStore.updateAppSettings({
+            receiver: { interfaceName, bindHost: null }
+         });
+         if (!written.ok) return Result.err(written.error);
+
+         if (written.value.app.receiver.enabled) {
+            return startServer(written.value);
+         }
+
+         setState({ interfaces });
+         return okState();
       });
-      if (!written.ok) return { ok: false, error: written.error };
-
-      if (activeServer) {
-         await stop('starting');
-         return start();
-      }
-
-      setState({ interfaces });
-      return okState();
    }
 
    async function writePairedDevices(next: (devices: PairedDevice[]) => PairedDevice[]): Promise<ReceiverActionResult> {
@@ -300,7 +355,7 @@ export function createReceiverServer(options: ReceiverServerOptions) {
          receiver: { pairedDevices: next(current.receiver.pairedDevices) }
       }));
 
-      if (!written.ok) return { ok: false, error: written.error };
+      if (!written.ok) return Result.err(written.error);
       return okState();
    }
 
@@ -326,11 +381,7 @@ export function createReceiverServer(options: ReceiverServerOptions) {
    }
 
    function okState(): ReceiverActionResult {
-      return { ok: true, value: state };
-   }
-
-   function errorResult(code: string, message: string): ReceiverActionResult {
-      return { ok: false, error: { code, message } };
+      return Result.ok(state);
    }
 
    return {
@@ -346,8 +397,8 @@ export function createReceiverServer(options: ReceiverServerOptions) {
    };
 }
 
-export function selectInterface(interfaces: LanAddress[], interfaceName: string | null) {
-   if (!interfaceName) return interfaces.find((candidate) => candidate.interfaceName !== wildcardInterfaceName) ?? null;
+function selectInterface(interfaces: LanAddress[], interfaceName: string | null) {
+   if (!interfaceName) return interfaces.find((candidate) => isPrivateAddress(candidate.host)) ?? null;
 
    return interfaces.find((candidate) => candidate.interfaceName === interfaceName) ?? null;
 }
@@ -362,18 +413,19 @@ function listenOn(server: Server, address: LanAddress, interfaces: LanAddress[],
          const addressInfo = z.object({ port: z.number() }).safeParse(listening);
          const boundPort = addressInfo.success ? addressInfo.data.port : port;
 
-         const advertisedAddresses =
-            address.interfaceName === wildcardInterfaceName
-               ? interfaces.filter((candidate) => candidate.interfaceName !== wildcardInterfaceName)
-               : [address];
+         const advertisedAddresses = isWildcardAddress(address.host)
+            ? interfaces.filter((candidate) => !isWildcardAddress(candidate.host) && (address.host === '::' || isIP(candidate.host) === 4))
+            : [address];
 
          resolve({
             server,
             sockets,
+            bindHost: address.host,
+            requestedPort: port,
             addresses: advertisedAddresses.map((candidate) => ({
                host: candidate.host,
                port: boundPort,
-               url: `https://${candidate.host}:${boundPort}`,
+               url: receiverAddressUrl({ host: candidate.host, port: boundPort }),
                interfaceName: candidate.interfaceName
             }))
          });
@@ -381,17 +433,17 @@ function listenOn(server: Server, address: LanAddress, interfaces: LanAddress[],
    });
 }
 
+function isWildcardAddress(host: string) {
+   return host === '0.0.0.0' || host === '::';
+}
+
 async function closeServer(active: ActiveReceiverServer) {
    destroyServer(active.server, active.sockets);
 
-   await Result.tryPromise({
-      try: () =>
-         new Promise<void>((resolve) => {
-            active.server.close(() => {
-               resolve();
-            });
-         }),
-      catch: () => undefined
+   await new Promise<void>((resolve) => {
+      active.server.close(() => {
+         resolve();
+      });
    });
 }
 

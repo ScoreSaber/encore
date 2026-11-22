@@ -8,6 +8,7 @@ export function ConfirmDialog({
    title,
    description,
    confirmLabel,
+   confirmVariant = 'destructive',
    busy = false,
    children,
    onConfirm,
@@ -17,6 +18,7 @@ export function ConfirmDialog({
    title: string;
    description: string;
    confirmLabel: string;
+   confirmVariant?: 'default' | 'destructive';
    busy?: boolean;
    children?: React.ReactNode;
    onConfirm: () => void;
@@ -45,7 +47,7 @@ export function ConfirmDialog({
                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
                   {common('cancel')}
                </Button>
-               <Button type="button" variant="destructive" size="sm" disabled={busy} onClick={onConfirm}>
+               <Button type="button" variant={confirmVariant} size="sm" disabled={busy} onClick={onConfirm}>
                   {confirmLabel}
                </Button>
             </DialogFooter>

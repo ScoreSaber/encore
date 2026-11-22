@@ -1,6 +1,6 @@
-import { beatSaberSteamAppId } from '@/modules/downloads/main/steam-client';
 import { launchFlags, type LaunchEnvironment, type LaunchFlag, type ProtonLaunchPlan } from '@/modules/launch/contract';
 import type { StoreKind } from '@/modules/stores/contract';
+import { beatSaberSteamAppId } from '@/modules/stores/main/steam-client';
 
 const flagArguments = {
    'oculus-mode': ['-vrmode', 'oculus'],
@@ -42,29 +42,34 @@ export function buildLaunchEnv(input: {
 
    if (!input.proton) return environment;
 
-   Object.assign(environment, {
-      WINEDLLOVERRIDES: wineDllOverrides,
-      STEAM_COMPAT_DATA_PATH: input.proton.compatDataPath,
-      STEAM_COMPAT_INSTALL_PATH: input.installPath,
-      STEAM_COMPAT_CLIENT_INSTALL_PATH: input.proton.steamClientPath,
-      STEAM_COMPAT_APP_ID: beatSaberSteamAppId,
-      SteamEnv: '1'
-   });
+   environment.SteamEnv = '1';
+   if (input.proton.steamFrame) environment.DISABLE_VULKAN_FDM_INJECTION_LAYER = '1';
    if (input.proton.logPath) {
       environment.PROTON_LOG = '1';
       environment.PROTON_LOG_DIR = input.proton.logPath;
    }
-   return environment;
+   return { ...environment, ...buildProtonEnv(input.proton, input.installPath) };
+}
+
+export function buildProtonEnv(proton: ProtonLaunchPlan, installPath: string): LaunchEnvironment {
+   return {
+      WINEDLLOVERRIDES: wineDllOverrides,
+      STEAM_COMPAT_DATA_PATH: proton.compatDataPath,
+      STEAM_COMPAT_INSTALL_PATH: installPath,
+      STEAM_COMPAT_CLIENT_INSTALL_PATH: proton.steamClientPath,
+      STEAM_COMPAT_APP_ID: beatSaberSteamAppId
+   };
 }
 
 export function buildProtonCommand(input: {
    proton: ProtonLaunchPlan;
+   verb?: 'run' | 'runinprefix' | 'getcompatpath';
    executablePath: string;
    args: readonly string[];
    workingDirectory: string;
    env: LaunchEnvironment;
 }) {
-   const protonArgs = [input.proton.protonBinaryPath, 'run', input.executablePath, ...input.args];
+   const protonArgs = [input.proton.protonBinaryPath, input.verb ?? 'run', input.executablePath, ...input.args];
    const command = input.proton.steamRunWrapper
       ? { executablePath: steamRunCommand, args: protonArgs }
       : { executablePath: input.proton.protonBinaryPath, args: protonArgs.slice(1) };

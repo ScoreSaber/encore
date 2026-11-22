@@ -1,16 +1,11 @@
 import { Result } from 'better-result';
 
+import { createProblem, type Problem } from '@/lib/errors';
 import { readJsonFile } from '@/lib/filesystem/json';
 import { copyPathWithProgress } from '@/lib/filesystem/operations';
-import {
-   createFilesystemProblem,
-   createUniquePath,
-   isSamePath,
-   resolveFilesystemPath,
-   pathExistsSafely,
-   type FilesystemProblem
-} from '@/lib/filesystem/path';
+import { createUniquePath, isSamePath, resolveFilesystemPath, pathExistsSafely, type FilesystemProblem } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
+import { translate } from '@/lib/messages';
 import type { BSManagerVersion, ReadyBSManagerPlan } from '@/modules/bsmanager/contract';
 import { bsmanagerAppConfigSchema, writeBSManagerAppConfig } from '@/modules/bsmanager/main/bsmanager-config';
 import { bsmanagerAppConfigPath, type BSManagerLocations } from '@/modules/bsmanager/main/bsmanager-paths';
@@ -58,128 +53,117 @@ type CopiedGroup = {
    conflicts: number;
 };
 
+type ConverterState = { status: 'idle' } | { status: 'running'; operation: OperationSnapshot };
+
 export type BSManagerSharedContentConverter = ReturnType<typeof createBSManagerSharedContentConverter>;
 
 export function createBSManagerSharedContentConverter(options: ConverterOptions) {
+   let state: ConverterState = { status: 'idle' };
+
    function start(plan: ReadyBSManagerPlan, versions: BSManagerVersion[]) {
+      if (state.status === 'running') return Result.ok<OperationSnapshot, 'nothing-to-clean'>(state.operation);
+
       const groups = conversionGroups(plan, versions);
       if (groups.length === 0) return Result.err<OperationSnapshot, 'nothing-to-clean'>('nothing-to-clean');
 
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'copy',
-         title: 'Convert BSManager shared content',
-         message: plan.sharedContentPath,
-         progress: { phase: 'preparing', current: 0, total: 0, percent: 0, unit: 'bytes' },
-         metadata: { rootPath: plan.rootPath, versions: versions.map((version) => version.id) },
-         cancel: () => controller.abort()
-      });
-
-      void run(operation.id, plan, groups, controller.signal);
+      const operation = options.operations.start(
+         {
+            kind: 'copy',
+            title: translate('bsmanager.convertOperation'),
+            message: plan.sharedContentPath,
+            progress: { phase: 'preparing', current: 0, total: 0, percent: 0, unit: 'bytes' },
+            metadata: { rootPath: plan.rootPath, versions: versions.map((version) => version.id) }
+         },
+         (operationId, signal) => run(operationId, plan, groups, signal)
+      );
+      state = { status: 'running', operation };
       return Result.ok<OperationSnapshot, 'nothing-to-clean'>(operation);
    }
 
    async function run(operationId: OperationId, plan: ReadyBSManagerPlan, groups: ConversionGroup[], signal: AbortSignal) {
-      const support = await probeLinkSupport(plan.sharedContentPath, preferredLinkMode(options.locations.platform, plan.useSymlinks));
-      if (!support.supported) {
-         const problem: FilesystemProblem = {
-            code: 'filesystem.operation.copy-failed',
-            message: 'this filesystem cannot create the links Encore uses',
-            path: plan.sharedContentPath
-         };
-         if (support.detail) problem.detail = support.detail;
-         return fail(operationId, problem);
-      }
+      const cancelled = (path: string) => fail(operationId, createProblem('bsmanager.convert.cancelled', { path }));
 
-      const appConfigPath = bsmanagerAppConfigPath(options.locations);
-      const appConfig = await readJsonFile(appConfigPath, bsmanagerAppConfigSchema, { defaultValue: {} });
-      if (Result.isError(appConfig)) return fail(operationId, appConfig.error);
-
-      const appWritten = await writeBSManagerAppConfig(appConfigPath, { ...appConfig.value, 'use-symlinks': support.mode === 'symlink' });
-      if (Result.isError(appWritten)) return fail(operationId, appWritten.error);
-
-      const sizes = await Promise.all(groups.map((group) => getDirectorySize(group.sourcePath)));
-      let total = 0;
-      for (const size of sizes) {
-         if (Result.isError(size)) return fail(operationId, size.error);
-         total += size.value.bytes;
-      }
-      let carried = 0;
-      const summary: ConversionSummary = { folders: 0, bytes: 0, files: 0, conflicts: 0, backups: 0 };
-
-      options.operations.update(operationId, {
-         progress: { phase: 'copying', current: 0, total, percent: 0, unit: 'bytes' }
-      });
-
-      for (const group of groups) {
-         if (signal.aborted) {
-            return fail(operationId, {
-               code: 'filesystem.operation.cancelled',
-               message: 'shared content conversion was cancelled',
-               path: group.sourcePath
-            });
+      try {
+         const support = await probeLinkSupport(plan.sharedContentPath, preferredLinkMode(options.locations.platform, plan.useSymlinks));
+         if (signal.aborted) return cancelled(plan.sharedContentPath);
+         if (!support.supported) {
+            return fail(
+               operationId,
+               createProblem('bsmanager.convert.links-unsupported', { path: plan.sharedContentPath, detail: support.detail ?? undefined })
+            );
          }
 
-         const copied = await copyGroup(operationId, group, carried, total, signal);
-         if (Result.isError(copied)) return fail(operationId, copied.error);
+         const sizes = await Promise.all(groups.map((group) => getDirectorySize(group.sourcePath)));
+         if (signal.aborted) return cancelled(plan.sharedContentPath);
 
-         carried += copied.value.bytes;
-         summary.bytes += copied.value.bytes;
-         summary.files += copied.value.files;
-         summary.conflicts += copied.value.conflicts;
-
-         for (const linkPath of group.linkPaths) {
-            if (signal.aborted) {
-               return fail(operationId, {
-                  code: 'filesystem.operation.cancelled',
-                  message: 'shared content conversion was cancelled',
-                  path: linkPath
-               });
-            }
-
-            const repointed = await repointLink(linkPath, group.sourcePath, group.destinationPath, support.mode);
-            if (Result.isError(repointed)) return fail(operationId, repointed.error);
-            summary.folders += 1;
+         let total = 0;
+         for (const size of sizes) {
+            if (Result.isError(size)) return fail(operationId, size.error);
+            total += size.value.bytes;
          }
 
-         if (group.sourceInstallFolderPath) {
-            if (signal.aborted) {
-               return fail(operationId, {
-                  code: 'filesystem.operation.cancelled',
-                  message: 'shared content conversion was cancelled',
-                  path: group.sourceInstallFolderPath
-               });
-            }
+         const appConfigPath = bsmanagerAppConfigPath(options.locations);
+         const appConfig = await readJsonFile(appConfigPath, bsmanagerAppConfigSchema, { defaultValue: {} });
+         if (Result.isError(appConfig)) return fail(operationId, appConfig.error);
+         if (signal.aborted) return cancelled(plan.sharedContentPath);
 
-            const linked = await replaceInstallFolder(group.sourceInstallFolderPath, group.destinationPath, support.mode);
-            if (Result.isError(linked)) return fail(operationId, linked.error);
-            summary.folders += 1;
-            summary.backups += 1;
-         }
-      }
+         const appWritten = await writeBSManagerAppConfig(appConfigPath, { ...appConfig.value, 'use-symlinks': support.mode === 'symlink' });
+         if (Result.isError(appWritten)) return fail(operationId, appWritten.error);
 
-      if (signal.aborted) {
-         return fail(operationId, {
-            code: 'filesystem.operation.cancelled',
-            message: 'shared content conversion was cancelled',
-            path: plan.sharedContentPath
+         let carried = 0;
+         const summary: ConversionSummary = { folders: 0, bytes: 0, files: 0, conflicts: 0, backups: 0 };
+
+         options.operations.update(operationId, {
+            progress: { phase: 'copying', current: 0, total, percent: 0, unit: 'bytes' }
          });
-      }
 
-      options.operations.complete(operationId, summary);
+         for (const group of groups) {
+            if (signal.aborted) return cancelled(group.sourcePath);
+
+            const copied = await copyGroup(operationId, group, carried, total, signal);
+            if (Result.isError(copied)) return fail(operationId, copied.error);
+
+            carried += copied.value.bytes;
+            summary.bytes += copied.value.bytes;
+            summary.files += copied.value.files;
+            summary.conflicts += copied.value.conflicts;
+
+            for (const linkPath of group.linkPaths) {
+               if (signal.aborted) return cancelled(linkPath);
+
+               const repointed = await repointLink(linkPath, group.sourcePath, group.destinationPath, support.mode);
+               if (Result.isError(repointed)) return fail(operationId, repointed.error);
+               summary.folders += 1;
+            }
+
+            if (group.sourceInstallFolderPath) {
+               if (signal.aborted) return cancelled(group.sourceInstallFolderPath);
+
+               const linked = await replaceInstallFolder(group.sourceInstallFolderPath, group.destinationPath, support.mode);
+               if (Result.isError(linked)) return fail(operationId, linked.error);
+               summary.folders += 1;
+               summary.backups += 1;
+            }
+         }
+
+         if (signal.aborted) return cancelled(plan.sharedContentPath);
+
+         options.operations.complete(operationId, summary);
+      } finally {
+         if (state.status === 'running' && state.operation.id === operationId) state = { status: 'idle' };
+      }
    }
 
    async function copyGroup(operationId: OperationId, group: ConversionGroup, offset: number, total: number, signal: AbortSignal) {
       const prepared = await Result.tryPromise({
          try: () => mkdir(group.destinationPath, { recursive: true }),
-         catch: (cause) =>
-            createFilesystemProblem('filesystem.operation.copy-failed', 'failed to create the library folder', group.destinationPath, cause)
+         catch: (cause) => createProblem('filesystem.operation.create-failed', { path: group.destinationPath, cause })
       });
       if (Result.isError(prepared)) return Result.err<CopiedGroup, FilesystemProblem>(prepared.error);
 
       const entries = await Result.tryPromise({
          try: () => readdir(group.sourcePath),
-         catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to read the linked folder', group.sourcePath, cause)
+         catch: (cause) => createProblem('filesystem.path.inspect-failed', { path: group.sourcePath, cause })
       });
       if (Result.isError(entries)) return Result.err<CopiedGroup, FilesystemProblem>(entries.error);
 
@@ -197,8 +181,7 @@ export function createBSManagerSharedContentConverter(options: ConverterOptions)
          if (conflict) {
             const preparedConflicts = await Result.tryPromise({
                try: () => mkdir(group.conflictPath, { recursive: true }),
-               catch: (cause) =>
-                  createFilesystemProblem('filesystem.operation.copy-failed', 'failed to create the conflict folder', group.conflictPath, cause)
+               catch: (cause) => createProblem('filesystem.operation.create-failed', { path: group.conflictPath, cause })
             });
             if (Result.isError(preparedConflicts)) return Result.err<CopiedGroup, FilesystemProblem>(preparedConflicts.error);
 
@@ -213,7 +196,6 @@ export function createBSManagerSharedContentConverter(options: ConverterOptions)
             sourcePath,
             destinationPath,
             destinationRoot,
-            scope: 'content',
             signal,
             onProgress: (progress) => {
                const current = offset + bytes + (progress.current ?? 0);
@@ -239,12 +221,8 @@ export function createBSManagerSharedContentConverter(options: ConverterOptions)
       return Result.ok<CopiedGroup, FilesystemProblem>({ bytes, files, conflicts });
    }
 
-   function fail(operationId: OperationId, problem: FilesystemProblem) {
-      options.operations.fail(operationId, {
-         code: problem.code,
-         message: problem.detail ? `${problem.message}: ${problem.detail}` : problem.message,
-         details: { path: problem.path ?? null }
-      });
+   function fail(operationId: OperationId, problem: Problem & { path?: string }) {
+      options.operations.fail(operationId, problem);
    }
 
    return { start };
@@ -300,11 +278,7 @@ async function repointLink(folderPath: string, oldTargetPath: string, newTargetP
    const current = await readFolderLink(folderPath, newTargetPath);
    if (current.state === 'linked') return Result.ok<void, FilesystemProblem>(undefined);
    if (current.state !== 'foreign' || !current.linkTargetPath || !isSamePath(current.linkTargetPath, oldTargetPath)) {
-      return Result.err<void, FilesystemProblem>({
-         code: 'filesystem.path.inspect-failed',
-         message: 'the folder link changed during conversion',
-         path: folderPath
-      });
+      return Result.err<void, Problem>(createProblem('bsmanager.convert.link-changed', { path: folderPath }));
    }
 
    const removed = await removeFolderLink(folderPath);
@@ -313,18 +287,14 @@ async function repointLink(folderPath: string, oldTargetPath: string, newTargetP
    const linked = await createFolderLink(newTargetPath, folderPath, mode);
    if (Result.isOk(linked)) return linked;
 
-   const restored = await createFolderLink(oldTargetPath, folderPath, mode);
-   return Result.isError(restored) ? restored : linked;
+   await createFolderLink(oldTargetPath, folderPath, mode);
+   return linked;
 }
 
 async function replaceInstallFolder(folderPath: string, newTargetPath: string, mode: SharedLinkMode) {
    const current = await readFolderLink(folderPath, newTargetPath);
    if (current.state !== 'unlinked') {
-      return Result.err<void, FilesystemProblem>({
-         code: 'filesystem.path.inspect-failed',
-         message: 'the install folder changed during conversion',
-         path: folderPath
-      });
+      return Result.err<void, Problem>(createProblem('bsmanager.convert.folder-changed', { path: folderPath }));
    }
 
    const backupPath = await createUniquePath(backupFolderPath(folderPath));
@@ -332,16 +302,16 @@ async function replaceInstallFolder(folderPath: string, newTargetPath: string, m
 
    const moved = await Result.tryPromise({
       try: () => rename(folderPath, backupPath.value),
-      catch: (cause) => createFilesystemProblem('filesystem.operation.move-failed', 'failed to back up the install folder', folderPath, cause)
+      catch: (cause) => createProblem('filesystem.operation.move-failed', { path: folderPath, cause })
    });
    if (Result.isError(moved)) return Result.err<void, FilesystemProblem>(moved.error);
 
    const linked = await createFolderLink(newTargetPath, folderPath, mode);
    if (Result.isOk(linked)) return linked;
 
-   const restored = await Result.tryPromise({
+   await Result.tryPromise({
       try: () => rename(backupPath.value, folderPath),
-      catch: (cause) => createFilesystemProblem('filesystem.operation.move-failed', 'failed to restore the install folder', folderPath, cause)
+      catch: (cause) => createProblem('filesystem.operation.move-failed', { path: folderPath, cause })
    });
-   return Result.isError(restored) ? Result.err<void, FilesystemProblem>(restored.error) : linked;
+   return linked;
 }

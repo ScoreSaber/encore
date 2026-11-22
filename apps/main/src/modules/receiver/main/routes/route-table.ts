@@ -1,21 +1,16 @@
 import { Result } from 'better-result';
 import type { z } from 'zod';
 
-import {
-   checkProtocolVersion,
-   readBearerToken,
-   readJsonBody,
-   unauthorizedFailure,
-   writeError,
-   writeJson
-} from '@/modules/receiver/main/receiver-http';
+import { createProblem } from '@/lib/errors';
+import type { ProblemCode } from '@/lib/messages';
+import { checkProtocolVersion, readBearerToken, readJsonBody, writeError, writeJson } from '@/modules/receiver/main/receiver-http';
 import type { ReceiverRouteContext } from '@/modules/receiver/main/receiver-server';
 import { receiverOperations, type ReceiverOperationDefinition, type ReceiverRequestOperation } from '@/modules/receiver/operations';
 import { receiverProtocolVersion } from '@/modules/receiver/protocol';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-export type RouteHandler = (request: IncomingMessage, response: ServerResponse, context: ReceiverRouteContext) => Promise<void> | void;
+type RouteHandler = (request: IncomingMessage, response: ServerResponse, context: ReceiverRouteContext) => Promise<void> | void;
 
 export type Route = {
    method: 'GET' | 'POST';
@@ -30,7 +25,7 @@ export async function readReceiverRequest<Schema extends z.ZodType>(
    request: IncomingMessage,
    operation: {
       request: Schema;
-      invalidRequest: { code: string; message: string };
+      invalidRequest: ProblemCode;
    }
 ) {
    const body = await readJsonBody(request);
@@ -38,10 +33,7 @@ export async function readReceiverRequest<Schema extends z.ZodType>(
 
    const parsed = operation.request.safeParse(body.value);
    if (!parsed.success) {
-      return Result.err({
-         status: 400,
-         ...operation.invalidRequest
-      });
+      return Result.err({ status: 400, ...createProblem(operation.invalidRequest) });
    }
 
    return Result.ok(parsed.data);
@@ -110,17 +102,13 @@ export function createReceiverRequestHandler(routes: Route[]) {
          const device = await authenticateRequest(request, response, context);
          if (!device || response.destroyed || response.writableEnded) return;
 
-         context.events.attach(response, device.id, [{ type: 'target', target: context.getTarget() }]);
+         context.events.attach(response, device.id, [{ type: 'target', ...context.getTargets() }]);
          return;
       }
 
       const route = routes.find((candidate) => candidate.path === path && candidate.method === request.method);
       if (!route) {
-         return writeError(response, {
-            status: 404,
-            code: 'receiver.route.not-found',
-            message: 'Route was not found'
-         });
+         return writeError(response, { status: 404, ...createProblem('receiver.route.not-found') });
       }
 
       if (route.authenticated && !(await authenticateRequest(request, response, context))) return;
@@ -134,7 +122,7 @@ async function authenticateRequest(request: IncomingMessage, response: ServerRes
    const device = token ? await context.pairing.authenticate(token) : null;
 
    if (!device) {
-      writeError(response, unauthorizedFailure());
+      writeError(response, { status: 401, ...createProblem('receiver.auth.required') });
       return null;
    }
 

@@ -1,81 +1,39 @@
 import { useTranslations } from 'use-intl';
 
-import { ActionScopeRows, ContentActionDialog } from '@/components/content/content-action-dialog';
-
+import { InstallScopeRows } from '@/modules/installs/renderer/install-scope-rows';
 import type { TargetModelCollectionRequest } from '@/modules/models/api';
-import type { ModelActionIssue } from '@/modules/models/contract';
 import type { ModelActions } from '@/modules/models/renderer/use-model-actions';
+import { OperationFlowDialog } from '@/modules/operations/renderer/operation-flow-dialog';
 import { PreviewList } from '@/modules/operations/renderer/operation-progress';
 import { useFormatters } from '@/renderer/i18n/formatters';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<ModelActionIssue, 'models.issues'> = {
-   'already-installed': 'alreadyInstalled',
-   'inspect-failed': 'inspectFailed',
-   'install-not-found': 'installNotFound',
-   'models-missing': 'modelsMissing',
-   'no-selection': 'noSelection',
-   'no-source': 'noSource',
-   'not-found': 'notFound',
-   'source-unavailable': 'sourceUnavailable',
-   'unsupported-target': 'unsupportedTarget',
-   'unsupported-type': 'unsupportedType'
-};
 
 export function ModelActionDialog({ request, actions }: { request: TargetModelCollectionRequest; actions: ModelActions }) {
    const t = useTranslations('models.actions');
-   const issues = useTranslations('models.issues');
-   const common = useTranslations('common');
+   const issues = useTranslations('problems.models');
    const format = useFormatters();
-   const { state } = actions;
+   const { state } = actions.flow;
    const kind = state.status === 'idle' ? 'delete' : state.kind;
-   const preview = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.preview : null;
+   const deleting = (state.status === 'ready' || state.status === 'starting' || state.status === 'running') && state.kind === 'delete' ? state : null;
 
    return (
-      <ContentActionDialog
-         state={state}
-         operation={actions.operation}
-         title={kind === 'delete' && preview ? t('delete.action', { count: preview.names.length }) : t(`${kind}.title`)}
+      <OperationFlowDialog
+         flow={actions.flow}
+         title={deleting ? t('delete.action', { count: deleting.preview.names.length }) : t(`${kind}.title`)}
          description={t(`${kind}.description`)}
-         issue={
-            state.status === 'invalid' ? (
+         issue={(problem) => issues(problem.issue)}
+         preview={(ready) =>
+            ready.preview ? (
                <>
-                  <p>{issues(issueKeys[state.problem.issue])}</p>
-                  {state.problem.detail ? <p className="text-muted-foreground text-xs break-all">{state.problem.detail}</p> : null}
-               </>
-            ) : null
-         }
-         preview={
-            preview ? (
-               <>
-                  <ActionScopeRows request={request} compact />
-                  <PreviewList
-                     items={preview.names.map((name, index) => ({
-                        id: `${index}:${name}`,
-                        label: name
-                     }))}
-                  />
+                  <InstallScopeRows request={request} compact />
+                  <PreviewList items={ready.preview.names.map((name, index) => ({ id: `${index}:${name}`, label: name }))} />
                   <p className="text-muted-foreground text-xs">
-                     {t('delete.sizeValue', {
-                        size: format.bytes(preview.sizeBytes),
-                        count: preview.modelCount
-                     })}
+                     {t('delete.sizeValue', { size: format.bytes(ready.preview.sizeBytes), count: ready.preview.modelCount })}
                   </p>
                </>
             ) : null
          }
-         confirm={actions.confirm}
-         cancel={actions.cancel}
-         dismiss={actions.dismiss}
-         labels={{
-            loading: common('loading'),
-            failed: t('result.failed'),
-            preparing: common('operation.preparing'),
-            progress: (values) => common('operation.progress', values),
-            completed: t('result.completed'),
-            cancelled: t('result.cancelled'),
-            confirm: t('delete.confirm')
-         }}
+         labels={{ failed: t('result.failed'), completed: t('result.completed'), cancelled: t('result.cancelled') }}
+         confirm={{ label: t('delete.confirm'), variant: 'destructive', run: actions.confirm }}
       />
    );
 }

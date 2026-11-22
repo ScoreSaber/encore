@@ -33,7 +33,7 @@ export function ErrorPanel({
 }: {
    message: string;
    detail?: string;
-   onRetry?: () => void;
+   onRetry?: () => void | Promise<void>;
    className?: string;
    children?: React.ReactNode;
 }) {
@@ -59,12 +59,24 @@ export function ErrorPanel({
    );
 }
 
-export function WarningLine({ className, children }: { className?: string; children: React.ReactNode }) {
+export function WarningLine({
+   as: Element = 'p',
+   tone,
+   iconClassName,
+   className,
+   children
+}: {
+   as?: 'p' | 'li';
+   tone?: 'warning' | 'destructive';
+   iconClassName?: string;
+   className?: string;
+   children: React.ReactNode;
+}) {
    return (
-      <p className={cn('text-muted-foreground flex gap-2 text-xs', className)}>
-         <AlertTriangle className="size-4 shrink-0" />
+      <Element className={cn('flex gap-2 text-xs', tone === 'destructive' ? 'text-destructive' : 'text-muted-foreground', className)}>
+         <AlertTriangle className={cn('size-4 shrink-0', tone === 'warning' && 'text-status-warning', iconClassName)} />
          <span className="min-w-0 break-words">{children}</span>
-      </p>
+      </Element>
    );
 }
 

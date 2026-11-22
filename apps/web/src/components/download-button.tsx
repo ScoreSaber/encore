@@ -4,7 +4,28 @@ import { useEffect, useState } from "react";
 
 import { z } from "zod";
 
-type Platform = "Linux" | "macOS" | "Windows";
+const ASSET_SUFFIXES = {
+  Windows: "-windows-x64.exe",
+  Linux: "-linux-x86_64.AppImage",
+  "Apple silicon": "-macos-arm64.dmg",
+  "Intel Mac": "-macos-x64.dmg",
+  "Steam Frame": "-steam-frame.flatpak",
+  Quest: "-quest.apk",
+};
+
+type Platform = keyof typeof ASSET_SUFFIXES;
+
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_ENCORE_RELEASE_URL?: string;
+  }
+
+  interface Navigator {
+    userAgentData?: {
+      getHighEntropyValues(hints: ["architecture"]): Promise<{ architecture?: string }>;
+    };
+  }
+}
 
 const releaseSchema = z.object({
   assets: z.array(z.object({ name: z.string(), browser_download_url: z.string().url() })),
@@ -14,42 +35,94 @@ type Release = z.infer<typeof releaseSchema>;
 type ReleaseAsset = Release["assets"][number];
 
 const RELEASES_URL = "https://github.com/ScoreSaber/encore/releases";
-const RELEASE_API_URL = "https://api.github.com/repos/ScoreSaber/encore/releases/latest";
+const RELEASE_API_URL =
+  import.meta.env.VITE_ENCORE_RELEASE_URL ??
+  "https://api.github.com/repos/ScoreSaber/encore/releases/latest";
 const RELEASE_CACHE_KEY = "encore-latest-release";
 
-function detectPlatform(): Platform {
+async function detectPlatforms(): Promise<Platform[]> {
   const userAgent = navigator.userAgent.toLowerCase();
 
-  if (userAgent.includes("win")) return "Windows";
-  if (userAgent.includes("linux") || userAgent.includes("x11")) return "Linux";
-  return "macOS";
+  if (userAgent.includes("oculusbrowser") || userAgent.includes("quest")) return ["Quest"];
+  if (userAgent.includes("win")) return ["Windows"];
+  if (userAgent.includes("android")) return ["Linux"];
+
+  const hints = await navigator.userAgentData
+    ?.getHighEntropyValues(["architecture"])
+    .catch(() => undefined);
+  const renderer = webglRenderer();
+
+  if (!userAgent.includes("linux") && !userAgent.includes("x11")) {
+    if (hints?.architecture === "arm" || /apple m\d/i.test(renderer)) return ["Apple silicon"];
+    if (hints?.architecture === "x86" || /intel|amd|radeon|nvidia/i.test(renderer))
+      return ["Intel Mac"];
+    return ["Apple silicon", "Intel Mac"];
+  }
+
+  return userAgent.includes("aarch64") || hints?.architecture === "arm" || /adreno/i.test(renderer)
+    ? ["Steam Frame"]
+    : ["Linux"];
 }
 
-async function fetchLatestRelease(signal: AbortSignal): Promise<Release> {
-  const cached = sessionStorage.getItem(RELEASE_CACHE_KEY);
-  if (cached) return releaseSchema.parse(JSON.parse(cached));
+function webglRenderer() {
+  const gl = document.createElement("canvas").getContext("webgl");
+  const info = gl?.getExtension("WEBGL_debug_renderer_info");
+  return gl && info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : "";
+}
 
-  const response = await fetch(RELEASE_API_URL, { signal });
+let detectedPlatformsPromise: Promise<Platform[]> | null = null;
+let latestReleasePromise: Promise<Release> | null = null;
+
+function getDetectedPlatforms() {
+  detectedPlatformsPromise ??= detectPlatforms();
+  return detectedPlatformsPromise;
+}
+
+function getLatestRelease() {
+  latestReleasePromise ??= fetchLatestRelease().catch((error) => {
+    latestReleasePromise = null;
+    throw error;
+  });
+  return latestReleasePromise;
+}
+
+async function fetchLatestRelease(): Promise<Release> {
+  const cached = sessionStorage.getItem(RELEASE_CACHE_KEY);
+  if (cached) {
+    try {
+      return releaseSchema.parse(JSON.parse(cached));
+    } catch {
+      sessionStorage.removeItem(RELEASE_CACHE_KEY);
+    }
+  }
+
+  const response = await fetch(RELEASE_API_URL);
   if (!response.ok) throw new Error(`GitHub release request failed with ${response.status}`);
 
   const release = releaseSchema.parse(await response.json());
-  sessionStorage.setItem(RELEASE_CACHE_KEY, JSON.stringify(release));
+  try {
+    sessionStorage.setItem(RELEASE_CACHE_KEY, JSON.stringify(release));
+  } catch {}
 
   return release;
 }
 
 function pickAsset(assets: ReleaseAsset[], platform: Platform) {
-  const suffix =
-    platform === "Windows"
-      ? "-windows-x64.exe"
-      : platform === "Linux"
-        ? "-linux-x86_64.AppImage"
-        : "-macos-arm64.dmg";
-
-  return assets.find((asset) => asset.name.endsWith(suffix))?.browser_download_url;
+  return (
+    assets.find((asset) => asset.name.endsWith(ASSET_SUFFIXES[platform]))?.browser_download_url ??
+    RELEASES_URL
+  );
 }
 
 function PlatformIcon({ platform }: { platform: Platform }) {
+  if (platform === "Steam Frame" || platform === "Quest") {
+    return (
+      <svg className="size-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4.2a2 2 0 0 1-1.7-.9l-1.2-1.8a1 1 0 0 0-1.8 0l-1.2 1.8a2 2 0 0 1-1.7.9H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2Z" />
+      </svg>
+    );
+  }
+
   if (platform === "Windows") {
     return (
       <svg className="size-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
@@ -73,34 +146,61 @@ function PlatformIcon({ platform }: { platform: Platform }) {
   );
 }
 
+const BUTTON_CLASS_NAME =
+  "inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border [border-color:color-mix(in_srgb,var(--accent)_72%,white)] px-3.25 font-semibold text-[#06101a] no-underline [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]";
+
+type DownloadState =
+  | { status: "loading" }
+  | { status: "ready"; platforms: Platform[]; assets: ReleaseAsset[] };
+
 export function DownloadButton() {
-  const [platform, setPlatform] = useState<Platform>("macOS");
-  const [downloadUrl, setDownloadUrl] = useState(RELEASES_URL);
+  const [state, setState] = useState<DownloadState>({ status: "loading" });
 
   useEffect(() => {
-    const controller = new AbortController();
-    const detectedPlatform = detectPlatform();
-    setPlatform(detectedPlatform);
+    let active = true;
+    let latestPlatforms: Platform[] | null = null;
+    let latestAssets: ReleaseAsset[] = [];
 
-    fetchLatestRelease(controller.signal)
+    const sync = () => {
+      if (!active || !latestPlatforms) return;
+      setState({ status: "ready", platforms: latestPlatforms, assets: latestAssets });
+    };
+
+    void getDetectedPlatforms().then((platforms) => {
+      latestPlatforms = platforms;
+      sync();
+    });
+    getLatestRelease()
       .then((release) => {
-        const assetUrl = pickAsset(release.assets ?? [], detectedPlatform);
-        if (assetUrl) setDownloadUrl(assetUrl);
+        latestAssets = release.assets;
+        sync();
       })
       .catch(() => {
-        if (!controller.signal.aborted) setDownloadUrl(RELEASES_URL);
+        latestAssets = [];
+        sync();
       });
 
-    return () => controller.abort();
+    return () => {
+      active = false;
+    };
   }, []);
 
+  if (state.status === "loading") {
+    return (
+      <a className={BUTTON_CLASS_NAME} href={RELEASES_URL}>
+        Download
+      </a>
+    );
+  }
+
   return (
-    <a
-      className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border [border-color:color-mix(in_srgb,var(--accent)_72%,white)] px-3.25 font-semibold text-[#06101a] no-underline [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]"
-      href={downloadUrl}
-    >
-      <PlatformIcon platform={platform} />
-      Download for {platform}
-    </a>
+    <div className="flex flex-wrap justify-center gap-2.5">
+      {state.platforms.map((platform) => (
+        <a key={platform} className={BUTTON_CLASS_NAME} href={pickAsset(state.assets, platform)}>
+          <PlatformIcon platform={platform} />
+          Download for {platform}
+        </a>
+      ))}
+    </div>
   );
 }

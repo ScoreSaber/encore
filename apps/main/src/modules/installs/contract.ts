@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
-import type { IpcResult } from '@/ipc/core';
-import { operationErrorSchema, operationResultSchema, type OperationSnapshot } from '@/modules/operations/contract';
+import { operationErrorSchema } from '@/modules/operations/contract';
 import { storeKindSchema } from '@/modules/stores/contract';
 import type { TargetId } from '@/modules/targets/contract';
 
@@ -10,11 +9,16 @@ export const installIdSchema = z.string().min(1);
 export type InstallId = z.infer<typeof installIdSchema>;
 
 export const installSourceSchema = z.enum(['bsmanager', 'imported', 'library', 'store']);
-export const installStatusSchema = z.enum(['incomplete', 'missing', 'ready']);
+const installStatusSchema = z.enum(['incomplete', 'missing', 'ready']);
 
-export const installProblemCodeSchema = z.enum(['install.path.unreadable', 'install.registry.write-failed', 'install.version.unknown']);
+const installProblemCodeSchema = z.enum([
+   'installs.path.unreadable',
+   'installs.registry.read-failed',
+   'installs.registry.write-failed',
+   'installs.version.unknown'
+]);
 
-export const installProblemSchema = z.object({
+const installProblemSchema = z.object({
    code: installProblemCodeSchema,
    message: z.string(),
    installId: installIdSchema.optional(),
@@ -38,11 +42,7 @@ export const installSummarySchema = z.object({
 });
 
 export const installDetailSchema = installSummarySchema.extend({
-   aliases: z.array(z.string()),
-   appId: z.string().optional(),
-   libraryPath: z.string().optional(),
-   manifestPath: z.string().optional(),
-   executablePath: z.string().optional()
+   aliases: z.array(z.string())
 });
 
 export const installRegistrySnapshotSchema = z.object({
@@ -53,12 +53,19 @@ export const installRegistrySnapshotSchema = z.object({
 });
 
 export type InstallSource = z.infer<typeof installSourceSchema>;
-export type InstallProblemCode = z.infer<typeof installProblemCodeSchema>;
 export type InstallProblem = z.infer<typeof installProblemSchema>;
 export type InstallSummary = z.infer<typeof installSummarySchema>;
 export type InstallDetail = z.infer<typeof installDetailSchema>;
 export type InstallRegistrySnapshot = z.infer<typeof installRegistrySnapshotSchema>;
-export type TargetInstallRegistrySnapshot = { targetId: TargetId } & InstallRegistrySnapshot;
+
+export function createEmptyInstallRegistrySnapshot(installRoot: string): InstallRegistrySnapshot {
+   return {
+      installRoot,
+      scannedAt: new Date().toISOString(),
+      installs: [],
+      problems: []
+   };
+}
 
 export const installNameSchema = z.string().trim().min(1).max(60);
 export const installColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
@@ -92,17 +99,18 @@ export const installActionRequestSchema = z.object({
 export type InstallActionRequest = { targetId: TargetId } & z.infer<typeof installActionRequestSchema>;
 export type InstallDetailRequest = InstallActionRequest;
 
-export const installActionIssueSchema = z.enum([
+const installActionIssueSchema = z.enum([
    'inspect-failed',
    'invalid-color',
    'invalid-name',
+   'holds-shared-library',
    'not-found',
    'store-detected',
    'store-owned',
    'unsupported-target'
 ]);
 
-export const installActionProblemSchema = z.object({
+const installActionProblemSchema = z.object({
    status: z.literal('invalid'),
    installId: installIdSchema,
    issue: installActionIssueSchema,
@@ -138,7 +146,7 @@ export const installDetailResultSchema = z.union([
    z.object({ ok: z.literal(false), error: operationErrorSchema })
 ]);
 
-export const installForgetOutcomeSchema = z.object({
+const installForgetOutcomeSchema = z.object({
    installId: installIdSchema,
    name: z.string(),
    path: z.string()
@@ -149,8 +157,6 @@ export const installForgetResultSchema = z.union([
    z.object({ ok: z.literal(false), error: operationErrorSchema })
 ]);
 
-export const installOperationResultSchema = operationResultSchema;
-
 export const installRegistryResultSchema = z.union([
    z.object({ ok: z.literal(true), value: installRegistrySnapshotSchema }),
    z.object({ ok: z.literal(false), error: operationErrorSchema })
@@ -160,23 +166,8 @@ export type InstallActionIssue = z.infer<typeof installActionIssueSchema>;
 export type InstallActionProblem = z.infer<typeof installActionProblemSchema>;
 export type InstallDeletePreview = z.infer<typeof installDeletePreviewSchema>;
 export type InstallForgetPreview = z.infer<typeof installForgetPreviewSchema>;
-export type InstallForgetOutcome = z.infer<typeof installForgetOutcomeSchema>;
-export type InstallForgetResult = IpcResult<InstallForgetOutcome>;
-export type InstallUpdateResult = IpcResult<InstallDetail>;
-export type InstallRegistryResult = IpcResult<InstallRegistrySnapshot>;
-export type InstallOperationResult = IpcResult<OperationSnapshot>;
 
 export type InstallUpdateRequest = { targetId: TargetId } & z.infer<typeof installUpdateRequestSchema>;
-
-export type InstallOpenFolderResult = { status: 'opened' } | { status: 'unsupported' } | { status: 'failed'; message: string };
-
-export type InstallLocationChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; path: string };
-
-export function invalidInstallAction(request: { installId: InstallId }, issue: InstallActionIssue, detail?: string): InstallActionProblem {
-   const problem: InstallActionProblem = { status: 'invalid', installId: request.installId, issue };
-   if (detail) problem.detail = detail;
-   return problem;
-}
 
 export type InstallRootIssue = 'empty' | 'inspect-failed' | 'not-a-directory' | 'not-absolute' | 'not-writable' | 'parent-missing' | 'unchanged';
 
@@ -195,38 +186,28 @@ export type InstallRootChoice =
         selected: InstallRootValidation;
      };
 
-export type InstallFolderIssue =
-   | 'inspect-failed'
-   | 'missing-executable'
-   | 'missing-game-data'
-   | 'not-a-directory'
-   | 'not-absolute'
-   | 'not-found'
-   | 'unknown-version';
+const installFolderIssueSchema = z.enum([
+   'inspect-failed',
+   'missing-executable',
+   'missing-game-data',
+   'not-a-directory',
+   'not-absolute',
+   'not-found',
+   'unknown-version'
+]);
 
-export type InstallImportIssue = 'already-registered' | InstallFolderIssue;
+export const installImportSourceSchema = z.object({ sourcePath: z.string().min(1) });
 
-export type InstallImportPreview =
-   | {
-        status: 'invalid';
-        targetId: TargetId;
-        sourcePath: string;
-        issue: InstallImportIssue;
-        detail?: string;
-     }
-   | {
-        status: 'ok';
-        targetId: TargetId;
-        sourcePath: string;
-        version: string;
-        source: InstallSource;
-     };
+export const installImportPreviewSchema = z.discriminatedUnion('status', [
+   z.object({
+      status: z.literal('invalid'),
+      sourcePath: z.string(),
+      issue: z.union([z.literal('already-registered'), installFolderIssueSchema]),
+      detail: z.string().optional()
+   }),
+   z.object({ status: z.literal('ok'), sourcePath: z.string(), version: z.string(), source: installSourceSchema })
+]);
 
-export type InstallImportChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; preview: InstallImportPreview };
-
-export type InstallImportRequest = {
-   targetId: TargetId;
-   sourcePath: string;
-};
-
-export type InstallImportResult = IpcResult<InstallDetail>;
+export type InstallFolderIssue = z.infer<typeof installFolderIssueSchema>;
+export type InstallImportPreview = z.infer<typeof installImportPreviewSchema>;
+export type InstallImportIssue = Extract<InstallImportPreview, { status: 'invalid' }>['issue'];

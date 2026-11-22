@@ -1,10 +1,17 @@
-import { Result, type Result as BetterResult } from 'better-result';
+import { Result } from 'better-result';
 
-import { readSteamClientState, type SteamClientState } from '@/modules/downloads/main/steam-client';
+import { createProblem, type Problem } from '@/lib/errors';
+import { isSteamFrame } from '@/lib/platform/steam-frame';
 import type { LaunchEnvironment, ProtonValidation } from '@/modules/launch/contract';
-import { readOculusClientState, type OculusClientState } from '@/modules/launch/main/oculus-client';
-import { ensureProtonCompatData, readLinuxLaunchHost, validateProtonFolder, type LinuxLaunchHost } from '@/modules/launch/main/proton';
-import type { OperationError } from '@/modules/operations/contract';
+import {
+   ensureProtonCompatData,
+   findInstalledProton,
+   readLinuxLaunchHost,
+   validateProtonFolder,
+   type LinuxLaunchHost
+} from '@/modules/launch/main/proton';
+import { readOculusClientState, type OculusClientState } from '@/modules/stores/main/oculus-client';
+import { readSteamClientState, type SteamClientState } from '@/modules/stores/main/steam-client';
 
 import { spawn } from 'node:child_process';
 import { dirname } from 'node:path';
@@ -17,100 +24,79 @@ export type LaunchCommand = {
    runAsAdmin: boolean;
 };
 
-export type SpawnedProcess = { pid: number | null };
-export type SpawnedGameProcess = SpawnedProcess & { exited: Promise<void> };
+type SpawnedProcess = { pid: number | null };
+export type RunningProcess = SpawnedProcess & { exited: Promise<void>; stop: () => void };
 
-export type WatchdogCommand = {
+type WatchdogCommand = {
    executablePath: string;
    args: readonly string[];
    workingDirectory: string;
 };
 
-export type PrepareLaunchWatchdog = () => Promise<BetterResult<WatchdogCommand, OperationError>>;
+export type PrepareLaunchWatchdog = () => Promise<Result<WatchdogCommand, Problem>>;
 
 export type LaunchRuntime = {
    platform: NodeJS.Platform;
+   steamFrame: boolean;
    readSteamClient: () => Promise<SteamClientState>;
    readOculusClient: () => Promise<OculusClientState>;
    readLinuxHost: () => Promise<LinuxLaunchHost>;
    validateProtonFolder: (path: string) => Promise<ProtonValidation>;
-   prepareProtonCompatData: (compatDataPath: string) => Promise<BetterResult<void, OperationError>>;
-   startSteamClient: () => Promise<BetterResult<SpawnedProcess, OperationError>>;
-   startOculusClient: () => Promise<BetterResult<SpawnedProcess, OperationError>>;
-   spawn: (command: LaunchCommand) => Promise<BetterResult<SpawnedGameProcess, OperationError>>;
+   findProton: (steamClientPath: string) => Promise<string | null>;
+   prepareProtonCompatData: (compatDataPath: string) => Promise<Result<void, Problem>>;
+   startSteamClient: () => Promise<Result<SpawnedProcess, Problem>>;
+   startOculusClient: () => Promise<Result<SpawnedProcess, Problem>>;
+   spawn: (command: LaunchCommand) => Promise<Result<RunningProcess, Problem>>;
    prepareWatchdog: PrepareLaunchWatchdog;
-   spawnWatchdog: (command: WatchdogCommand) => Promise<BetterResult<SpawnedProcess, OperationError>>;
+   spawnWatchdog: (command: WatchdogCommand) => Promise<Result<RunningProcess, Problem>>;
 };
 
-export function createLaunchRuntime(options: { prepareWatchdog?: PrepareLaunchWatchdog } = {}): LaunchRuntime {
+export function createLaunchRuntime({ prepareWatchdog }: { prepareWatchdog: PrepareLaunchWatchdog }): LaunchRuntime {
    return {
       platform: process.platform,
+      steamFrame: isSteamFrame(),
       readSteamClient: readSteamClientState,
       readOculusClient: readOculusClientState,
       readLinuxHost: readLinuxLaunchHost,
       validateProtonFolder,
+      findProton: (steamClientPath) => findInstalledProton(steamClientPath, process.arch),
       prepareProtonCompatData: ensureProtonCompatData,
       startSteamClient: async () => {
          const steam = await readSteamClientState();
          if (steam.status === 'missing' || steam.status === 'unsupported-platform') {
-            return Result.err({ code: 'launch.steam.missing', message: 'the Steam client is not installed on this machine' });
+            return Result.err(createProblem('launch.steam.missing'));
          }
 
-         return spawnDetached(
-            steam.executablePath,
-            [],
-            dirname(steam.executablePath),
-            {},
-            {
-               code: 'launch.process.spawn-failed',
-               message: 'failed to start Beat Saber'
-            }
-         );
+         return spawnDetached(steam.executablePath, [], dirname(steam.executablePath), {}, 'launch.process.spawn-failed');
       },
       startOculusClient: async () => {
          const oculus = await readOculusClientState();
          if (oculus.status === 'missing') {
-            return Result.err({ code: 'launch.oculus.missing', message: 'the Oculus client is not installed on this machine' });
+            return Result.err(createProblem('launch.oculus.missing'));
          }
 
-         return spawnDetached(
-            oculus.executablePath,
-            [],
-            dirname(oculus.executablePath),
-            {},
-            {
-               code: 'launch.process.spawn-failed',
-               message: 'failed to start Beat Saber'
-            }
-         );
+         return spawnDetached(oculus.executablePath, [], dirname(oculus.executablePath), {}, 'launch.process.spawn-failed');
       },
-      spawn: (command) =>
-         command.runAsAdmin
-            ? spawnElevated(command)
-            : spawnDetached(command.executablePath, command.args, command.workingDirectory, command.env, {
-                 code: 'launch.process.spawn-failed',
-                 message: 'failed to start Beat Saber'
-              }),
-      prepareWatchdog:
-         options.prepareWatchdog ??
-         (() =>
-            Promise.resolve(Result.err({ code: 'launch.watchdog.unavailable', message: "Encore's resource saver is not available in this build" }))),
-      spawnWatchdog: (command) =>
-         spawnDetached(
-            command.executablePath,
-            command.args,
-            command.workingDirectory,
-            {},
-            {
-               code: 'launch.watchdog.spawn-failed',
-               message: "Beat Saber started but Encore's resource saver could not start"
-            }
-         )
+      spawn: (command) => {
+         if (!command.runAsAdmin) {
+            return spawnDetached(command.executablePath, command.args, command.workingDirectory, command.env, 'launch.process.spawn-failed');
+         }
+         const elevated = elevatedLaunchCommand(command);
+         return spawnDetached(elevated.executablePath, elevated.args, command.workingDirectory, elevated.env, 'launch.process.spawn-failed');
+      },
+      prepareWatchdog,
+      spawnWatchdog: (command) => spawnDetached(command.executablePath, command.args, command.workingDirectory, {}, 'launch.watchdog.spawn-failed')
    };
 }
 
-function spawnDetached(executablePath: string, args: readonly string[], workingDirectory: string, env: LaunchEnvironment, error: OperationError) {
-   return new Promise<BetterResult<SpawnedGameProcess, OperationError>>((resolve) => {
+function spawnDetached(
+   executablePath: string,
+   args: readonly string[],
+   workingDirectory: string,
+   env: LaunchEnvironment,
+   code: 'launch.process.spawn-failed' | 'launch.watchdog.spawn-failed'
+) {
+   return new Promise<Result<RunningProcess, Problem>>((resolve) => {
       const child = spawn(executablePath, [...args], {
          cwd: workingDirectory,
          env: { ...process.env, ...env },
@@ -121,42 +107,35 @@ function spawnDetached(executablePath: string, args: readonly string[], workingD
 
       child.once('spawn', () => {
          child.unref();
-         resolve(Result.ok({ pid: child.pid ?? null, exited }));
+         resolve(Result.ok({ pid: child.pid ?? null, exited, stop: () => child.kill() }));
       });
 
-      child.once('error', (cause: Error) => {
-         resolve(Result.err({ ...error, message: `${error.message}: ${cause.message}` }));
+      child.once('error', (cause) => {
+         resolve(Result.err(createProblem(code, { cause })));
       });
    });
 }
 
-function spawnElevated(command: LaunchCommand) {
-   const script = [
-      ...Object.entries(command.env).map(([name, value]) => `$env:${name} = ${quoteForPowerShell(value)}`),
-      [
-         'Start-Process',
-         `-FilePath ${quoteForPowerShell(command.executablePath)}`,
-         `-WorkingDirectory ${quoteForPowerShell(command.workingDirectory)}`,
-         command.args.length > 0 ? `-ArgumentList ${command.args.map((arg) => quoteForPowerShell(arg)).join(',')}` : '',
-         '-Verb RunAs',
-         '-Wait'
-      ]
-         .filter(Boolean)
-         .join(' ')
-   ].join('; ');
+const elevatedLaunchScript = [
+   "$launch = @{ FilePath = $env:ENCORE_LAUNCH_FILE; WorkingDirectory = $env:ENCORE_LAUNCH_DIRECTORY; Verb = 'RunAs'; Wait = $true }",
+   'if ($env:ENCORE_LAUNCH_ARGS) { $launch.ArgumentList = $env:ENCORE_LAUNCH_ARGS }',
+   'Start-Process @launch'
+].join('; ');
 
-   return spawnDetached(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', script],
-      command.workingDirectory,
-      {},
-      {
-         code: 'launch.process.spawn-failed',
-         message: 'failed to start Beat Saber'
+export function elevatedLaunchCommand(command: LaunchCommand) {
+   return {
+      executablePath: 'powershell.exe',
+      args: ['-NoProfile', '-NonInteractive', '-Command', elevatedLaunchScript],
+      env: {
+         ...command.env,
+         ENCORE_LAUNCH_FILE: command.executablePath,
+         ENCORE_LAUNCH_DIRECTORY: command.workingDirectory,
+         ENCORE_LAUNCH_ARGS: command.args.map(quoteWindowsArg).join(' ')
       }
-   );
+   };
 }
 
-export function quoteForPowerShell(value: string) {
-   return `'${value.replaceAll("'", "''")}'`;
+function quoteWindowsArg(arg: string) {
+   if (arg && !/[\s"]/.test(arg)) return arg;
+   return `"${arg.replaceAll(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
 }

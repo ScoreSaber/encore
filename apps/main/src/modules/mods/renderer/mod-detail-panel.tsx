@@ -43,14 +43,7 @@ export function ModDetailPanel({ mods, mod, external }: { mods: InstallMods; mod
    }
 
    if (!mod) {
-      if (external) {
-         return (
-            <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center text-sm">
-               <div className="text-foreground font-medium">{t('detail.external.title', { name: external.name })}</div>
-               <p>{t('detail.external.description')}</p>
-            </div>
-         );
-      }
+      if (external) return <ExternalModDetail mods={mods} file={external} />;
 
       return (
          <div className="text-muted-foreground flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center text-sm">
@@ -65,7 +58,7 @@ export function ModDetailPanel({ mods, mod, external }: { mods: InstallMods; mod
 
 function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
    const t = useTranslations('mods');
-   const busy = mods.state.status !== 'idle';
+   const busy = mods.flow.state.status !== 'idle';
    const sourceLink = mod.links.find((link) => link.kind === 'source');
    const githubSource = sourceLink ? githubRepositoryFromUrl(sourceLink.url) : null;
    const funding = useQuery({
@@ -136,13 +129,7 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
 
                return (
                   <CopyPathContextMenu key={link.kind} pathType="url" value={link.url}>
-                     <Button
-                        type="button"
-                        variant="link"
-                        size="sm"
-                        className="text-muted-foreground cursor-pointer"
-                        onClick={() => mods.openLink(link.url)}
-                     >
+                     <Button type="button" variant="link-muted" size="sm" onClick={() => mods.openLink(link.url)}>
                         {githubLink ? <GitHubLogo /> : null}
                         {t(`detail.links.${link.kind}`)}
                         {githubLink ? null : <ExternalLink className="size-3" />}
@@ -167,6 +154,63 @@ function ModDetail({ mods, mod }: { mods: InstallMods; mod: ModSummary }) {
                <MarkdownContent content={mod.description} onLinkClick={mods.openLink} />
             </Suspense>
          )}
+      </div>
+   );
+}
+
+function ExternalModDetail({ mods, file }: { mods: InstallMods; file: ExternalMod }) {
+   const t = useTranslations('mods');
+   const busy = mods.flow.state.status !== 'idle';
+   const details = file.details;
+   const metadata = [
+      details?.author ? t('detail.metadata.author', { author: details.author }) : null,
+      details?.version ? t('detail.version', { version: details.version }) : null,
+      details?.gameVersion ? t('detail.external.gameVersion', { version: details.gameVersion }) : null
+   ]
+      .filter((item) => item !== null)
+      .join(' · ');
+
+   return (
+      <div className="flex min-w-0 flex-col gap-4 p-5 pr-7">
+         <div className="min-w-0">
+            <h3 className="truncate text-base font-medium">{file.name}</h3>
+            {metadata ? <p className="text-muted-foreground mt-0.5 truncate text-xs">{metadata}</p> : null}
+         </div>
+
+         <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void mods.previewUninstall('selection', [], [file.id])}>
+               <Trash2 data-icon="inline-start" />
+               {t('detail.uninstall')}
+            </Button>
+            {details?.links.map((link) => (
+               <CopyPathContextMenu key={link.kind} pathType="url" value={link.url}>
+                  <Button type="button" variant="link-muted" size="sm" onClick={() => mods.openLink(link.url)}>
+                     {link.kind === 'source' && githubRepositoryFromUrl(link.url) !== null ? <GitHubLogo /> : null}
+                     {t(`detail.links.${link.kind}`)}
+                     <ExternalLink className="size-3" />
+                  </Button>
+               </CopyPathContextMenu>
+            ))}
+         </div>
+
+         <Separator />
+
+         {details?.description ? (
+            <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+               <MarkdownContent content={details.description} onLinkClick={mods.openLink} />
+            </Suspense>
+         ) : (
+            <p className="text-muted-foreground text-sm">{t('detail.noDescription')}</p>
+         )}
+
+         <div className="text-muted-foreground flex flex-col gap-1 text-xs">
+            <p>{t('detail.external.description', { platform: mods.platform })}</p>
+            <CopyPathContextMenu pathType="path" value={file.path}>
+               <p className="font-mono break-all" data-selectable="true">
+                  {file.path}
+               </p>
+            </CopyPathContextMenu>
+         </div>
       </div>
    );
 }

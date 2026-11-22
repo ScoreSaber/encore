@@ -7,19 +7,19 @@ const metaBinaryHost = 'https://securecdn.oculus.com';
 // compressed input and inflated output are independently bounded to reject archive bombs
 export const maxManifestEntryBytes = 16 * 1024 * 1024;
 export const maxSegmentBytes = 256 * 1024 * 1024;
-export const maxManifestFiles = 20_000;
-export const maxManifestSegments = 200_000;
-export const maxManifestTotalBytes = 512 * 1024 * 1024 * 1024;
+const maxManifestFiles = 20_000;
+const maxManifestSegments = 200_000;
+const maxManifestTotalBytes = 512 * 1024 * 1024 * 1024;
 
-export const oculusManifestSegmentSchema = z.tuple([z.int().nonnegative(), z.string().min(1), z.int().positive().max(maxSegmentBytes)]);
+const oculusManifestSegmentSchema = z.tuple([z.int().nonnegative(), z.string().min(1), z.int().positive().max(maxSegmentBytes)]);
 
-export const oculusManifestFileSchema = z.object({
+const oculusManifestFileSchema = z.object({
    sha256: z.string().min(1),
    size: z.int().nonnegative(),
    segments: z.array(oculusManifestSegmentSchema).max(maxManifestSegments)
 });
 
-export const oculusManifestSchema = z
+const oculusManifestSchema = z
    .object({
       files: z.record(z.string().min(1), oculusManifestFileSchema)
    })
@@ -46,7 +46,7 @@ export const oculusManifestSchema = z
       }
    });
 
-export type OculusManifest = z.infer<typeof oculusManifestSchema>;
+type OculusManifest = z.infer<typeof oculusManifestSchema>;
 export type OculusManifestFile = z.infer<typeof oculusManifestFileSchema>;
 
 export function metaManifestUrl(binaryId: string, accessToken: string) {
@@ -58,7 +58,7 @@ export function metaSegmentUrl(binaryId: string, accessToken: string, segmentSha
    return `${metaBinaryHost}/binaries/segment/?access_token=${encodeURIComponent(accessToken)}&binary_id=${encodeURIComponent(binaryId)}&segment_sha256=${encodeURIComponent(segmentSha256)}`;
 }
 
-export function readZipEntry(archive: Buffer, entryName: string, maxBytes = maxManifestEntryBytes): Result<Buffer, string> {
+function readZipEntry(archive: Buffer, entryName: string): Result<Buffer, string> {
    let oversized = false;
    const unpacked = Result.try({
       try: () =>
@@ -66,7 +66,7 @@ export function readZipEntry(archive: Buffer, entryName: string, maxBytes = maxM
             filter: (file) => {
                if (file.name !== entryName) return false;
 
-               oversized = file.originalSize > maxBytes;
+               oversized = file.originalSize > maxManifestEntryBytes;
                return !oversized;
             }
          }),
@@ -77,7 +77,7 @@ export function readZipEntry(archive: Buffer, entryName: string, maxBytes = maxM
 
    const entry = unpacked.value[entryName];
    if (!entry) return Result.err<Buffer, string>(`the archive has no "${entryName}" entry`);
-   if (entry.byteLength > maxBytes) return Result.err<Buffer, string>(`the "${entryName}" entry is larger than the manifest cap`);
+   if (entry.byteLength > maxManifestEntryBytes) return Result.err<Buffer, string>(`the "${entryName}" entry is larger than the manifest cap`);
 
    return Result.ok<Buffer, string>(Buffer.from(entry));
 }

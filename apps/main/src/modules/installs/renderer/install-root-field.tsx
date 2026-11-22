@@ -1,12 +1,14 @@
 import { useState } from 'react';
 
+import { Result } from 'better-result';
 import { FolderOpen } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
 
 import type { InstallRootIssue, InstallRootValidation } from '@/modules/installs/contract';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { SettingsRow } from '@/modules/settings/renderer/settings-layout';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
 
 type PendingRootChange = {
    currentRoot: string;
@@ -14,55 +16,85 @@ type PendingRootChange = {
    selected: Extract<InstallRootValidation, { status: 'ok' }>;
 };
 
-export function InstallRootField({ disabled, onChange }: { disabled: boolean; onChange?: () => void }) {
+type RootFieldState =
+   | { status: 'idle'; issue: InstallRootIssue | null }
+   | { status: 'picking' }
+   | { status: 'confirming'; pending: PendingRootChange; error: string | null }
+   | { status: 'saving'; pending: PendingRootChange };
+
+export function InstallRootField({ disabled, className, onChange }: { disabled: boolean; className?: string; onChange?: () => void }) {
    const t = useTranslations('installs.library');
    const common = useTranslations('common');
    const settings = useSettings();
-   const [pending, setPending] = useState<PendingRootChange | null>(null);
-   const [issue, setIssue] = useState<InstallRootIssue | null>(null);
+   const [state, setState] = useState<RootFieldState>({ status: 'idle', issue: null });
    const installRoot = settings.snapshot?.library.installRoot;
 
    if (!installRoot) return null;
 
-   async function pickRoot() {
-      setIssue(null);
-      const choice = await window.encore.settings.chooseInstallRoot();
-      if (choice.status === 'cancelled') return;
+   const busy = disabled || settings.saving || state.status === 'picking' || state.status === 'saving';
+   const issue = state.status === 'idle' ? state.issue : null;
+   const pending = state.status === 'confirming' || state.status === 'saving' ? state.pending : null;
 
-      if (choice.selected.status === 'invalid') {
-         setIssue(choice.selected.issue);
+   async function pickRoot() {
+      if (busy) return;
+
+      setState({ status: 'picking' });
+      const choice = await Result.tryPromise(() => window.encore.settings.chooseInstallRoot());
+      if (Result.isError(choice) || choice.value.status === 'cancelled') {
+         setState({ status: 'idle', issue: null });
          return;
       }
 
-      setPending({ currentRoot: choice.currentRoot, currentInstallCount: choice.currentInstallCount, selected: choice.selected });
+      if (choice.value.selected.status === 'invalid') {
+         setState({ status: 'idle', issue: choice.value.selected.issue });
+         return;
+      }
+
+      setState({
+         status: 'confirming',
+         pending: {
+            currentRoot: choice.value.currentRoot,
+            currentInstallCount: choice.value.currentInstallCount,
+            selected: choice.value.selected
+         },
+         error: null
+      });
    }
 
    async function confirmRoot() {
-      if (!pending) return;
+      if (state.status !== 'confirming' || busy) return;
 
-      const saved = await settings.updateLibrary({ installRoot: pending.selected.path });
-      if (!saved.ok) return;
+      const selected = state.pending;
+      setState({ status: 'saving', pending: selected });
+      const saved = await settings.updateLibrary({ installRoot: selected.selected.path });
+      if (!saved.ok) {
+         setState({ status: 'confirming', pending: selected, error: saved.error.message });
+         return;
+      }
 
-      setPending(null);
+      setState({ status: 'idle', issue: null });
       onChange?.();
    }
 
    return (
-      <div className="flex flex-col gap-2 py-2">
-         <div className="flex min-w-0 items-start justify-between gap-3">
-            <div className="min-w-0">
-               <div className="font-medium">{t('label')}</div>
-               <div className="text-muted-foreground text-xs">{t('description')}</div>
-               <div className="text-muted-foreground mt-1 text-xs break-all">{issue ? t(`rootIssue.${issue}`) : installRoot}</div>
-            </div>
-            <Button type="button" variant="outline" size="sm" className="shrink-0" disabled={disabled} onClick={() => void pickRoot()}>
+      <SettingsRow
+         className={className}
+         title={t('label')}
+         description={
+            <>
+               {t('description')}
+               <span className="mt-1 block break-all">{issue ? t(`rootIssue.${issue}`) : installRoot}</span>
+            </>
+         }
+         control={
+            <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void pickRoot()}>
                <FolderOpen data-icon="inline-start" />
                {t('change')}
             </Button>
-         </div>
-
+         }
+      >
          {pending ? (
-            <div className="flex flex-col gap-3 rounded-md border px-3 py-2 text-xs">
+            <div className="mt-3 flex flex-col gap-3 rounded-md border px-3 py-2 text-xs">
                <p className="text-muted-foreground">{t('rootChange.description')}</p>
                <div className="min-w-0">
                   <div className="font-medium">{t('rootChange.currentRoot')}</div>
@@ -74,16 +106,17 @@ export function InstallRootField({ disabled, onChange }: { disabled: boolean; on
                   <div className="text-muted-foreground break-all">{pending.selected.path}</div>
                   <div className="text-muted-foreground">{t('rootChange.found', { count: pending.selected.installCount })}</div>
                </div>
+               {state.status === 'confirming' && state.error ? <p className="text-destructive break-all">{state.error}</p> : null}
                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => setPending(null)}>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setState({ status: 'idle', issue: null })}>
                      {common('cancel')}
                   </Button>
-                  <Button type="button" size="sm" disabled={disabled} onClick={() => void confirmRoot()}>
+                  <Button type="button" size="sm" disabled={busy} onClick={() => void confirmRoot()}>
                      {t('rootChange.confirm')}
                   </Button>
                </div>
             </div>
          ) : null}
-      </div>
+      </SettingsRow>
    );
 }

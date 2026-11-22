@@ -1,59 +1,42 @@
 import { useTranslations } from 'use-intl';
 
-import { ContentLinkDialog } from '@/components/content/content-link-dialog';
-
-import type { MapLinkIssue } from '@/modules/maps/contract';
-import { useMapLink } from '@/modules/maps/renderer/use-map-link';
+import { createProblem } from '@/lib/errors';
+import type { BeatSaverMapSummary, MapLinkEvent } from '@/modules/maps/contract';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
+import { ContentLinkDialog } from '@/modules/shared-content/renderer/content-link-dialog';
+import { useContentLink, type ContentLinkPreset } from '@/modules/shared-content/renderer/use-content-link';
 
-const issueKeys: MessageKeyMap<MapLinkIssue, 'maps.link.issues'> = {
-   'invalid-key': 'invalidKey',
-   'unsupported-link': 'unsupportedLink'
+const mapLink: ContentLinkPreset<MapLinkEvent, { key: string; map: BeatSaverMapSummary | null }, Extract<MapLinkEvent, { status: 'rejected' }>> = {
+   client: window.encore.maps,
+   capability: 'manage-maps',
+   read: (event) => (event.status === 'rejected' ? { problem: event } : { source: { key: event.key, map: event.map } }),
+   sharedFolderIds: () => ['maps'],
+   start: (source, targetId, installId) => window.encore.maps.startDownload({ targetId, installId, source: { kind: 'beatsaver', key: source.key } }),
+   failures: {
+      start: createProblem('maps.start-failed'),
+      pending: createProblem('maps.link-intake-failed')
+   }
 };
 
 export function MapLinkDialog() {
    const t = useTranslations('maps.link');
    const actions = useTranslations('maps.actions');
-   const common = useTranslations('common');
-   const link = useMapLink();
-   const { state } = link;
-   const source = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.source : null;
+   const link = useContentLink(mapLink, t('success'));
 
    return (
       <ContentLinkDialog
-         state={state}
-         operation={link.operation}
-         destinations={link.destinations}
-         selectedDestinationKey={link.selectedDestinationKey}
-         selectDestination={link.selectDestination}
-         confirm={link.confirm}
-         cancel={link.cancel}
-         dismiss={link.dismiss}
-         hidden={link.dialogHidden}
-         remember={{ checked: link.remember, label: common('rememberDownload'), onCheckedChange: link.setRemember }}
-         issue={
-            state.status === 'rejected' ? (
-               <>
-                  <p>{t(`issues.${issueKeys[state.issue]}`)}</p>
-                  {state.detail ? <p className="text-muted-foreground text-xs break-all">{state.detail}</p> : null}
-               </>
-            ) : null
-         }
-         preview={
-            source ? (
-               <>
-                  <PreviewRow label={t('map')} value={source.map ? source.map.title : t('unknownMap', { key: source.key })} />
-                  {source.map ? <PreviewRow label={t('mapper')} value={source.map.mapper} /> : null}
-               </>
-            ) : null
-         }
+         link={link}
+         issue={(problem) => t(`issues.${problem.issue}`)}
+         preview={(source) => (
+            <>
+               <PreviewRow label={t('map')} value={source.map ? source.map.title : t('unknownMap', { key: source.key })} />
+               {source.map ? <PreviewRow label={t('mapper')} value={source.map.mapper} /> : null}
+            </>
+         )}
          labels={{
             title: t('title'),
             description: t('description'),
             failed: actions('result.failed'),
-            preparing: common('operation.preparing'),
-            progress: (values) => common('operation.progress', values),
             completed: actions('result.completed'),
             cancelled: actions('result.cancelled'),
             noInstalls: t('noInstalls'),

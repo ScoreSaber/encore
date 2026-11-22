@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Encore Installer
+Comment=Installs Encore on this Steam Frame
+Exec=encore-installer
+Icon=com.scoresaber.encore.Installer
+Terminal=false
+Categories=Utility;

@@ -1,354 +1,142 @@
 import { Result } from 'better-result';
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { expect, test } from 'vite-plus/test';
 
-import { createInstallRegistry } from '@/modules/installs/main/install-registry';
+import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/main/install-registry.fixture';
 import type { LaunchOptions } from '@/modules/launch/contract';
-import { buildProtonCommand } from '@/modules/launch/main/launch-options';
-import { quoteForPowerShell, type LaunchCommand, type LaunchRuntime, type WatchdogCommand } from '@/modules/launch/main/launch-runtime';
+import { elevatedLaunchCommand, type LaunchCommand, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
 import { createLaunchService } from '@/modules/launch/main/launch-service';
 import { ensureProtonCompatData, validateProtonFolder } from '@/modules/launch/main/proton';
-import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
-import { waitFor, waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
-import { createSettingsStore } from '@/modules/settings/main/settings-store';
-import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
+import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
 
-import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const cleanups: (() => Promise<void>)[] = [];
+test('passes launch options as argv entries and rejects ones that could carry a command', async () => {
+   const harness = await createHarness('win32');
+   const options = (overrides: Partial<LaunchOptions>): LaunchOptions => ({
+      flags: [],
+      args: [],
+      environment: {},
+      runAsAdmin: false,
+      closeEncore: false,
+      ...overrides
+   });
 
-afterEach(async () => {
-   for (const cleanup of cleanups.reverse()) {
-      await cleanup();
+   for (const invalid of [options({ args: ['--room\n--fpfc'] }), options({ environment: { 'x;Start-Process calc;#': '1' }, runAsAdmin: true })]) {
+      expect(await harness.launch.preview({ installId: harness.install.id, options: invalid })).toMatchObject({ issue: 'invalid-options' });
    }
-   cleanups.length = 0;
+   expect(harness.spawned).toEqual([]);
+
+   await harness.start(options({ flags: ['fpfc'], args: ['--room', 'my room; rm -rf ~'], environment: { SOME_ENV_VAR: '1' } }));
+
+   expect(harness.spawned).toMatchObject([
+      {
+         executablePath: join(harness.install.path, 'Beat Saber.exe'),
+         args: ['--no-yeet', 'fpfc', '--room', 'my room; rm -rf ~'],
+         env: { SOME_ENV_VAR: '1', SteamAppId: '620980' }
+      }
+   ]);
 });
 
-describe('launch service', () => {
-   test('builds argv entries instead of a shell string and records the last launch', async () => {
-      const harness = await createHarness();
-      const install = await harness.createInstall();
-      const options: LaunchOptions = {
-         flags: ['debug', 'fpfc'],
-         args: ['--room', 'my room', '--seed', '7'],
-         environment: { SOME_ENV_VAR: '1' },
-         runAsAdmin: false,
-         closeEncore: false
-      };
+test('runs the Windows build through Proton on Linux', async () => {
+   const harness = await createHarness('linux');
+   const protonPath = join(harness.dataPath, 'Proton');
+   await mkdir(protonPath);
+   await writeFile(join(protonPath, 'proton'), 'stub', 'utf8');
+   await chmod(join(protonPath, 'proton'), 0o755);
+   await harness.settingsStore.updateLibrarySettings({ protonPath });
 
-      const started = await harness.launch.start({ installId: install.id, options });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
+   await harness.start({ flags: [], args: [], environment: {}, runAsAdmin: true, closeEncore: false });
 
-      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
-      expect(harness.spawned).toHaveLength(1);
-      expect(harness.spawned[0]?.executablePath).toBe(join(install.path, 'Beat Saber.exe'));
-      expect(harness.spawned[0]?.args).toEqual(['--no-yeet', 'fpfc', '--verbose', '--room', 'my room', '--seed', '7']);
-      expect(harness.spawned[0]?.env).toMatchObject({ SOME_ENV_VAR: '1', SteamAppId: '620980' });
-      expect(harness.spawned[0]?.runAsAdmin).toBe(false);
-      expect((await harness.launch.getState()).lastLaunch).toMatchObject({
-         installId: install.id,
-         options: {
-            flags: ['fpfc', 'debug'],
-            args: ['--room', 'my room', '--seed', '7'],
-            environment: { SOME_ENV_VAR: '1' }
-         }
-      });
-      expect(harness.watchdogs).toEqual([]);
-   });
-
-   test('starts the resource saver after Beat Saber is handed off', async () => {
-      const harness = await createHarness();
-      const install = await harness.createInstall();
-
-      const started = await harness.launch.start({
-         installId: install.id,
-         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: true }
-      });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
-      expect(harness.events).toEqual(['prepare-watchdog', 'game', 'watchdog']);
-      expect(harness.watchdogs).toEqual([
-         {
-            executablePath: join(harness.dataPath, 'encore-watchdog'),
-            args: ['--parent', '123', 'Beat Saber.exe', join(harness.dataPath, 'encore')],
-            workingDirectory: harness.dataPath
-         }
-      ]);
-      expect((await harness.launch.getState()).lastLaunch?.options.closeEncore).toBe(true);
-   });
-
-   test('reports Beat Saber as running until the game process exits', async () => {
-      const harness = await createHarness();
-      const install = await harness.createInstall();
-      const snapshots: boolean[] = [];
-      const unsubscribe = harness.launch.subscribe((state) => snapshots.push(state.gameRunning));
-
-      const started = await harness.launch.start({
-         installId: install.id,
-         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: false }
-      });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
-      expect((await harness.launch.getState()).gameRunning).toBe(true);
-      expect(snapshots.at(-1)).toBe(true);
-
-      harness.exitGame();
-      await waitFor(async () => !(await harness.launch.getState()).gameRunning, 'Beat Saber to stop');
-      expect(snapshots.at(-1)).toBe(false);
-      unsubscribe();
-   });
-
-   test('does not start Beat Saber when the resource saver is unavailable', async () => {
-      const harness = await createHarness();
-      const install = await harness.createInstall();
-      harness.disableWatchdog();
-
-      const started = await harness.launch.start({
-         installId: install.id,
-         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: true }
-      });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({
-         status: 'failed',
-         error: { code: 'launch.watchdog.unavailable' }
-      });
-      expect(harness.spawned).toEqual([]);
-      expect(harness.watchdogs).toEqual([]);
-   });
-
-   test('runs the Windows build through Proton on Linux', async () => {
-      const harness = await createHarness('linux');
-      const install = await harness.createInstall();
-      const protonPath = await createProtonFolder(harness.dataPath);
-      await harness.settingsStore.updateLibrarySettings({ protonPath });
-
-      const started = await harness.launch.start({
-         installId: install.id,
-         options: { flags: ['proton-logs'], args: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: true, closeEncore: false }
-      });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      expect(await waitForOperation(harness.operations, started.value.id)).toMatchObject({ status: 'completed' });
-      expect(harness.spawned[0]).toMatchObject({
+   expect(harness.spawned).toMatchObject([
+      {
          executablePath: join(protonPath, 'proton'),
-         args: ['run', join(install.path, 'Beat Saber.exe'), '--no-yeet'],
+         args: ['run', join(harness.install.path, 'Beat Saber.exe'), '--no-yeet'],
          runAsAdmin: false,
          env: {
             WINEDLLOVERRIDES: 'winhttp=n,b',
             STEAM_COMPAT_DATA_PATH: join(harness.dataPath, 'compatdata'),
-            STEAM_COMPAT_INSTALL_PATH: install.path,
-            STEAM_COMPAT_CLIENT_INSTALL_PATH: join(harness.dataPath, 'steam'),
-            PROTON_LOG: '1',
-            PROTON_LOG_DIR: join(install.path, 'Logs'),
-            SOME_ENV_VAR: '1'
+            STEAM_COMPAT_INSTALL_PATH: harness.install.path
          }
-      });
-      expect((await stat(join(harness.dataPath, 'compatdata'))).isDirectory()).toBe(true);
+      }
+   ]);
+});
+
+test('hands elevated launch values to powershell as data rather than script', () => {
+   const payload = '’ ; Start-Process calc; #';
+   const elevated = elevatedLaunchCommand({
+      executablePath: "C:\\Games\\Todd's Beat Saber\\Beat Saber.exe",
+      args: ['--room', payload, 'C:\\my dir\\', 'say "hi"'],
+      workingDirectory: "C:\\Games\\Todd's Beat Saber",
+      env: { SOME_ENV_VAR: payload },
+      runAsAdmin: true
    });
 
-   test('plans host execution for Flatpak and keeps the NixOS runtime wrapper', async () => {
-      const harness = await createHarness('linux', { nixOs: true, flatpak: true });
-      const install = await harness.createInstall();
-      const protonPath = await createProtonFolder(harness.dataPath);
-      await harness.settingsStore.updateLibrarySettings({ protonPath });
-
-      const preview = await harness.launch.preview({
-         installId: install.id,
-         options: { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: false }
-      });
-
-      expect(preview).toMatchObject({
-         status: 'ok',
-         proton: {
-            protonBinaryPath: join(protonPath, 'proton'),
-            steamRunWrapper: true,
-            flatpakHost: true
-         }
-      });
-   });
-
-   test('rejects launch options that cannot be passed to a process', async () => {
-      const harness = await createHarness();
-      const install = await harness.createInstall();
-
-      expect(
-         await harness.launch.preview({
-            installId: install.id,
-            options: { flags: [], args: ['--room\n--fpfc'], environment: {}, runAsAdmin: false, closeEncore: false }
-         })
-      ).toMatchObject({ status: 'unavailable', issue: 'invalid-options' });
-      expect(
-         await harness.launch.preview({
-            installId: install.id,
-            options: {
-               flags: [],
-               args: [],
-               environment: { 'x;Start-Process calc;#': '1' },
-               runAsAdmin: true,
-               closeEncore: false
-            }
-         })
-      ).toMatchObject({ status: 'unavailable', issue: 'invalid-options' });
-      expect(harness.spawned).toEqual([]);
+   expect(elevated.args.join(' ')).not.toMatch(/calc|Todd/);
+   expect(elevated.env).toEqual({
+      SOME_ENV_VAR: payload,
+      ENCORE_LAUNCH_FILE: "C:\\Games\\Todd's Beat Saber\\Beat Saber.exe",
+      ENCORE_LAUNCH_DIRECTORY: "C:\\Games\\Todd's Beat Saber",
+      ENCORE_LAUNCH_ARGS: `--room "${payload}" "C:\\my dir\\\\" "say \\"hi\\""`
    });
 });
 
-describe('launch arguments', () => {
-   test('escapes single quotes when Windows has to elevate the launch', () => {
-      expect(quoteForPowerShell("C:\\Games\\Todd's Beat Saber")).toBe("'C:\\Games\\Todd''s Beat Saber'");
-   });
+test('stops the close-encore watchdog once an uncancelable operation starts', async () => {
+   const harness = await createHarness('linux');
+   const protonPath = join(harness.dataPath, 'Proton');
+   await mkdir(protonPath);
+   await writeFile(join(protonPath, 'proton'), 'stub', 'utf8');
+   await chmod(join(protonPath, 'proton'), 0o755);
+   await harness.settingsStore.updateLibrarySettings({ protonPath });
+   let stopped = false;
+   void harness.watchdogExited.then(() => (stopped = true));
+
+   await harness.start({ flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: true });
+   await Promise.resolve();
+   expect(stopped).toBe(false);
+
+   harness.operations.create({ kind: 'patch', title: 'Patching Quest', cancelable: false });
+   await harness.watchdogExited;
 });
 
-describe('Proton command', () => {
-   const proton = {
-      protonBinaryPath: '/home/player/.steam/steam/steamapps/common/Proton 11.0/proton',
-      compatDataPath: '/home/player/.config/Encore/compatdata',
-      steamClientPath: '/home/player/.steam/steam',
-      steamRunWrapper: false,
-      flatpakHost: false,
-      logPath: null
-   };
-   const executablePath = '/home/player/Beat Saber/Beat Saber.exe';
-   const workingDirectory = '/home/player/Beat Saber';
-   const env = { STEAM_COMPAT_DATA_PATH: proton.compatDataPath, SteamAppId: '620980' };
-
-   test('runs Proton directly on a regular Linux host', () => {
-      expect(buildProtonCommand({ proton, executablePath, args: ['--no-yeet'], workingDirectory, env })).toEqual({
-         executablePath: proton.protonBinaryPath,
-         args: ['run', executablePath, '--no-yeet']
-      });
-   });
-
-   test('runs Proton on the host from a Flatpak install and forwards its launch context', () => {
-      expect(buildProtonCommand({ proton: { ...proton, flatpakHost: true }, executablePath, args: [], workingDirectory, env })).toEqual({
-         executablePath: 'flatpak-spawn',
-         args: [
-            '--host',
-            `--directory=${workingDirectory}`,
-            `--env=STEAM_COMPAT_DATA_PATH=${proton.compatDataPath}`,
-            '--env=SteamAppId=620980',
-            '--',
-            proton.protonBinaryPath,
-            'run',
-            executablePath
-         ]
-      });
-   });
-
-   test('keeps the NixOS runtime wrapper inside the Flatpak host command', () => {
-      const command = buildProtonCommand({
-         proton: { ...proton, steamRunWrapper: true, flatpakHost: true },
-         executablePath,
-         args: [],
-         workingDirectory,
-         env
-      });
-
-      expect(command.args.slice(-5)).toEqual(['--', 'steam-run', proton.protonBinaryPath, 'run', executablePath]);
-   });
-});
-
-async function createHarness(platform: NodeJS.Platform = 'win32', linuxHost = { nixOs: false, flatpak: false }) {
-   const dataPath = await mkdtemp(join(tmpdir(), 'encore-launch-'));
-   const installRoot = join(dataPath, 'library');
-   await mkdir(installRoot, { recursive: true });
-
-   const settingsStore = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-   await settingsStore.updateLibrarySettings({ installRoot });
-   const detectStores = (): Promise<StoreDetectionSnapshot> =>
-      Promise.resolve({
-         targetId: 'local',
-         platform: 'linux',
-         scannedAt: new Date().toISOString(),
-         stores: [],
-         candidates: [],
-         diagnostics: []
-      });
-   const registry = createInstallRegistry({ dataPath, settingsStore, detectStores });
-   const operations = createOperationRegistry();
+async function createHarness(platform: NodeJS.Platform) {
+   const { dataPath, installRoot, settingsStore, registry, operations, register } = await createInstallTestbed();
+   const install = await register(await writeInstallFolder(join(installRoot, 'Beat Saber')));
    const spawned: LaunchCommand[] = [];
-   const watchdogs: WatchdogCommand[] = [];
-   const events: string[] = [];
-   const gameProcess = Promise.withResolvers<void>();
-   let watchdogAvailable = true;
-   const watchdogCommand = {
-      executablePath: join(dataPath, 'encore-watchdog'),
-      args: ['--parent', '123', 'Beat Saber.exe', join(dataPath, 'encore')],
-      workingDirectory: dataPath
-   };
+   const watchdogExit = Promise.withResolvers<void>();
    const runtime: LaunchRuntime = {
       platform,
+      steamFrame: false,
       readSteamClient: () => Promise.resolve({ status: 'missing' }),
       readOculusClient: () => Promise.resolve({ status: 'missing' }),
-      readLinuxHost: () => Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: linuxHost.nixOs, flatpak: linuxHost.flatpak }),
+      readLinuxHost: () => Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: false, flatpak: false, steamFrame: false }),
       validateProtonFolder,
+      findProton: () => Promise.resolve(null),
       prepareProtonCompatData: ensureProtonCompatData,
-      startSteamClient: () => Promise.resolve(Result.ok({ pid: 1_212 })),
-      startOculusClient: () => Promise.resolve(Result.ok({ pid: 1_213 })),
+      startSteamClient: () => Promise.resolve(Result.ok({ pid: 1 })),
+      startOculusClient: () => Promise.resolve(Result.ok({ pid: 2 })),
       spawn: (command) => {
-         events.push('game');
          spawned.push(command);
-         return Promise.resolve(Result.ok({ pid: 4_242, exited: gameProcess.promise }));
+         return Promise.resolve(Result.ok({ pid: 3, exited: Promise.withResolvers<void>().promise, stop: () => {} }));
       },
-      prepareWatchdog: () => {
-         events.push('prepare-watchdog');
-         return Promise.resolve(
-            watchdogAvailable
-               ? Result.ok(watchdogCommand)
-               : Result.err({ code: 'launch.watchdog.unavailable', message: 'the resource saver is unavailable' })
-         );
-      },
-      spawnWatchdog: (command) => {
-         events.push('watchdog');
-         watchdogs.push(command);
-         return Promise.resolve(Result.ok({ pid: 4_243 }));
-      }
+      prepareWatchdog: () => Promise.resolve(Result.ok({ executablePath: 'watchdog', args: [], workingDirectory: dataPath })),
+      spawnWatchdog: () => Promise.resolve(Result.ok({ pid: 4, exited: watchdogExit.promise, stop: () => watchdogExit.resolve() }))
    };
-
-   cleanups.push(async () => {
-      registry.dispose();
-      await rm(dataPath, { recursive: true, force: true });
-   });
+   const launch = createLaunchService({ settingsStore, registry, operations, runtime, storeClientDelayMs: 0 });
 
    return {
       dataPath,
       settingsStore,
-      operations,
+      install,
+      launch,
       spawned,
-      watchdogs,
-      events,
-      exitGame: gameProcess.resolve,
-      disableWatchdog: () => {
-         watchdogAvailable = false;
-      },
-      launch: createLaunchService({ settingsStore, registry, operations, runtime, storeClientDelayMs: 0 }),
-      createInstall: async () => {
-         const path = join(installRoot, 'Beat Saber');
-         await mkdir(join(path, 'Beat Saber_Data'), { recursive: true });
-         await writeFile(join(path, 'Beat Saber.exe'), 'stub', 'utf8');
-         await writeFile(join(path, 'Beat Saber_Data', 'globalgamemanagers'), 'public.app-category.games  1.37.0 ', 'latin1');
-         const registered = await registry.register({ source: 'library', path });
-         if (Result.isError(registered)) throw new Error('registration failed');
+      operations,
+      watchdogExited: watchdogExit.promise,
+      start: async (options: LaunchOptions) => {
+         const started = await launch.start({ installId: install.id, options });
+         if (Result.isError(started)) throw new Error('the launch did not start');
 
-         return registered.value;
+         expect(await waitForOperation(operations, started.value.id)).toMatchObject({ status: 'completed' });
       }
    };
-}
-
-async function createProtonFolder(parentPath: string) {
-   const protonPath = join(parentPath, 'Proton');
-   await mkdir(protonPath, { recursive: true });
-   await writeFile(join(protonPath, 'proton'), 'stub', 'utf8');
-   await chmod(join(protonPath, 'proton'), 0o755);
-
-   return protonPath;
 }

@@ -1,44 +1,91 @@
 import { useMemo, useState } from 'react';
 
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Download, FolderOpen, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import { Result } from 'better-result';
+import { FolderOpen, Plus } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { CollectionToolbar } from '@/components/collection/collection-toolbar';
+import { CollectionPanel } from '@/components/collection/collection-panel';
 import { DateCell } from '@/components/collection/date-cell';
-import { EmptyPanel, ErrorPanel, LoadingPanel, WarningLine } from '@/components/state/state-panel';
+import { matchesQuery, selectionState, useCollectionSelection, type CollectionSelection } from '@/components/collection/selection';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 
 import type { TargetPlaylistCollectionRequest } from '@/modules/playlists/api';
-import type { LocalPlaylistSummary, PlaylistId } from '@/modules/playlists/contract';
+import {
+   createEmptyPlaylistCollectionSnapshot,
+   type LocalPlaylistSummary,
+   type PlaylistCollectionSnapshot,
+   type PlaylistId
+} from '@/modules/playlists/contract';
 import { PlaylistActionDialog } from '@/modules/playlists/renderer/playlist-action-dialog';
 import { PlaylistAddDialog } from '@/modules/playlists/renderer/playlist-add-dialog';
 import { PlaylistDetailDialog } from '@/modules/playlists/renderer/playlist-detail-dialog';
-import type { InstallPlaylists } from '@/modules/playlists/renderer/use-install-playlists';
-import { usePlaylistActions } from '@/modules/playlists/renderer/use-playlist-actions';
+import { playlistListQueryOptions } from '@/modules/playlists/renderer/playlist-queries';
+import { usePlaylistActions, type PlaylistActions } from '@/modules/playlists/renderer/use-playlist-actions';
 import { SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
 import { localTargetId } from '@/modules/targets/contract';
-import { matchesQuery, selectionState } from '@/renderer/collection/view';
 import { useFormatters } from '@/renderer/i18n/formatters';
+import { unwrapTarget } from '@/renderer/ipc-result';
+import { queryStatus, type QueryStatus, useSnapshotMutation } from '@/renderer/query/api-query';
 
-export function InstallPlaylistsPanel({ request, playlists }: { request: TargetPlaylistCollectionRequest; playlists: InstallPlaylists }) {
+export function InstallPlaylistsTab({ request, active }: { request: TargetPlaylistCollectionRequest; active: boolean }) {
+   const query = useQuery(playlistListQueryOptions(request));
+   const rescan = useSnapshotMutation(playlistListQueryOptions(request).queryKey, async () =>
+      unwrapTarget(await window.encore.playlists.rescan(request))
+   );
+   const selection = useCollectionSelection(`${request.targetId}\0${request.installId}`);
+   const actions = usePlaylistActions(request, selection.clear);
+   const status = rescan.isPending ? 'loading' : queryStatus(query);
+   const snapshot = query.data ?? createEmptyPlaylistCollectionSnapshot(request);
+
+   return (
+      <>
+         {active ? (
+            <InstallPlaylistsPanel
+               request={request}
+               snapshot={snapshot}
+               status={status}
+               selection={selection}
+               actions={actions}
+               onRescan={() => rescan.mutate()}
+            />
+         ) : null}
+         <PlaylistActionDialog request={request} actions={actions} />
+      </>
+   );
+}
+
+function InstallPlaylistsPanel({
+   request,
+   snapshot,
+   status,
+   selection,
+   actions,
+   onRescan
+}: {
+   request: TargetPlaylistCollectionRequest;
+   snapshot: PlaylistCollectionSnapshot;
+   status: QueryStatus;
+   selection: CollectionSelection;
+   actions: PlaylistActions;
+   onRescan: () => void;
+}) {
    const t = useTranslations('playlists');
+   const problems = useTranslations('problems.playlists');
    const common = useTranslations('common');
    const format = useFormatters();
-   const actions = usePlaylistActions(request, playlists.clearSelection);
    const shared = useSharedFolder(request, 'playlists');
    const local = request.targetId === localTargetId;
    const [folderResult, setFolderResult] = useState<'failed' | 'unsupported' | null>(null);
    const [addOpen, setAddOpen] = useState(false);
    const [detailId, setDetailId] = useState<PlaylistId | null>(null);
    const [query, setQuery] = useState('');
-   const { snapshot, status, selected } = playlists;
-   const busy = status === 'loading' || snapshot.status === 'scanning';
+   const { selected } = selection;
+   const busy = status === 'loading' || snapshot.status === 'scanning' || actions.flow.busy;
    const filterText = query.trim().toLowerCase();
    const visible = useMemo(
       () => snapshot.playlists.filter((playlist) => matchesQuery(filterText, [playlist.title, playlist.author, playlist.fileName])),
@@ -47,11 +94,10 @@ export function InstallPlaylistsPanel({ request, playlists }: { request: TargetP
    const visibleIds = visible.map((playlist) => playlist.id);
    const selectedVisible = visibleIds.filter((playlistId) => selected.has(playlistId)).length;
    const scanning = snapshot.status === 'scanning' ? snapshot.progress : null;
-   const note = scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null;
 
    const openFolder = async () => {
-      const opened = await actions.openFolder().catch(() => null);
-      setFolderResult(!opened || opened.status === 'failed' ? 'failed' : opened.status === 'unsupported' ? 'unsupported' : null);
+      const opened = await Result.tryPromise(() => actions.openFolder());
+      setFolderResult(Result.isError(opened) ? 'failed' : opened.value.status === 'opened' ? null : opened.value.status);
    };
 
    const columns: ColumnDef<LocalPlaylistSummary>[] = [
@@ -63,16 +109,18 @@ export function InstallPlaylistsPanel({ request, playlists }: { request: TargetP
          header: () => (
             <Checkbox
                aria-label={t('selectAll')}
+               disabled={busy}
                checked={selectionState(selectedVisible, visible.length)}
-               onCheckedChange={() => playlists.toggleAll(visibleIds)}
+               onCheckedChange={() => selection.toggleAll(visibleIds)}
             />
          ),
          cell: ({ row }) => (
             <Checkbox
                aria-label={row.original.title}
+               disabled={busy}
                checked={selected.has(row.original.id)}
                onClick={(event) => event.stopPropagation()}
-               onCheckedChange={() => playlists.toggle(row.original.id)}
+               onCheckedChange={() => selection.toggle(row.original.id)}
             />
          )
       },
@@ -143,110 +191,85 @@ export function InstallPlaylistsPanel({ request, playlists }: { request: TargetP
       }
    ];
 
-   if (status === 'loading' && snapshot.playlists.length === 0) return <LoadingPanel />;
-   if (snapshot.status === 'unsupported') return <EmptyPanel description={t('unsupportedTarget')} />;
-
    return (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
-         <CollectionToolbar
-            filter={{ value: query, label: common('search'), onChange: setQuery }}
-            note={note}
-            rescan={{ label: common('rescan'), busy, onClick: playlists.rescan }}
-            menu={
-               local ? (
-                  <DropdownMenu>
-                     <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="ghost" size="icon-sm" aria-label={common('more')}>
-                           <MoreHorizontal />
-                        </Button>
-                     </DropdownMenuTrigger>
-                     <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={() => void openFolder()}>
-                           <FolderOpen />
-                           {common('openFolder.action')}
-                        </DropdownMenuItem>
-                     </DropdownMenuContent>
-                  </DropdownMenu>
-               ) : undefined
-            }
-         >
-            {selected.size > 0 ? (
-               <ButtonGroup aria-label={t('title')}>
-                  {local ? (
-                     <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void actions.exportPlaylists([...selected])}>
-                        <Download data-icon="inline-start" />
-                        {t('export', { count: selected.size })}
-                     </Button>
-                  ) : null}
-                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void actions.previewDelete([...selected])}>
-                     <Trash2 data-icon="inline-start" />
-                     {t('deleteSelected', { count: selected.size })}
-                  </Button>
-               </ButtonGroup>
-            ) : null}
-
+      <CollectionPanel
+         status={status}
+         snapshotStatus={snapshot.status}
+         total={snapshot.playlists.length}
+         visible={visible.length}
+         query={query}
+         onQueryChange={setQuery}
+         onRescan={onRescan}
+         labels={{
+            unsupported: problems('unsupported-target'),
+            missing: t('missing'),
+            empty: t('empty'),
+            noMatches: t('noMatches'),
+            loadError: t('loadError'),
+            note: scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null
+         }}
+         menu={local ? { label: common('openFolder.action'), icon: <FolderOpen />, onSelect: () => void openFolder() } : null}
+         action={
             <Button type="button" variant="outline" size="sm" onClick={() => setAddOpen(true)}>
                <Plus data-icon="inline-start" />
                {t('add.action')}
             </Button>
-         </CollectionToolbar>
-
-         <SharedFolderNotice shared={shared} />
-
-         {snapshot.problems.map((problem) => (
-            <WarningLine key={problem.code}>{problem.message}</WarningLine>
-         ))}
-
-         {folderResult ? <p className="text-muted-foreground text-xs">{common(`openFolder.${folderResult}`)}</p> : null}
-
-         {status === 'error' ? <ErrorPanel message={t('loadError')} onRetry={playlists.rescan} /> : null}
-
-         {snapshot.status === 'missing' ? <EmptyPanel description={t('missing')} /> : null}
-
-         {!busy && snapshot.status === 'ready' && snapshot.playlists.length === 0 ? <EmptyPanel description={t('empty')} /> : null}
-
-         {visible.length > 0 ? (
-            <DataTable
-               columns={columns}
-               data={visible}
-               getRowId={(playlist) => playlist.id}
-               label={t('title')}
-               tableId="playlists"
-               rowProps={(playlist) => ({ className: 'cursor-pointer', onClick: () => setDetailId(playlist.id) })}
-            />
-         ) : null}
-
-         {snapshot.playlists.length > 0 && visible.length === 0 ? <EmptyPanel description={t('noMatches')} /> : null}
-
-         <PlaylistActionDialog request={request} actions={actions} />
-         {addOpen ? (
-            <PlaylistAddDialog
-               onOpenChange={setAddOpen}
-               onBrowse={
-                  local
-                     ? () => {
-                          setAddOpen(false);
-                          void actions.importPlaylists();
-                       }
-                     : undefined
-               }
-               onDownload={(url) => {
-                  setAddOpen(false);
-                  void actions.downloadPlaylist(url);
-               }}
-            />
-         ) : null}
-         <PlaylistDetailDialog
-            request={request}
-            playlistId={detailId}
-            onOpenChange={(open) => {
-               if (!open) setDetailId(null);
-            }}
-            onInstallMissing={(playlistId) => {
-               setDetailId(null);
-               void actions.installMissingMaps(playlistId);
-            }}
+         }
+         selection={{
+            count: selected.size,
+            exportLabel: t('export', { count: selected.size }),
+            deleteLabel: t('deleteSelected', { count: selected.size }),
+            onExport: local ? () => void actions.exportPlaylists([...selected]) : null,
+            onDelete: () => void actions.previewDelete([...selected])
+         }}
+         notices={
+            <>
+               <SharedFolderNotice shared={shared} />
+               {folderResult ? <p className="text-muted-foreground text-xs">{common(`openFolder.${folderResult}`)}</p> : null}
+            </>
+         }
+         problems={snapshot.problems.map((problem) => ({ key: problem.code, message: problem.message }))}
+         dialogs={
+            <>
+               {addOpen ? (
+                  <PlaylistAddDialog
+                     onOpenChange={setAddOpen}
+                     onBrowse={
+                        local
+                           ? () => {
+                                setAddOpen(false);
+                                void actions.importPlaylists();
+                             }
+                           : undefined
+                     }
+                     onDownload={(url) => {
+                        setAddOpen(false);
+                        void actions.downloadPlaylist(url);
+                     }}
+                  />
+               ) : null}
+               <PlaylistDetailDialog
+                  request={request}
+                  playlistId={detailId}
+                  onOpenChange={(open) => {
+                     if (!open) setDetailId(null);
+                  }}
+                  onInstallMissing={(playlistId) => {
+                     setDetailId(null);
+                     void actions.installMissingMaps(playlistId);
+                  }}
+               />
+            </>
+         }
+      >
+         <DataTable
+            columns={columns}
+            data={visible}
+            getRowId={(playlist) => playlist.id}
+            label={t('title')}
+            tableId="playlists"
+            rowProps={(playlist) => ({ className: 'cursor-pointer', onClick: () => setDetailId(playlist.id) })}
          />
-      </div>
+      </CollectionPanel>
    );
 }

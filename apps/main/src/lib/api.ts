@@ -1,7 +1,8 @@
 import { Result } from 'better-result';
 import { z, type ZodType } from 'zod';
 
-import type { TargetCapability, TargetId } from '@/modules/targets/contract';
+import { ipcTransportValueSchema, ipcHandlerReturnSchema, type IpcReturn, type IpcTransportValue } from '@/ipc/core';
+import { localTargetId, type TargetCapability, type TargetId } from '@/modules/targets/contract';
 
 export type ApiJsonValue = z.infer<ReturnType<typeof z.json>>;
 
@@ -17,33 +18,47 @@ export type TargetUpload<Input extends ZodType<object> = ZodType<object>> = {
    input: Input;
 };
 
+export type TargetDownload<Input extends ZodType<object> = ZodType<object>> = {
+   kind: 'download';
+   capability: TargetCapability;
+   input: Input;
+};
+
 type TargetUploads = Record<string, TargetUpload>;
+type TargetDownloads = Record<string, TargetDownload>;
 
 export type DomainApi<
    Namespace extends string = string,
    Procedures extends Record<string, TargetProcedure> = Record<string, TargetProcedure>,
    Snapshot extends ZodType | undefined = ZodType | undefined,
-   Uploads extends TargetUploads | undefined = TargetUploads | undefined
+   Uploads extends TargetUploads | undefined = TargetUploads | undefined,
+   Downloads extends TargetDownloads | undefined = TargetDownloads | undefined
 > = {
    namespace: Namespace;
    procedures: Procedures;
 } & (Snapshot extends ZodType ? { snapshot: Snapshot } : { snapshot?: undefined }) &
-   (Uploads extends TargetUploads ? { uploads: Uploads } : { uploads?: undefined });
+   (Uploads extends TargetUploads ? { uploads: Uploads } : { uploads?: undefined }) &
+   (Downloads extends TargetDownloads ? { downloads: Downloads } : { downloads?: undefined });
 
 export type ProcedureInput<Procedure extends TargetProcedure> = Procedure extends { input: infer Input extends ZodType }
    ? z.output<Input>
    : Record<never, never>;
 export type ProcedureOutput<Procedure extends TargetProcedure> = z.output<Procedure['output']>;
 export type UploadInput<Upload extends TargetUpload> = z.output<Upload['input']>;
+export type DownloadInput<Download extends TargetDownload> = z.output<Download['input']>;
 export type TargetCall<Procedure extends TargetProcedure> = { targetId: TargetId } & ProcedureInput<Procedure>;
 export type SnapshotOutput<Api extends DomainApi> = Api extends { snapshot: infer Snapshot extends ZodType } ? z.output<Snapshot> : never;
 export type TargetSnapshot<Snapshot> = { targetId: TargetId; snapshot: Snapshot };
 
-export type ApiHandlers<Api extends DomainApi> = {
-   [Method in keyof Api['procedures']]: (
-      input: ProcedureInput<Api['procedures'][Method]>
-   ) => ProcedureOutput<Api['procedures'][Method]> | Promise<ProcedureOutput<Api['procedures'][Method]>>;
-};
+export type ApiMethod<Api extends DomainApi> = keyof Api['procedures'] & string;
+type ApiUploads<Api extends DomainApi> = Api extends { uploads: infer Uploads extends TargetUploads } ? Uploads : Record<never, never>;
+export type ApiUploadMethod<Api extends DomainApi> = keyof ApiUploads<Api> & string;
+export type ApiUpload<Api extends DomainApi, Method extends ApiUploadMethod<Api>> = Extract<ApiUploads<Api>[Method], TargetUpload>;
+type ApiDownloads<Api extends DomainApi> = Api extends { downloads: infer Downloads extends TargetDownloads } ? Downloads : Record<never, never>;
+export type ApiDownloadMethod<Api extends DomainApi> = keyof ApiDownloads<Api> & string;
+export type ApiDownload<Api extends DomainApi, Method extends ApiDownloadMethod<Api>> = Extract<ApiDownloads<Api>[Method], TargetDownload>;
+
+type Awaitable<Value> = Value | Promise<Value>;
 
 export type TargetUploadFailure = {
    kind: 'invalid' | 'not-found' | 'unavailable';
@@ -51,15 +66,38 @@ export type TargetUploadFailure = {
    message: string;
 };
 
-type ApiUploads<Api extends DomainApi> = Api extends { uploads: infer Uploads extends TargetUploads } ? Uploads : Record<never, never>;
-export type ApiUploadMethod<Api extends DomainApi> = keyof ApiUploads<Api> & string;
-export type ApiUpload<Api extends DomainApi, Method extends ApiUploadMethod<Api>> = Extract<ApiUploads<Api>[Method], TargetUpload>;
+type UploadResult = Promise<Result<void, TargetUploadFailure>>;
+type DownloadResult = Promise<Result<AsyncIterable<Uint8Array>, TargetUploadFailure>>;
 
-export type UploadHandlers<Api extends DomainApi> = {
-   [Method in ApiUploadMethod<Api>]: (
-      input: UploadInput<ApiUpload<Api, Method>>,
+type ApiHandlers<Api extends DomainApi> = {
+   [Method in keyof Api['procedures']]: (
+      input: ProcedureInput<Api['procedures'][Method]>
+   ) => Awaitable<IpcReturn<ProcedureOutput<Api['procedures'][Method]>>>;
+};
+
+type UploadHandlers<Api extends DomainApi> = {
+   [Method in ApiUploadMethod<Api>]: (input: UploadInput<ApiUpload<Api, Method>>, source: AsyncIterable<Uint8Array>) => UploadResult;
+};
+
+type TargetApiHandlers<Api extends DomainApi> = {
+   [Method in keyof Api['procedures']]?: (
+      call: TargetCall<Api['procedures'][Method]>
+   ) => Awaitable<IpcReturn<ProcedureOutput<Api['procedures'][Method]>>>;
+};
+
+type TargetUploadHandlers<Api extends DomainApi> = {
+   [Method in ApiUploadMethod<Api>]?: (
+      call: { targetId: TargetId } & UploadInput<ApiUpload<Api, Method>>,
       source: AsyncIterable<Uint8Array>
-   ) => Promise<Result<void, TargetUploadFailure>>;
+   ) => UploadResult;
+};
+
+type DownloadHandlers<Api extends DomainApi> = {
+   [Method in ApiDownloadMethod<Api>]: (input: DownloadInput<ApiDownload<Api, Method>>) => DownloadResult;
+};
+
+type TargetDownloadHandlers<Api extends DomainApi> = {
+   [Method in ApiDownloadMethod<Api>]?: (call: { targetId: TargetId } & DownloadInput<ApiDownload<Api, Method>>) => DownloadResult;
 };
 
 export type TargetCallResult<Value> = { targetId: TargetId } & (
@@ -68,41 +106,28 @@ export type TargetCallResult<Value> = { targetId: TargetId } & (
    | { status: 'unavailable'; error: { code: string; message: string } }
 );
 
-type SnapshotSubscription<Api extends DomainApi> = Api extends { snapshot: ZodType }
-   ? { subscribe: (listener: (snapshot: SnapshotOutput<Api>) => void) => () => void }
-   : { subscribe?: undefined };
+export const apiInputSchema = z.record(z.string(), ipcTransportValueSchema);
+export type ApiInput = z.infer<typeof apiInputSchema>;
 
-type UploadImplementation<Api extends DomainApi> = Api extends { uploads: TargetUploads }
-   ? { uploadHandlers: UploadHandlers<Api> }
-   : { uploadHandlers?: undefined };
-
-export type ApiModule<Api extends DomainApi> = { api: Api; handlers: ApiHandlers<Api> } & SnapshotSubscription<Api> & UploadImplementation<Api>;
-type ReceiverProcedureHandler = (input: ApiJsonValue) => Promise<ApiJsonValue>;
-type ReceiverUploadHandler = (input: ApiJsonValue, source: AsyncIterable<Uint8Array>) => Promise<Result<void, TargetUploadFailure>>;
-type ReceiverSnapshotSubscription = (listener: (snapshot: ApiJsonValue) => void) => () => void;
-
-export type TargetApiModule = {
+export type ApiImplementation = {
    api: DomainApi;
-   receiverHandlers: ReadonlyMap<string, ReceiverProcedureHandler>;
-   subscribeJson?: ReceiverSnapshotSubscription;
-   receiverUploadHandlers?: ReadonlyMap<string, ReceiverUploadHandler>;
+   procedures: ReadonlyMap<string, (targetId: TargetId, input: ApiInput) => Promise<IpcTransportValue>>;
+   uploads: ReadonlyMap<string, (targetId: TargetId, input: ApiInput, source: AsyncIterable<Uint8Array>) => UploadResult>;
+   downloads: ReadonlyMap<string, (targetId: TargetId, input: ApiInput) => DownloadResult>;
+   subscribe?: (listener: (event: TargetSnapshot<IpcTransportValue>) => void) => () => void;
 };
-export type SnapshotTargetApiModule = TargetApiModule & {
-   api: DomainApi & { snapshot: ZodType };
-   subscribeJson: ReceiverSnapshotSubscription;
-};
-export type UploadTargetApiModule = TargetApiModule & {
-   api: DomainApi & { uploads: TargetUploads };
-   receiverUploadHandlers: ReadonlyMap<string, ReceiverUploadHandler>;
-};
-export type ApiMethod<Api extends DomainApi> = keyof Api['procedures'] & string;
 
-export type TargetDispatcher = <Api extends DomainApi, Method extends ApiMethod<Api>>(
-   local: ApiModule<Api>,
-   method: Method,
-   targetId: TargetId,
-   input: ProcedureInput<Api['procedures'][Method]>
-) => Promise<TargetCallResult<ProcedureOutput<Api['procedures'][Method]>>>;
+type LocalApiExtras<Api extends DomainApi> = (Api extends { snapshot: ZodType }
+   ? { subscribe: (listener: (snapshot: SnapshotOutput<Api>) => void) => () => void }
+   : { subscribe?: undefined }) &
+   (Api extends { uploads: TargetUploads } ? { uploads: UploadHandlers<Api> } : { uploads?: undefined }) &
+   (Api extends { downloads: TargetDownloads } ? { downloads: DownloadHandlers<Api> } : { downloads?: undefined });
+
+type TargetApiExtras<Api extends DomainApi> = {
+   uploads?: TargetUploadHandlers<Api>;
+   downloads?: TargetDownloadHandlers<Api>;
+   subscribe?: (listener: (event: TargetSnapshot<SnapshotOutput<Api>>) => void) => () => void;
+};
 
 export function targetProcedure<Output extends ZodType>(definition: {
    capability: TargetCapability;
@@ -121,32 +146,38 @@ export function targetUpload<const Input extends ZodType<object>>(definition: { 
    return { kind: 'upload', ...definition };
 }
 
+export function targetDownload<const Input extends ZodType<object>>(definition: {
+   capability: TargetCapability;
+   input: Input;
+}): TargetDownload<Input> {
+   return { kind: 'download', ...definition };
+}
+
 export function defineDomainApi<
    const Namespace extends string,
    const Procedures extends Record<string, TargetProcedure>,
    const Snapshot extends ZodType | undefined = undefined,
-   const Uploads extends TargetUploads | undefined = undefined
+   const Uploads extends TargetUploads | undefined = undefined,
+   const Downloads extends TargetDownloads | undefined = undefined
 >(
    namespace: Namespace,
    procedures: Procedures,
    options?: {
       snapshot?: Snapshot;
       uploads?: Uploads;
+      downloads?: Downloads;
    }
-): DomainApi<Namespace, Procedures, Snapshot, Uploads>;
+): DomainApi<Namespace, Procedures, Snapshot, Uploads, Downloads>;
 export function defineDomainApi(
    namespace: string,
    procedures: Record<string, TargetProcedure>,
    options: {
       snapshot?: ZodType;
       uploads?: TargetUploads;
+      downloads?: TargetDownloads;
    } = {}
 ) {
-   if (options.snapshot) {
-      return { namespace, procedures, ...options, snapshot: options.snapshot };
-   }
-
-   return { namespace, procedures, ...options, snapshot: undefined };
+   return { namespace, procedures, ...options, snapshot: options.snapshot };
 }
 
 export function getProcedure<Api extends DomainApi, Method extends ApiMethod<Api>>(api: Api, method: Method): Api['procedures'][Method];
@@ -157,6 +188,14 @@ export function getProcedure(api: DomainApi, method: string) {
    return procedure;
 }
 
+export function getDownload<Api extends DomainApi, Method extends ApiDownloadMethod<Api>>(api: Api, method: Method): ApiDownload<Api, Method>;
+export function getDownload(api: DomainApi, method: string) {
+   const download = api.downloads?.[method];
+   if (!download) throw new Error(`Unknown API download: ${api.namespace}.${method}`);
+
+   return download;
+}
+
 export function getUpload<Api extends DomainApi, Method extends ApiUploadMethod<Api>>(api: Api, method: Method): ApiUpload<Api, Method>;
 export function getUpload(api: DomainApi, method: string) {
    const upload = api.uploads?.[method];
@@ -165,19 +204,45 @@ export function getUpload(api: DomainApi, method: string) {
    return upload;
 }
 
-export function hasSnapshotStream(module: TargetApiModule): module is SnapshotTargetApiModule {
-   return Boolean(module.api.snapshot && module.subscribeJson);
+export function implementApi<Api extends DomainApi & { snapshot?: undefined; uploads?: undefined }>(
+   api: Api,
+   handlers: ApiHandlers<Api>
+): ApiImplementation;
+export function implementApi<Api extends DomainApi>(api: Api, handlers: ApiHandlers<Api>, extras: LocalApiExtras<Api>): ApiImplementation;
+export function implementApi<Api extends DomainApi>(api: Api, handlers: ApiHandlers<Api>, extras?: LocalApiExtras<Api>): ApiImplementation {
+   const subscribe = extras?.subscribe;
+
+   return {
+      api,
+      procedures: eraseProcedures(api, handlers, (_targetId, input) => input),
+      uploads: eraseUploads(api, extras?.uploads ?? {}, (_targetId, input) => input),
+      downloads: eraseDownloads(api, extras?.downloads ?? {}, (_targetId, input) => input),
+      subscribe:
+         subscribe &&
+         ((listener) => subscribe((snapshot) => listener({ targetId: localTargetId, snapshot: ipcTransportValueSchema.parse(snapshot) })))
+   };
 }
 
-export function hasUploads(module: TargetApiModule): module is UploadTargetApiModule {
-   return Boolean(module.api.uploads && module.receiverUploadHandlers);
+export function implementTargetApi<Api extends DomainApi>(
+   api: Api,
+   handlers: TargetApiHandlers<Api>,
+   extras: TargetApiExtras<Api> = {}
+): ApiImplementation {
+   const subscribe = extras.subscribe;
+
+   return {
+      api,
+      procedures: eraseProcedures(api, handlers, (targetId, input) => ({ ...input, targetId })),
+      uploads: eraseUploads(api, extras.uploads ?? {}, (targetId, input) => ({ ...input, targetId })),
+      downloads: eraseDownloads(api, extras.downloads ?? {}, (targetId, input) => ({ ...input, targetId })),
+      subscribe:
+         subscribe && ((listener) => subscribe(({ targetId, snapshot }) => listener({ targetId, snapshot: ipcTransportValueSchema.parse(snapshot) })))
+   };
 }
 
-type ApiModuleOptions<Api extends DomainApi> = SnapshotSubscription<Api> & UploadImplementation<Api>;
-
-const callableSchema = z.function({ input: [z.json()] });
-const uploadCallableSchema = z.function({ input: [z.json(), z.custom<AsyncIterable<Uint8Array>>()] });
-const targetUploadResultSchema = z.discriminatedUnion('status', [
+const erasedProcedureSchema = z.function({ input: [z.unknown()] }).optional();
+const erasedUploadSchema = z.function({ input: [z.unknown(), z.custom<AsyncIterable<Uint8Array>>()] }).optional();
+const uploadResultSchema = z.discriminatedUnion('status', [
    z.object({ status: z.literal('ok') }),
    z.object({
       status: z.literal('error'),
@@ -185,38 +250,54 @@ const targetUploadResultSchema = z.discriminatedUnion('status', [
    })
 ]);
 
-export function defineApiHandlers<Api extends DomainApi & { snapshot?: undefined; uploads?: undefined }>(
-   api: Api,
-   handlers: ApiHandlers<Api>
-): ApiModule<Api> & TargetApiModule;
-export function defineApiHandlers<Api extends DomainApi>(
-   api: Api,
-   handlers: ApiHandlers<Api>,
-   options: ApiModuleOptions<Api>
-): ApiModule<Api> & TargetApiModule;
-export function defineApiHandlers<Api extends DomainApi>(api: Api, handlers: ApiHandlers<Api>, options?: ApiModuleOptions<Api>) {
-   const parsedHandlers = z.record(z.string(), callableSchema).parse(handlers);
-   const receiverHandlers = new Map<string, ReceiverProcedureHandler>();
-   for (const [method, handler] of Object.entries(parsedHandlers)) {
-      receiverHandlers.set(method, async (input) => z.json().parse(await handler(input)));
+type ErasableHandlers = { readonly [method: string]: ((...args: never[]) => void) | undefined };
+
+function eraseProcedures(api: DomainApi, handlers: ErasableHandlers, toInput: (targetId: TargetId, input: ApiInput) => ApiInput) {
+   const handlerSchemas = Object.fromEntries(Object.keys(api.procedures).map((method) => [method, erasedProcedureSchema]));
+   const procedures = new Map<string, (targetId: TargetId, input: ApiInput) => Promise<IpcTransportValue>>();
+   for (const [method, handler] of Object.entries(z.object(handlerSchemas).parse(handlers))) {
+      if (handler) procedures.set(method, async (targetId, input) => ipcHandlerReturnSchema.parse(await handler(toInput(targetId, input))));
    }
 
-   let subscribeJson: ReceiverSnapshotSubscription | undefined;
-   if (options?.subscribe) {
-      subscribeJson = (listener) => options.subscribe((snapshot) => listener(z.json().parse(snapshot)));
+   return procedures;
+}
+
+function eraseUploads(api: DomainApi, handlers: ErasableHandlers, toInput: (targetId: TargetId, input: ApiInput) => ApiInput) {
+   const handlerSchemas = Object.fromEntries(Object.keys(api.uploads ?? {}).map((method) => [method, erasedUploadSchema]));
+   const uploads = new Map<string, (targetId: TargetId, input: ApiInput, source: AsyncIterable<Uint8Array>) => UploadResult>();
+   for (const [method, handler] of Object.entries(z.object(handlerSchemas).parse(handlers))) {
+      if (!handler) continue;
+      uploads.set(method, async (targetId, input, source) => {
+         const result = uploadResultSchema.parse(await handler(toInput(targetId, input), source));
+         return result.status === 'ok' ? Result.ok(undefined) : Result.err(result.error);
+      });
    }
 
-   let receiverUploadHandlers: Map<string, ReceiverUploadHandler> | undefined;
-   if (options?.uploadHandlers) {
-      const parsedUploadHandlers = z.record(z.string(), uploadCallableSchema).parse(options.uploadHandlers);
-      receiverUploadHandlers = new Map();
-      for (const [method, handler] of Object.entries(parsedUploadHandlers)) {
-         receiverUploadHandlers.set(method, async (input, source) => {
-            const result = targetUploadResultSchema.parse(await handler(input, source));
-            return result.status === 'ok' ? Result.ok(undefined) : Result.err(result.error);
-         });
-      }
+   return uploads;
+}
+
+const erasedDownloadSchema = z.function({ input: [z.unknown()] }).optional();
+const downloadResultSchema = z.discriminatedUnion('status', [
+   z.object({
+      status: z.literal('ok'),
+      value: z.custom<AsyncIterable<Uint8Array>>()
+   }),
+   z.object({
+      status: z.literal('error'),
+      error: z.object({ kind: z.enum(['invalid', 'not-found', 'unavailable']), code: z.string(), message: z.string() })
+   })
+]);
+
+function eraseDownloads(api: DomainApi, handlers: ErasableHandlers, toInput: (targetId: TargetId, input: ApiInput) => ApiInput) {
+   const handlerSchemas = Object.fromEntries(Object.keys(api.downloads ?? {}).map((method) => [method, erasedDownloadSchema]));
+   const downloads = new Map<string, (targetId: TargetId, input: ApiInput) => DownloadResult>();
+   for (const [method, handler] of Object.entries(z.object(handlerSchemas).parse(handlers))) {
+      if (!handler) continue;
+      downloads.set(method, async (targetId, input) => {
+         const result = downloadResultSchema.parse(await handler(toInput(targetId, input)));
+         return result.status === 'ok' ? Result.ok(result.value) : Result.err(result.error);
+      });
    }
 
-   return { api, handlers, ...options, receiverHandlers, subscribeJson, receiverUploadHandlers };
+   return downloads;
 }

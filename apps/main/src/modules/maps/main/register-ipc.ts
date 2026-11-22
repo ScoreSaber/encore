@@ -1,105 +1,43 @@
-import { shell, type IpcMainInvokeEvent } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 
-import { showOpenDialog, showSaveDialog } from '@/ipc/dialogs';
-import { broadcastIpcEvent, defineIpcHandlers } from '@/ipc/main';
+import { chooseLocalExport, chooseLocalImport, openLocalPath } from '@/ipc/dialogs';
+import { defineIpcHandlers, type IpcBroadcast } from '@/ipc/host';
 import { createPendingIpcEvent } from '@/ipc/pending-event';
-import type { TargetMapCollectionRequest, TargetMapSelectionRequest } from '@/modules/maps/api';
-import {
-   mapLinkSchemes,
-   parseMapLink,
-   type MapDetailRequest,
-   type MapExportChoice,
-   type MapImportChoice,
-   type MapLinkEvent,
-   type MapLinkProtocolResult,
-   type MapLinkProtocolState,
-   type MapOpenFolderResult
-} from '@/modules/maps/contract';
+import { translate } from '@/lib/messages';
+import { createSerialQueue } from '@/lib/state/machine';
+import { mapLinkSchemes, parseMapLink, type MapLinkEvent } from '@/modules/maps/contract';
 import { mapsIpc } from '@/modules/maps/ipc';
 import type { MapService } from '@/modules/maps/main/map-service';
-import { canUnregisterProtocol, isProtocolRegistered, onDeepLink, setProtocolRegistered } from '@/modules/shortcuts/main/deep-link';
-import { localTargetId, type TargetRequest } from '@/modules/targets/contract';
+import { onDeepLink, readProtocolsLinkState, setProtocolsLinkRegistered } from '@/modules/shortcuts/main/deep-link';
+import { localTargetId } from '@/modules/targets/contract';
 import { unsupportedTarget } from '@/modules/targets/main/target-errors';
 
-export function createMapsIpcModule(service: MapService) {
-   const links = createPendingIpcEvent<MapLinkEvent>((event) => broadcastIpcEvent(mapsIpc.onLinkOpened, event));
+export function createMapsIpcModule(service: MapService, broadcast: IpcBroadcast) {
+   const links = createPendingIpcEvent<MapLinkEvent>((event) => broadcast(mapsIpc.onLinkOpened, event));
+   const resolveQueue = createSerialQueue();
 
    onDeepLink(mapLinkSchemes, (link) => {
-      void resolveMapLink(service, link).then((event) => {
-         links.publish(event);
+      void resolveQueue.run(async () => {
+         links.publish(await resolveMapLink(service, link));
       });
    });
 
-   return defineIpcHandlers(mapsIpc, {
-      getMapLinkState: () => readLinkState(),
-      getMetadata: (_event, request) => service.getMetadata(request),
-      openMapFolder: (_event, request) => openMapFolder(service, request),
-      chooseMapImport,
-      importMaps: (_event, request) =>
-         request.targetId === localTargetId ? service.startImport(request) : unsupportedTarget('maps', 'manage maps', request),
-      chooseMapExport,
-      exportMaps: (_event, request) =>
-         request.targetId === localTargetId ? service.startExport(request) : unsupportedTarget('maps', 'manage maps', request),
-      setMapLinkRegistered: (_event, request) => setLinkRegistered(request.registered),
+   return defineIpcHandlers<typeof mapsIpc, IpcMainInvokeEvent>(mapsIpc, {
+      getMapLinkState: () => readProtocolsLinkState(mapLinkSchemes),
+      getMetadata: (request) => service.getMetadata(request),
+      openMapFolder: (request) => openLocalPath(request.targetId, () => service.getMapPath(request)),
+      chooseMapImport: (request, event) =>
+         chooseLocalImport(request.targetId, event, [{ name: translate('maps.fileTypes.archive'), extensions: ['zip'] }]),
+      importMaps: (request) => (request.targetId === localTargetId ? service.startImport(request) : unsupportedTarget(request)),
+      chooseMapExport: (request, event) =>
+         chooseLocalExport(request.targetId, request.mapIds.length, event, {
+            defaultPath: request.mapIds.length === 1 ? 'map.zip' : 'maps.zip',
+            filters: [{ name: translate('maps.fileTypes.archive'), extensions: ['zip'] }]
+         }),
+      exportMaps: (request) => (request.targetId === localTargetId ? service.startExport(request) : unsupportedTarget(request)),
+      setMapLinkRegistered: (request) => setProtocolsLinkRegistered(mapLinkSchemes, request.registered),
       takePendingLink: () => links.take()
    });
-}
-
-async function openMapFolder(service: MapService, request: TargetRequest<MapDetailRequest>): Promise<MapOpenFolderResult> {
-   if (request.targetId !== localTargetId) return { status: 'unsupported' };
-
-   const mapPath = await service.getMapPath(request);
-   if (!mapPath)
-      return {
-         status: 'failed',
-         message: 'the map is not in this install anymore'
-      };
-
-   const failed = await shell.openPath(mapPath);
-   return failed ? { status: 'failed', message: failed } : { status: 'opened' };
-}
-
-async function chooseMapImport(event: IpcMainInvokeEvent, request: TargetMapCollectionRequest): Promise<MapImportChoice> {
-   if (request.targetId !== localTargetId) return { status: 'unsupported' };
-
-   const picked = await showOpenDialog(event, {
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Map archive', extensions: ['zip'] }]
-   });
-
-   if (picked.canceled || picked.filePaths.length === 0) return { status: 'cancelled' };
-
-   return { status: 'selected', paths: picked.filePaths };
-}
-
-async function chooseMapExport(event: IpcMainInvokeEvent, request: TargetMapSelectionRequest): Promise<MapExportChoice> {
-   if (request.targetId !== localTargetId) return { status: 'unsupported' };
-   if (request.mapIds.length === 0) return { status: 'cancelled' };
-
-   const chosen = await showSaveDialog(event, {
-      defaultPath: request.mapIds.length === 1 ? 'map.zip' : 'maps.zip',
-      filters: [{ name: 'Map archive', extensions: ['zip'] }]
-   });
-
-   if (chosen.canceled || !chosen.filePath) return { status: 'cancelled' };
-
-   return { status: 'selected', path: chosen.filePath };
-}
-
-function readLinkState(): MapLinkProtocolState {
-   return {
-      schemes: [...mapLinkSchemes],
-      registered: mapLinkSchemes.every((scheme) => isProtocolRegistered(scheme)),
-      canUnregister: canUnregisterProtocol()
-   };
-}
-
-function setLinkRegistered(registered: boolean): MapLinkProtocolResult {
-   for (const scheme of mapLinkSchemes) {
-      setProtocolRegistered(scheme, registered);
-   }
-
-   return { ok: true, value: readLinkState() };
 }
 
 async function resolveMapLink(service: MapService, link: string): Promise<MapLinkEvent> {

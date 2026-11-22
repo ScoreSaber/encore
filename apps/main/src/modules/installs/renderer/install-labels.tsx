@@ -3,14 +3,7 @@ import { useTranslations } from 'use-intl';
 import { WarningLine } from '@/components/state/state-panel';
 import { Badge } from '@/components/ui/badge';
 
-import type { InstallProblem, InstallProblemCode, InstallSummary } from '@/modules/installs/contract';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const problemMessageKeys: MessageKeyMap<InstallProblemCode, 'installs'> = {
-   'install.path.unreadable': 'problems.pathUnreadable',
-   'install.registry.write-failed': 'problems.registryWriteFailed',
-   'install.version.unknown': 'problems.versionUnknown'
-};
+import type { InstallProblem, InstallSummary } from '@/modules/installs/contract';
 
 export function InstallStatusBadge({ install }: { install: InstallSummary }) {
    const t = useTranslations('installs');
@@ -21,9 +14,5 @@ export function InstallStatusBadge({ install }: { install: InstallSummary }) {
 }
 
 export function InstallProblemRow({ problem }: { problem: InstallProblem }) {
-   const t = useTranslations('installs');
-
-   return (
-      <WarningLine className="min-w-0 rounded-md border px-3 py-2">{t(problemMessageKeys[problem.code], { path: problem.path ?? '' })}</WarningLine>
-   );
+   return <WarningLine className="min-w-0 rounded-md border px-3 py-2">{problem.message}</WarningLine>;
 }

@@ -1,22 +1,21 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useQueryClient } from '@tanstack/react-query';
+import { Result } from 'better-result';
 
-import { createTargetIpcDescriptor } from '@/ipc/target-api';
 import type { TargetCallResult } from '@/lib/api';
-import { sharedContentApi } from '@/modules/shared-content/api';
+import { createLatestGuard } from '@/lib/state/machine';
+import { usePathChooser } from '@/modules/files/renderer/path-chooser';
 import type { SharedRootActionResult, SharedRootCandidate, SharedRootIssue } from '@/modules/shared-content/contract';
+import { sharedContentOverviewQueryOptions } from '@/modules/shared-content/renderer/shared-content-queries';
 import type { TargetId } from '@/modules/targets/contract';
-import { ipcQueryKey } from '@/renderer/query/utils';
-
-const sharedContentTargetIpc = createTargetIpcDescriptor(sharedContentApi);
 
 type SharedRootsState =
    | { status: 'idle' }
    | { status: 'choosing' }
-   | { status: 'entering'; checking?: boolean; failed?: boolean }
    | { status: 'confirming'; candidate: SharedRootCandidate }
-   | { status: 'saving'; candidate: SharedRootCandidate | null }
+   | { status: 'saving-root'; candidate: SharedRootCandidate }
+   | { status: 'saving-action' }
    | { status: 'invalid'; issue: SharedRootIssue; detail?: string };
 
 export type SharedRoots = ReturnType<typeof useSharedRoots>;
@@ -25,87 +24,140 @@ export function useSharedRoots(targetId: TargetId) {
    const sharedContent = window.encore.sharedContent;
    const queryClient = useQueryClient();
    const [state, setState] = useState<SharedRootsState>({ status: 'idle' });
+   const [shownTargetId, setShownTargetId] = useState(targetId);
+   const guardRef = useRef<ReturnType<typeof createLatestGuard> | null>(null);
+   const busyRef = useRef(false);
+   const chooser = usePathChooser();
+
+   if (shownTargetId !== targetId) {
+      setShownTargetId(targetId);
+      setState({ status: 'idle' });
+   }
+
+   const getGuard = useCallback(() => {
+      if (!guardRef.current) guardRef.current = createLatestGuard();
+      return guardRef.current;
+   }, []);
+
+   useEffect(() => {
+      const guard = getGuard();
+      guard.invalidate();
+      busyRef.current = false;
+
+      return () => {
+         guard.invalidate();
+         busyRef.current = false;
+      };
+   }, [getGuard, targetId]);
 
    const refresh = useCallback(
-      () => queryClient.invalidateQueries({ queryKey: ipcQueryKey(sharedContentTargetIpc.getOverview, targetId) }),
+      () => queryClient.invalidateQueries({ queryKey: sharedContentOverviewQueryOptions(targetId).queryKey }),
       [queryClient, targetId]
    );
 
    const choose = useCallback(async () => {
+      if (busyRef.current) return;
+
+      const guard = getGuard();
+      const token = guard.next();
+      busyRef.current = true;
       setState({ status: 'choosing' });
 
-      const choice = await sharedContent.chooseSharedRoot({ targetId }).catch(() => null);
-      if (!choice || choice.status === 'cancelled') {
-         setState({ status: 'idle' });
-         return;
+      try {
+         const path = await chooser.choose({ targetId, kind: 'folder' });
+         if (!guard.isCurrent(token)) return;
+         if (!path) {
+            setState({ status: 'idle' });
+            return;
+         }
+
+         const response = (await Result.tryPromise(() => sharedContent.chooseRootCandidate({ targetId, path }))).unwrapOr(null);
+         if (!guard.isCurrent(token)) return;
+
+         setState(
+            response?.status === 'ok'
+               ? { status: 'confirming', candidate: response.value }
+               : { status: 'invalid', issue: response?.status === 'unsupported' ? 'unsupported-target' : 'remote-failed' }
+         );
+      } finally {
+         if (guard.isCurrent(token)) busyRef.current = false;
       }
-
-      setState({ status: 'confirming', candidate: choice });
-   }, [sharedContent, targetId]);
-
-   // remote targets get no native picker, so the path is typed and checked over the wire
-   const enter = useCallback(() => setState({ status: 'entering' }), []);
-
-   const describe = useCallback(
-      async (path: string) => {
-         setState({ status: 'entering', checking: true });
-
-         const response = await sharedContent.chooseRootCandidate({ targetId, path }).catch(() => null);
-         const candidate = response?.status === 'ok' ? response.value : null;
-         setState(candidate ? { status: 'confirming', candidate } : { status: 'entering', failed: true });
-      },
-      [sharedContent, targetId]
-   );
+   }, [chooser, getGuard, sharedContent, targetId]);
 
    const finishAction = useCallback(
-      async (action: () => Promise<TargetCallResult<SharedRootActionResult>>) => {
-         const response = await action().catch(() => null);
-         if (!response || response.status !== 'ok') {
-            setState({ status: 'invalid', issue: response?.status === 'unsupported' ? 'unsupported-target' : 'remote-failed' });
-            return;
-         }
+      async (token: number, action: () => Promise<TargetCallResult<SharedRootActionResult>>) => {
+         const guard = getGuard();
+         try {
+            const response = (await Result.tryPromise(action)).unwrapOr(null);
+            if (!guard.isCurrent(token)) return;
+            if (!response || response.status !== 'ok') {
+               setState({ status: 'invalid', issue: response?.status === 'unsupported' ? 'unsupported-target' : 'remote-failed' });
+               return;
+            }
 
-         const result = response.value;
-         if (result.status === 'invalid') {
-            const invalid: SharedRootsState = { status: 'invalid', issue: result.issue };
-            if (result.detail) invalid.detail = result.detail;
-            setState(invalid);
-            return;
-         }
+            const result = response.value;
+            if (result.status === 'invalid') {
+               const invalid: SharedRootsState = { status: 'invalid', issue: result.issue };
+               if (result.detail) invalid.detail = result.detail;
+               setState(invalid);
+               return;
+            }
 
-         setState({ status: 'idle' });
-         await refresh();
+            setState({ status: 'idle' });
+            await refresh();
+         } finally {
+            if (guard.isCurrent(token)) busyRef.current = false;
+         }
       },
-      [refresh]
+      [getGuard, refresh]
    );
 
    const add = useCallback(
       async (path: string, activate: boolean) => {
-         setState((current) => ({ status: 'saving', candidate: current.status === 'confirming' ? current.candidate : null }));
-         await finishAction(() => sharedContent.addRoot({ targetId, path, activate }));
+         if (busyRef.current) return;
+
+         const token = getGuard().next();
+         busyRef.current = true;
+         setState((current) =>
+            current.status === 'confirming' ? { status: 'saving-root', candidate: current.candidate } : { status: 'saving-action' }
+         );
+         await finishAction(token, () => sharedContent.addRoot({ targetId, path, activate }));
       },
-      [finishAction, sharedContent, targetId]
+      [finishAction, getGuard, sharedContent, targetId]
    );
 
    const activate = useCallback(
       async (path: string) => {
-         setState({ status: 'saving', candidate: null });
-         await finishAction(() => sharedContent.activateRoot({ targetId, path }));
+         if (busyRef.current) return;
+
+         const token = getGuard().next();
+         busyRef.current = true;
+         setState({ status: 'saving-action' });
+         await finishAction(token, () => sharedContent.activateRoot({ targetId, path }));
       },
-      [finishAction, sharedContent, targetId]
+      [finishAction, getGuard, sharedContent, targetId]
    );
 
    const forget = useCallback(
       async (path: string) => {
-         setState({ status: 'saving', candidate: null });
-         await finishAction(() => sharedContent.forgetRoot({ targetId, path }));
+         if (busyRef.current) return;
+
+         const token = getGuard().next();
+         busyRef.current = true;
+         setState({ status: 'saving-action' });
+         await finishAction(token, () => sharedContent.forgetRoot({ targetId, path }));
       },
-      [finishAction, sharedContent, targetId]
+      [finishAction, getGuard, sharedContent, targetId]
    );
 
    const openRoot = useCallback((path: string) => sharedContent.openSharedRoot({ targetId, path }), [sharedContent, targetId]);
 
-   const dismiss = useCallback(() => setState({ status: 'idle' }), []);
+   const dismiss = useCallback(() => {
+      if (busyRef.current) return;
 
-   return { state, choose, enter, describe, add, activate, forget, openRoot, dismiss };
+      getGuard().invalidate();
+      setState({ status: 'idle' });
+   }, [getGuard]);
+
+   return { state, choose, add, activate, forget, openRoot, dismiss, dialog: chooser.dialog };
 }

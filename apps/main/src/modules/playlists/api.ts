@@ -43,4 +43,3 @@ export const playlistsApi = defineDomainApi(
 export type TargetPlaylistCollectionRequest = TargetCall<typeof playlistsApi.procedures.list>;
 export type TargetPlaylistDetailRequest = TargetCall<typeof playlistsApi.procedures.getDetail>;
 export type TargetPlaylistSelectionRequest = TargetCall<typeof playlistsApi.procedures.previewDelete>;
-export type TargetPlaylistDownloadRequest = TargetCall<typeof playlistsApi.procedures.startDownload>;

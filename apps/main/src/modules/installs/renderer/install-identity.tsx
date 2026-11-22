@@ -1,5 +1,6 @@
 import { Box } from 'lucide-react';
 
+import { QuestIcon } from '@/components/headset-icons';
 import { cn } from '@/components/utils';
 
 import { defaultInstallColor } from '@/modules/installs/contract';
@@ -27,8 +28,10 @@ export function InstallColorSwatch({ color, className, label, onClick }: Install
    );
 }
 
-export function InstallPlatformIcon({ store, className }: { store: StoreKind | null; className?: string }) {
-   return store ? (
+export function InstallPlatformIcon({ store, quest, className }: { store: StoreKind | null; quest?: boolean; className?: string }) {
+   return quest ? (
+      <QuestIcon className={cn('size-4 shrink-0', className)} />
+   ) : store ? (
       <StoreIcon store={store} className={cn('size-4 shrink-0', className)} aria-hidden />
    ) : (
       <Box className={cn('size-4 shrink-0', className)} aria-hidden />

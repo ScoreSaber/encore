@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Result } from 'better-result';
 
-import { usePendingLinkEvent } from '@/components/content/use-pending-link-event';
-
-import type { IpcError } from '@/ipc/core';
+import { createProblem, type Problem } from '@/lib/errors';
+import { createLatestGuard } from '@/lib/state/machine';
 import type { TargetReadyLaunchPreview, TargetUnavailableLaunchPreview } from '@/modules/launch/contract';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
 import type { LaunchLinkEvent, LaunchLinkIssue, LaunchLinkRequest } from '@/modules/shortcuts/contract';
-import { inlineTargetIpcResult } from '@/renderer/ipc-result';
+import { inlineIpcResult } from '@/renderer/ipc-result';
+import { usePendingLinkEvent } from '@/renderer/use-pending-link-event';
 
 type DeepLinkLaunchState =
    | { status: 'idle' }
-   | { status: 'received'; event: LaunchLinkEvent }
+   | { status: 'received'; token: number; event: LaunchLinkEvent }
    | { status: 'rejected'; issue: LaunchLinkIssue; detail?: string }
    | { status: 'previewing'; installName: string; automatic: boolean }
    | {
@@ -22,6 +22,7 @@ type DeepLinkLaunchState =
      }
    | {
         status: 'ready';
+        token: number;
         installName: string;
         request: LaunchLinkRequest;
         preview: TargetReadyLaunchPreview;
@@ -34,29 +35,24 @@ type DeepLinkLaunchState =
         automatic: boolean;
      }
    | { status: 'started'; installName: string }
-   | { status: 'failed'; error: IpcError };
+   | { status: 'failed'; error: Problem };
 
-const previewFailure = {
-   code: 'launch.preview-failed',
-   message: 'the install could not be read'
-};
-const startFailure = {
-   code: 'launch.start-failed',
-   message: 'Beat Saber could not be started'
-};
-const pendingLinkFailure = {
-   code: 'shortcuts.link-intake-failed',
-   message: 'failed to read the pending launch link'
-};
+const previewFailure = createProblem('launch.preview-failed');
+const startFailure = createProblem('launch.start-failed');
+const pendingLinkFailure = createProblem('shortcuts.link-intake-failed');
 
 export function useDeepLinkLaunch() {
    const { launch, shortcuts } = window.encore;
    const settings = useSettings();
+   const { updateApp } = settings;
    const [state, setState] = useState<DeepLinkLaunchState>({ status: 'idle' });
    const [remember, setRemember] = useState(false);
+   const guard = useRef(createLatestGuard());
+   const startedTokens = useRef(new Set<number>());
 
    const start = useCallback(
-      async (installName: string, request: LaunchLinkRequest, preview: TargetReadyLaunchPreview, automatic: boolean) => {
+      async (token: number, installName: string, request: LaunchLinkRequest, preview: TargetReadyLaunchPreview, automatic: boolean) => {
+         if (!guard.current.isCurrent(token)) return;
          setState({
             status: 'starting',
             installName,
@@ -65,7 +61,8 @@ export function useDeepLinkLaunch() {
             automatic
          });
 
-         const started = await inlineTargetIpcResult(() => launch.start(request), startFailure);
+         const started = await inlineIpcResult(() => launch.start(request), startFailure);
+         if (!guard.current.isCurrent(token)) return;
          if (!started.ok) {
             setState({ status: 'failed', error: started.error });
             return;
@@ -77,11 +74,12 @@ export function useDeepLinkLaunch() {
    );
 
    const preview = useCallback(
-      async (installName: string, request: LaunchLinkRequest, automatic: boolean) => {
+      async (token: number, installName: string, request: LaunchLinkRequest, automatic: boolean) => {
          const answered = await Result.tryPromise({
             try: () => launch.preview(request),
             catch: () => previewFailure
          });
+         if (!guard.current.isCurrent(token)) return;
          if (Result.isError(answered)) {
             setState({ status: 'failed', error: answered.error });
             return;
@@ -107,10 +105,11 @@ export function useDeepLinkLaunch() {
          }
 
          if (automatic) {
-            await start(installName, request, launchPreview, true);
+            await start(token, installName, request, launchPreview, true);
          } else {
             setState({
                status: 'ready',
+               token,
                installName,
                request,
                preview: launchPreview
@@ -120,18 +119,28 @@ export function useDeepLinkLaunch() {
       [launch, start]
    );
 
-   const open = useCallback((event: LaunchLinkEvent) => {
-      setRemember(false);
-      setState({ status: 'received', event });
-   }, []);
-   const failPending = useCallback((error: IpcError) => setState({ status: 'failed', error }), []);
-
-   usePendingLinkEvent(shortcuts, open, failPending, pendingLinkFailure);
+   usePendingLinkEvent(
+      shortcuts,
+      (event) => {
+         const token = guard.current.next();
+         setRemember(false);
+         setState({ status: 'received', token, event });
+      },
+      (error) => {
+         guard.current.invalidate();
+         setState({ status: 'failed', error });
+      },
+      pendingLinkFailure
+   );
 
    useEffect(() => {
       if (state.status !== 'received' || settings.loadStatus === 'loading') return;
+      if (startedTokens.current.has(state.token) || !guard.current.isCurrent(state.token)) return;
 
-      const { event } = state;
+      startedTokens.current.add(state.token);
+      if (startedTokens.current.size > 32) startedTokens.current.clear();
+
+      const { event, token } = state;
       if (event.status === 'rejected') {
          const rejected: DeepLinkLaunchState = { status: 'rejected', issue: event.issue };
          if (event.detail) rejected.detail = event.detail;
@@ -139,25 +148,33 @@ export function useDeepLinkLaunch() {
          return;
       }
 
-      const automatic = settings.loadStatus === 'ready' && settings.snapshot?.app.linkHandling.launchWithoutAsking === true;
+      const automatic =
+         canLaunchWithoutAsking(event.request) && settings.loadStatus === 'ready' && settings.snapshot?.app.linkHandling.launchWithoutAsking === true;
       setState({
          status: 'previewing',
          installName: event.installName,
          automatic
       });
-      void preview(event.installName, event.request, automatic);
+      void preview(token, event.installName, event.request, automatic);
    }, [preview, settings.loadStatus, settings.snapshot, state]);
 
    const confirm = useCallback(async () => {
-      if (state.status !== 'ready') return;
+      if (state.status !== 'ready' || !guard.current.isCurrent(state.token)) return;
 
-      if (remember) void settings.updateApp({ linkHandling: { launchWithoutAsking: true } });
-      await start(state.installName, state.request, state.preview, false);
-   }, [remember, settings, start, state]);
+      const confirmToken = guard.current.next();
+      if (remember) void updateApp({ linkHandling: { launchWithoutAsking: true } });
+      await start(confirmToken, state.installName, state.request, state.preview, false);
+   }, [remember, start, state, updateApp]);
 
    const dismiss = useCallback(() => {
+      guard.current.invalidate();
+      setRemember(false);
       setState({ status: 'idle' });
    }, []);
 
    return { state, remember, setRemember, confirm, dismiss };
+}
+
+export function canLaunchWithoutAsking({ options }: LaunchLinkRequest) {
+   return options.args.length === 0 && !options.runAsAdmin;
 }

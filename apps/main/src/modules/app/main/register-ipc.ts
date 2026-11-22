@@ -1,20 +1,23 @@
-import { app, clipboard, shell } from 'electron';
+import { app, clipboard, shell, type IpcMainInvokeEvent, type OpenDialogOptions } from 'electron';
 
-import { defineIpcHandlers } from '@/ipc/main';
-import { openHttpsUrl } from '@/lib/security/external-url';
-import type { AppInfo } from '@/modules/app/contract';
+import { showOpenDialog } from '@/ipc/dialogs';
+import { defineIpcHandlers } from '@/ipc/host';
+import { evaluateHttpsUrl, openUrl } from '@/lib/security/external-url';
+import type { AppInfo, PathChoice, PathChoiceRequest } from '@/modules/app/contract';
 import { appIpc } from '@/modules/app/ipc';
 import { getEncoreReleaseInfo } from '@/modules/app/main/version';
 import { createAppPackaging } from '@/packaging';
 
-export function createAppIpcModule() {
+export function createAppIpcModule(options: { trayHost: Promise<boolean> }) {
    const appInfo = createAppInfo();
 
-   return defineIpcHandlers(appIpc, {
-      copyText: (_event, request) => clipboard.writeText(request.text),
+   return defineIpcHandlers<typeof appIpc, IpcMainInvokeEvent>(appIpc, {
+      choosePath: (request, event) => choosePath(event, request),
+      hasTray: () => options.trayHost,
+      copyText: (request) => clipboard.writeText(request.text),
       getInfo: () => appInfo,
-      openLink: async (_event, request) => {
-         const decision = await openHttpsUrl(request.url, (url) => shell.openExternal(url));
+      openLink: async (request) => {
+         const decision = await openUrl(evaluateHttpsUrl(request.url), (url) => shell.openExternal(url));
 
          return { status: decision.allowed ? 'opened' : 'blocked' };
       },
@@ -23,6 +26,17 @@ export function createAppIpcModule() {
          return undefined;
       }
    });
+}
+
+async function choosePath(event: IpcMainInvokeEvent, request: PathChoiceRequest): Promise<PathChoice> {
+   const options: OpenDialogOptions = { properties: request.kind === 'folder' ? ['openDirectory', 'createDirectory'] : ['openFile'] };
+   if (request.title) options.title = request.title;
+   if (request.defaultPath) options.defaultPath = request.defaultPath;
+   if (request.extensions) options.filters = [{ name: request.title ?? 'Files', extensions: request.extensions }];
+   const picked = await showOpenDialog(event, options);
+   const path = picked.filePaths[0];
+
+   return picked.canceled || !path ? { status: 'cancelled' } : { status: 'selected', path };
 }
 
 export function createAppInfo(): AppInfo {

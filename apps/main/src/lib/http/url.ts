@@ -1,44 +1,40 @@
 import { Result } from 'better-result';
 
+import { translateProblem } from '@/lib/messages';
+
 export type HttpsUrlPolicy = {
    allowedHosts?: readonly string[];
 };
 
+type UrlIssueCode = 'invalid-url' | 'unsupported-scheme' | 'embedded-credentials' | 'unsupported-host';
+
 export type UrlIssue = {
-   code: 'invalid-url' | 'unsupported-scheme' | 'embedded-credentials' | 'unsupported-host';
+   code: UrlIssueCode;
    message: string;
    detail: string;
 };
 
+function urlIssue(code: UrlIssueCode, detail: string) {
+   return Result.err<URL, UrlIssue>({ code, message: translateProblem(`url.${code}`), detail });
+}
+
 export function resolveHttpsUrl(input: string, policy: HttpsUrlPolicy = {}) {
-   const parsed = Result.try({
-      try: () => new URL(input),
-      catch: (): UrlIssue => ({ code: 'invalid-url', message: 'the address could not be read', detail: input })
-   });
+   if (!URL.canParse(input)) return urlIssue('invalid-url', input);
 
-   if (Result.isError(parsed)) return Result.err<URL, UrlIssue>(parsed.error);
-
-   const url = parsed.value;
-
-   if (url.protocol !== 'https:') {
-      return Result.err<URL, UrlIssue>({ code: 'unsupported-scheme', message: 'only https addresses are allowed', detail: input });
-   }
-
-   if (url.username || url.password) {
-      return Result.err<URL, UrlIssue>({
-         code: 'embedded-credentials',
-         message: 'addresses cannot carry sign-in details',
-         detail: redactUrl(url)
-      });
-   }
-
-   if (policy.allowedHosts && !policy.allowedHosts.includes(url.hostname.toLowerCase())) {
-      return Result.err<URL, UrlIssue>({ code: 'unsupported-host', message: 'this host is not allowed', detail: url.hostname });
-   }
+   const url = new URL(input);
+   if (url.protocol !== 'https:') return urlIssue('unsupported-scheme', input);
+   if (url.username || url.password) return urlIssue('embedded-credentials', redactUrl(url));
+   if (policy.allowedHosts && !policy.allowedHosts.includes(url.hostname.toLowerCase())) return urlIssue('unsupported-host', url.hostname);
 
    return Result.ok<URL, UrlIssue>(url);
 }
 
 export function redactUrl(url: URL) {
    return `${url.protocol}//${url.host}${url.pathname}`;
+}
+
+const githubAssetHosts = ['release-assets.githubusercontent.com', 'objects.githubusercontent.com'];
+
+export function downloadHostsFor(host: string) {
+   return host === 'github.com' ? [host, ...githubAssetHosts] : [host];
 }

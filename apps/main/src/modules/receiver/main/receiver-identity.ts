@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { SecretStore } from '@/lib/security/secret-store';
 
-import { X509Certificate } from 'node:crypto';
+import { createPrivateKey, X509Certificate } from 'node:crypto';
 import { hostname } from 'node:os';
 
 const identitySecretKey = 'receiver:identity';
@@ -22,7 +22,7 @@ const storedIdentitySchema = z.object({
    privateKeyPem: z.string().includes('BEGIN PRIVATE KEY')
 });
 
-export type ReceiverIdentity = {
+type ReceiverIdentity = {
    certificatePem: string;
    privateKeyPem: string;
    fingerprint: string;
@@ -33,15 +33,31 @@ export type ReceiverIdentityStore = ReturnType<typeof createReceiverIdentityStor
 
 export function createReceiverIdentityStore(options: { secretStore: SecretStore }) {
    let identity: ReceiverIdentity | null = null;
+   let loading: Promise<ReceiverIdentity> | null = null;
 
-   async function load(): Promise<ReceiverIdentity> {
-      if (identity) return identity;
+   function load(): Promise<ReceiverIdentity> {
+      if (identity?.persisted) return Promise.resolve(identity);
+      loading ??= loadOnce().finally(() => {
+         loading = null;
+      });
+      return loading;
+   }
+
+   async function loadOnce(): Promise<ReceiverIdentity> {
+      if (identity) {
+         const written = await options.secretStore.write(
+            identitySecretKey,
+            JSON.stringify({ certificatePem: identity.certificatePem, privateKeyPem: identity.privateKeyPem })
+         );
+         if (Result.isOk(written)) identity = { ...identity, persisted: true };
+         return identity;
+      }
 
       const stored = await readStoredIdentity(options.secretStore);
       if (stored) {
          identity = {
             ...stored,
-            fingerprint: fingerprintOf(stored.certificatePem),
+            fingerprint: new X509Certificate(stored.certificatePem).fingerprint256,
             persisted: true
          };
 
@@ -65,28 +81,21 @@ export function createReceiverIdentityStore(options: { secretStore: SecretStore 
       return identity;
    }
 
-   async function forget() {
-      identity = null;
-      await options.secretStore.remove(identitySecretKey);
-   }
-
-   return {
-      load,
-      forget
-   };
+   return { load };
 }
 
-export async function generateReceiverIdentity(name: string) {
+async function generateReceiverIdentity(name: string) {
    const x509 = await import('@peculiar/x509');
    const crypto = globalThis.crypto;
    x509.cryptoProvider.set(crypto);
 
    const keys = await crypto.subtle.generateKey(keyAlgorithm, true, ['sign', 'verify']);
    const now = Date.now();
+   const cleanedName = name.replaceAll(/[^\w -]/g, '').trim();
    const certificate = await x509.X509CertificateGenerator.createSelfSigned(
       {
          serialNumber: Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex'),
-         name: `CN=Encore receiver ${sanitizeName(name)}`,
+         name: `CN=Encore receiver ${cleanedName.length > 0 ? cleanedName.slice(0, 40) : 'device'}`,
          notBefore: new Date(now - 60_000),
          notAfter: new Date(now + certificateLifetimeDays * 24 * 60 * 60 * 1_000),
          signingAlgorithm,
@@ -102,16 +111,15 @@ export async function generateReceiverIdentity(name: string) {
 
    const privateKey = await crypto.subtle.exportKey('pkcs8', keys.privateKey);
    const certificatePem = certificate.toString('pem');
+   const privateKeyPem = createPrivateKey({ key: Buffer.from(privateKey), format: 'der', type: 'pkcs8' })
+      .export({ format: 'pem', type: 'pkcs8' })
+      .toString();
 
    return {
       certificatePem,
-      privateKeyPem: toPem('PRIVATE KEY', Buffer.from(privateKey)),
-      fingerprint: fingerprintOf(certificatePem)
+      privateKeyPem,
+      fingerprint: new X509Certificate(certificatePem).fingerprint256
    };
-}
-
-export function fingerprintOf(certificatePem: string) {
-   return new X509Certificate(certificatePem).fingerprint256;
 }
 
 async function readStoredIdentity(secretStore: SecretStore) {
@@ -119,25 +127,9 @@ async function readStoredIdentity(secretStore: SecretStore) {
    if (Result.isError(read) || !read.value) return null;
 
    const contents = read.value;
-   const decoded = Result.try({
-      try: () => z.json().parse(JSON.parse(contents)),
-      catch: () => null
+   const verified = Result.try(() => {
+      const stored = storedIdentitySchema.parse(JSON.parse(contents));
+      return new X509Certificate(stored.certificatePem).checkPrivateKey(createPrivateKey(stored.privateKeyPem)) ? stored : null;
    });
-   if (Result.isError(decoded)) return null;
-
-   const parsed = storedIdentitySchema.safeParse(decoded.value);
-   return parsed.success ? parsed.data : null;
-}
-
-function toPem(label: string, contents: Buffer) {
-   const body = contents
-      .toString('base64')
-      .replace(/(.{64})/g, '$1\n')
-      .trimEnd();
-   return `-----BEGIN ${label}-----\n${body}\n-----END ${label}-----\n`;
-}
-
-function sanitizeName(name: string) {
-   const cleaned = name.replaceAll(/[^\w -]/g, '').trim();
-   return cleaned.length > 0 ? cleaned.slice(0, 40) : 'device';
+   return Result.isOk(verified) ? verified.value : null;
 }

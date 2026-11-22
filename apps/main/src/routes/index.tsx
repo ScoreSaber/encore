@@ -1,13 +1,15 @@
+import { useState } from 'react';
+
 import { createFileRoute } from '@tanstack/react-router';
 import { useTranslations } from 'use-intl';
 
+import { QuestIcon } from '@/components/headset-icons';
 import { RefreshButton } from '@/components/refresh-button';
-import { ButtonGroup } from '@/components/ui/button-group';
+import { Button } from '@/components/ui/button';
 
-import { BSManagerPrompt } from '@/modules/bsmanager/renderer/bsmanager-prompt';
+import { FrameSetupCard } from '@/modules/install-mirror/renderer/frame-setup-card';
 import { useInstalls } from '@/modules/installs/renderer/use-installs';
-import { MacConnectionPrompt } from '@/modules/receiver/renderer/mac-connection-prompt';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { QuestSetupDialog } from '@/modules/quest/renderer/quest-setup';
 import { DiagnosticsDialog } from '@/modules/support/renderer/diagnostics-dialog';
 import { SupportLinksCard } from '@/modules/support/renderer/support-links-card';
 import { SupportLogsCard } from '@/modules/support/renderer/support-logs-card';
@@ -24,7 +26,8 @@ function HomeRoute() {
    const t = useTranslations('home');
    const common = useTranslations('common');
    const targetLabels = useTranslations('targets');
-   const settings = useSettings();
+   const quest = useTranslations('quest');
+   const [questSetupOpen, setQuestSetupOpen] = useState(false);
    const targetList = useSelectedTarget();
    const targets = targetList.targets;
    const homeTargets = window.encore.platform === 'darwin' ? targets.filter((target) => target.capabilities.includes('list-installs')) : targets;
@@ -33,21 +36,24 @@ function HomeRoute() {
       : (homeTargets[0]?.id ?? targetList.targetId);
    const installs = useInstalls(homeTargetId);
    const support = useSupport({ targetId: homeTargetId });
-   const summaries = installs.snapshot?.installs ?? [];
    const remoteTargets = targets.filter((target) => target.kind === 'remote');
    const hasConnectedRemote = remoteTargets.some((target) => target.status === 'ready' && target.capabilities.includes('list-installs'));
+   const hasConnectedQuest = targets.some((target) => target.kind === 'quest' && target.status === 'ready');
    const selectedTarget = targets.find((target) => target.id === homeTargetId);
-   const showInstallControls = window.encore.platform !== 'darwin' || hasConnectedRemote;
+   const showInstallControls = window.encore.platform !== 'darwin' || hasConnectedRemote || hasConnectedQuest;
    const showInstallLogs = selectedTarget?.capabilities.includes('list-installs') ?? false;
+   const needsQuestSetup =
+      window.encore.platform === 'android' &&
+      !targets.some((target) => target.kind === 'quest' && target.status === 'ready' && target.connection !== 'remote');
 
    return (
       <PageBody className="gap-5">
-         <div className="flex items-start justify-between gap-4">
+         <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
                <h1 className="text-2xl font-semibold">{t('pageTitle')}</h1>
             </div>
             {showInstallControls ? (
-               <ButtonGroup className="shrink-0" aria-label={t('pageTitle')}>
+               <div className="flex shrink-0 gap-2">
                   <TargetPicker
                      id="home-target"
                      className="w-40"
@@ -60,13 +66,11 @@ function HomeRoute() {
                   <RefreshButton
                      className="size-9"
                      label={common('refresh')}
-                     onClick={() => {
-                        targetList.reload();
-                        installs.reload();
-                        support.reload();
+                     onClick={async () => {
+                        await Promise.all([targetList.reload(), installs.reload(), support.reload()]);
                      }}
                   />
-               </ButtonGroup>
+               </div>
             ) : null}
          </div>
 
@@ -77,15 +81,20 @@ function HomeRoute() {
             </p>
          ) : null}
 
-         {window.encore.platform === 'darwin' && settings.snapshot ? (
-            <MacConnectionPrompt
-               receiverSettings={settings.snapshot.app.receiver}
-               remoteTargets={remoteTargets}
-               onRemotePaired={targetList.selectTarget}
-            />
-         ) : null}
+         <FrameSetupCard />
 
-         {window.encore.platform === 'darwin' ? null : <BSManagerPrompt installCount={summaries.length} />}
+         {needsQuestSetup ? (
+            <section className="flex flex-col items-start gap-3">
+               <div>
+                  <h2 className="font-medium">{quest('standaloneSetupTitle')}</h2>
+                  <p className="text-muted-foreground max-w-2xl text-sm">{quest('standaloneHint')}</p>
+               </div>
+               <Button size="sm" onClick={() => setQuestSetupOpen(true)}>
+                  <QuestIcon />
+                  {quest('setup.local.open')}
+               </Button>
+            </section>
+         ) : null}
 
          <div className="flex flex-col">
             <SupportLogsCard support={support} showInstallLogs={showInstallLogs} />
@@ -93,6 +102,7 @@ function HomeRoute() {
          </div>
 
          <DiagnosticsDialog support={support} />
+         <QuestSetupDialog open={questSetupOpen} onOpenChange={setQuestSetupOpen} />
       </PageBody>
    );
 }

@@ -1,6 +1,7 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
+import { createProblem } from '@/lib/errors';
 import { readJsonFileOrDefault, writeJsonFileAtomic } from '@/lib/filesystem/json';
 import { fetchJsonResource, type JsonDocumentFetch, type JsonDocumentProblem } from '@/lib/http/json';
 import {
@@ -8,7 +9,6 @@ import {
    downloadCatalogCacheSchema,
    downloadCatalogCacheVersion,
    downloadVersionSchema,
-   type DownloadCatalogProblem,
    type DownloadCatalogSnapshot,
    type DownloadVersion
 } from '@/modules/downloads/contract';
@@ -54,15 +54,10 @@ export function createVersionCatalog(options: VersionCatalogOptions) {
          timeoutMs: fetchTimeoutMs,
          fetchJson: options.fetchCatalog
       });
-      if (Result.isError(fetched)) return withProblem(await loadCurrent(), toCatalogProblem(fetched.error));
+      if (Result.isError(fetched)) return { ...(await loadCurrent()), problem: toCatalogProblem(fetched.error) };
 
       const versions = newestFirst(fetched.value);
-      if (versions.length === 0) {
-         return withProblem(await loadCurrent(), {
-            code: 'downloads.catalog.empty',
-            message: 'the Beat Saber version list had no downloadable versions'
-         });
-      }
+      if (versions.length === 0) return { ...(await loadCurrent()), problem: createProblem('downloads.catalog.empty') };
 
       const updatedAt = new Date().toISOString();
       const written = await writeJsonFileAtomic(
@@ -70,65 +65,42 @@ export function createVersionCatalog(options: VersionCatalogOptions) {
          { schemaVersion: downloadCatalogCacheVersion, sourceUrl, updatedAt, versions },
          downloadCatalogCacheSchema,
          {
-            root: options.dataPath,
-            scope: 'settings'
+            root: options.dataPath
          }
       );
 
-      snapshot = {
+      const ready: DownloadCatalogSnapshot = {
          status: 'ready',
          source: 'remote',
          sourceUrl,
          updatedAt,
          versions
       };
+      snapshot = ready;
       if (Result.isError(written)) {
-         const problem: DownloadCatalogProblem = {
-            code: 'downloads.catalog.write-failed',
-            message: 'the Beat Saber version list could not be cached'
-         };
-         if (written.error.detail) problem.detail = written.error.detail;
-         snapshot.problem = problem;
+         return { ...ready, problem: createProblem('downloads.catalog.write-failed', { detail: written.error.detail }) };
       }
 
-      return snapshot;
+      return ready;
    }
 
    async function loadCurrent(): Promise<DownloadCatalogSnapshot> {
       if (snapshot) return snapshot;
 
-      const cached = await readCache();
-      if (!cached) return { status: 'unavailable', source: null, sourceUrl, updatedAt: null, versions: [] };
+      const cached = await readJsonFileOrDefault(cachePath, downloadCatalogCacheSchema.nullable(), { defaultValue: null });
+      if (snapshot) return snapshot;
+      if (!cached || cached.versions.length === 0) return { status: 'unavailable', source: null, sourceUrl, updatedAt: null, versions: [] };
 
       snapshot = { status: 'ready', source: 'cache', sourceUrl, updatedAt: cached.updatedAt, versions: cached.versions };
       return snapshot;
    }
 
-   async function readCache() {
-      const cached = await readJsonFileOrDefault(cachePath, downloadCatalogCacheSchema.nullable(), {
-         defaultValue: null
-      });
-      if (!cached || cached.versions.length === 0) return null;
-
-      return cached;
-   }
-
    return { get, refresh };
 }
 
-function withProblem(current: DownloadCatalogSnapshot, problem: DownloadCatalogProblem): DownloadCatalogSnapshot {
-   return { ...current, problem };
-}
-
-function toCatalogProblem(problem: JsonDocumentProblem): DownloadCatalogProblem {
-   const detail = problem.detail ? { detail: problem.detail } : {};
-
-   if (problem.code === 'json.unexpected-shape')
-      return { code: 'downloads.catalog.invalid', message: 'the Beat Saber version list was not a list', ...detail };
-   if (problem.code === 'json.invalid')
-      return { code: 'downloads.catalog.invalid', message: 'the Beat Saber version list was not valid JSON', ...detail };
-
-   return { code: 'downloads.catalog.fetch-failed', message: 'the Beat Saber version list could not be downloaded', ...detail };
+function toCatalogProblem(problem: JsonDocumentProblem) {
+   const invalid = problem.code === 'json.unexpected-shape' || problem.code === 'json.invalid';
+   return createProblem(invalid ? 'downloads.catalog.invalid' : 'downloads.catalog.fetch-failed', { detail: problem.detail });
 }
 
 function newestFirst(entries: (DownloadVersion | null)[]) {

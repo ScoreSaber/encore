@@ -29,8 +29,12 @@ export function githubRepositoryFromUrl(value: string): GitHubRepository | null 
 export const modRepositoryPolicyUrl = 'https://encore.scoresaber.com/policy/mod-repositories.json';
 export const modRepositoryPolicyHost = 'encore.scoresaber.com';
 export const scoreSaberModSourceId = 'com.scoresaber.latest';
-export const scoreSaberModSourceName = 'ScoreSaber Official';
+export const scoreSaberModSourceName = 'ScoreSaber';
 export const scoreSaberModSourceUrl = 'https://encore.scoresaber.com/repos/scoresaber.json';
+export const questModSourceId = 'bsquest';
+export const questModSourceName = 'Quest mods';
+export const questModRepoHost = 'mods.bsquest.xyz';
+const questModSourceUrl = `https://${questModRepoHost}`;
 export const modRepositoryListingSchemaVersion = 1;
 export const modRepositoryPolicySchemaVersion = 1;
 export const modRepositoryLinkAction = 'add-source';
@@ -43,8 +47,8 @@ export const modRepositoryLimits = {
    maxPreviewPackages: 25
 };
 
-export const modSourceKindSchema = z.enum(['official', 'unofficial']);
-export const modSourceStateSchema = z.enum(['ready', 'unavailable']);
+const modSourceKindSchema = z.enum(['official', 'unofficial']);
+const modSourceStateSchema = z.enum(['ready', 'unavailable']);
 const modRepositoryPolicyStateSchema = z.enum(['ready', 'stale', 'unavailable']);
 export const modIdentityResolutionStrategySchema = z.enum(['highest-version', 'prefer-unofficial']);
 export const modSourceResolutionSettingsSchema = z.object({
@@ -59,7 +63,7 @@ export const defaultModSourceResolutionSettings: ModSourceResolutionSettings = {
    strategy: 'highest-version'
 };
 
-export const modRepositoryIssueSchema = z.enum([
+const modRepositoryIssueSchema = z.enum([
    'denylisted',
    'duplicate',
    'fetch-failed',
@@ -89,7 +93,7 @@ export type ModRepositoryPolicyState = z.infer<typeof modRepositoryPolicyStateSc
 export type ModRepositoryIssue = z.infer<typeof modRepositoryIssueSchema>;
 export type ModRepositoryRecord = z.infer<typeof modRepositoryRecordSchema>;
 
-export const modSourceStatusSchema = z.object({
+const modSourceStatusSchema = z.object({
    id: z.string(),
    name: z.string(),
    kind: modSourceKindSchema,
@@ -101,7 +105,7 @@ export const modSourceStatusSchema = z.object({
 
 export type ModSourceStatus = z.infer<typeof modSourceStatusSchema>;
 
-export const modRepositorySummarySchema = z.object({
+const modRepositorySummarySchema = z.object({
    id: z.string(),
    name: z.string(),
    owner: z.string(),
@@ -119,14 +123,14 @@ export const modRepositorySummarySchema = z.object({
    detail: z.string().optional()
 });
 
-export const modOfficialSourceSummarySchema = z.object({
+const modOfficialSourceSummarySchema = z.object({
    id: z.string(),
    name: z.string(),
    listingUrl: z.string(),
    enabled: z.boolean()
 });
 
-export const modRepositoriesSnapshotSchema = z.object({
+const modRepositoriesSnapshotSchema = z.object({
    official: z.array(modOfficialSourceSummarySchema),
    repositories: z.array(modRepositorySummarySchema),
    resolution: modSourceResolutionSettingsSchema
@@ -149,7 +153,7 @@ export type ModRepositoriesSnapshot = z.infer<typeof modRepositoriesSnapshotSche
 export type ModRepositorySyncRequest = z.infer<typeof modRepositorySyncRequestSchema>;
 export type ModRepositorySyncResult = z.infer<typeof modRepositorySyncResultSchema>;
 
-export type ModRepositoryPackagePreview = {
+type ModRepositoryPackagePreview = {
    id: string;
    name: string;
    version: string;
@@ -157,7 +161,7 @@ export type ModRepositoryPackagePreview = {
    identity: string | null;
 };
 
-export type ReadyModRepositoryPreview = {
+type ReadyModRepositoryPreview = {
    status: 'ok';
    id: string;
    name: string;
@@ -197,8 +201,6 @@ export type ModRepositoryIdRequest = {
    id: string;
 };
 
-export type ModSourceResolutionRequest = ModSourceResolutionSettings;
-
 export function modRepositoryProblem(issue: ModRepositoryIssue, detail?: string): ModRepositoryProblem {
    const problem: ModRepositoryProblem = { status: 'invalid', issue };
    if (detail) problem.detail = detail;
@@ -222,9 +224,22 @@ export const beatModsHost = 'beatmods.com';
 export const officialModSourceId = 'beatmods';
 export const officialModSourceName = 'BeatMods';
 
+type OfficialModSource = {
+   id: string;
+   name: string;
+   listingUrl: string;
+   settingKey: 'officialModSourceEnabled' | 'scoreSaberModSourceEnabled' | 'questModSourceEnabled';
+};
+
+export const officialModSources: OfficialModSource[] = [
+   { id: officialModSourceId, name: officialModSourceName, listingUrl: beatModsOrigin, settingKey: 'officialModSourceEnabled' },
+   { id: questModSourceId, name: questModSourceName, listingUrl: questModSourceUrl, settingKey: 'questModSourceEnabled' },
+   { id: scoreSaberModSourceId, name: scoreSaberModSourceName, listingUrl: scoreSaberModSourceUrl, settingKey: 'scoreSaberModSourceEnabled' }
+];
+
 export const bsipaModName = 'bsipa';
 
-export const modPlatformSchema = z.enum(['steampc', 'oculuspc', 'universalpc']);
+export const modPlatformSchema = z.enum(['steampc', 'oculuspc', 'universalpc', 'quest']);
 const knownModCategorySchema = z.enum([
    'core',
    'essential',
@@ -254,10 +269,10 @@ export const modCategorySchema = z
       return knownModCategoryByCompactName.get(category.toLowerCase().replaceAll(/[^a-z0-9]/g, '')) ?? category;
    });
 
-export const modStateSchema = z.enum(['available', 'installed', 'update-available']);
-export const modCatalogSourceSchema = z.enum(['cache', 'remote']);
+const modStateSchema = z.enum(['available', 'installed', 'update-available']);
+const modCatalogSourceSchema = z.enum(['cache', 'remote']);
 
-export const modIssueSchema = z.enum([
+const modIssueSchema = z.enum([
    'catalog-unavailable',
    'inspect-failed',
    'not-found',
@@ -267,7 +282,7 @@ export const modIssueSchema = z.enum([
    'unsupported-target'
 ]);
 
-export const modWarningSchema = z.enum([
+const modWarningSchema = z.enum([
    'bsipa-first',
    'claimed-identity',
    'missing-dependency',
@@ -281,9 +296,9 @@ export const modWarningSchema = z.enum([
 
 export const modUninstallScopeSchema = z.enum(['all', 'selection']);
 
-export const modLinkKindSchema = z.enum(['listing', 'source', 'issues']);
+const modLinkKindSchema = z.enum(['listing', 'source', 'issues']);
 
-export const modLinkSchema = z.object({
+const modLinkSchema = z.object({
    kind: modLinkKindSchema,
    url: z.string()
 });
@@ -297,7 +312,7 @@ export type ModUninstallScope = z.infer<typeof modUninstallScopeSchema>;
 export type ModLinkKind = z.infer<typeof modLinkKindSchema>;
 export type ModLink = z.infer<typeof modLinkSchema>;
 
-export const modSummarySchema = z.object({
+const modSummarySchema = z.object({
    modId: z.string(),
    sourceId: z.string(),
    sourceName: z.string(),
@@ -319,14 +334,24 @@ export const modSummarySchema = z.object({
    claimedIdentity: z.string().nullable()
 });
 
-export const externalModSchema = z.object({
+const externalModDetailsSchema = z.object({
+   name: z.string(),
+   version: z.string().nullable(),
+   author: z.string().nullable(),
+   gameVersion: z.string().nullable(),
+   description: z.string().nullable(),
+   links: z.array(modLinkSchema)
+});
+
+const externalModSchema = z.object({
    id: z.string(),
    name: z.string(),
    path: z.string(),
-   sizeBytes: z.number()
+   sizeBytes: z.number(),
+   details: externalModDetailsSchema.nullable()
 });
 
-export const unavailableModsSnapshotSchema = z.object({
+const unavailableModsSnapshotSchema = z.object({
    status: z.literal('unavailable'),
    installId: z.string(),
    issue: modIssueSchema,
@@ -349,14 +374,14 @@ export const readyModsSnapshotSchema = z.object({
 
 export const modsSnapshotSchema = z.discriminatedUnion('status', [unavailableModsSnapshotSchema, readyModsSnapshotSchema]);
 
-export const modActionProblemSchema = z.object({
+const modActionProblemSchema = z.object({
    status: z.literal('invalid'),
    installId: z.string(),
    issue: modIssueSchema,
    detail: z.string().optional()
 });
 
-export const modPlanEntrySchema = z.object({
+const modPlanEntrySchema = z.object({
    modId: z.string(),
    sourceName: z.string(),
    sourceKind: modSourceKindSchema,
@@ -367,27 +392,27 @@ export const modPlanEntrySchema = z.object({
    isBsipa: z.boolean()
 });
 
-export const readyModInstallPreviewSchema = z.object({
+const readyModInstallPreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    installPath: z.string(),
    pendingPath: z.string(),
    downloadHosts: z.array(z.string()),
    mods: z.array(modPlanEntrySchema),
-   downloadBytes: z.number(),
+   downloadBytes: z.number().nullable(),
    warnings: z.array(modWarningSchema)
 });
 
 export const modInstallPreviewSchema = z.discriminatedUnion('status', [modActionProblemSchema, readyModInstallPreviewSchema]);
 
-export const modRemovalSchema = z.object({
+const modRemovalSchema = z.object({
    modId: z.string(),
    name: z.string(),
    version: z.string(),
    files: z.array(z.string())
 });
 
-export const readyModUninstallPreviewSchema = z.object({
+const readyModUninstallPreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    installPath: z.string(),
@@ -401,7 +426,7 @@ export const readyModUninstallPreviewSchema = z.object({
 
 export const modUninstallPreviewSchema = z.discriminatedUnion('status', [modActionProblemSchema, readyModUninstallPreviewSchema]);
 
-export const readyModChangesPreviewSchema = z.object({
+const readyModChangesPreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    install: readyModInstallPreviewSchema,
@@ -411,12 +436,12 @@ export const readyModChangesPreviewSchema = z.object({
 
 export const modChangesPreviewSchema = z.discriminatedUnion('status', [modActionProblemSchema, readyModChangesPreviewSchema]);
 
-export const readyModImportPreviewSchema = z.object({
+const readyModImportPreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    sourcePath: z.string(),
    uploadId: z.string().optional(),
-   kind: z.enum(['dll', 'zip']),
+   kind: z.enum(['dll', 'zip', 'qmod']),
    name: z.string(),
    sizeBytes: z.number(),
    destinationPath: z.string(),
@@ -441,7 +466,8 @@ export const modImportUploadIdSchema = z.object({ installId: z.string().min(1), 
 
 export type ModSummary = z.infer<typeof modSummarySchema>;
 export type ExternalMod = z.infer<typeof externalModSchema>;
-export type UnavailableModsSnapshot = z.infer<typeof unavailableModsSnapshotSchema>;
+export type ExternalModDetails = z.infer<typeof externalModDetailsSchema>;
+type UnavailableModsSnapshot = z.infer<typeof unavailableModsSnapshotSchema>;
 export type ReadyModsSnapshot = z.infer<typeof readyModsSnapshotSchema>;
 export type ModsSnapshot = z.infer<typeof modsSnapshotSchema>;
 export type ModActionProblem = z.infer<typeof modActionProblemSchema>;
@@ -471,6 +497,7 @@ export type ModSelectionRequest = ModRequest & {
 export type ModUninstallRequest = ModRequest & {
    scope: ModUninstallScope;
    modIds: string[];
+   externalIds: string[];
 };
 
 export type ModChangesRequest = ModRequest & {
@@ -492,22 +519,14 @@ export type ModFundingResult = { status: 'available'; url: string } | { status: 
 
 export type ModImportChoice = { status: 'cancelled' } | { status: 'unsupported' } | { status: 'selected'; preview: ModImportPreview };
 
-export function invalidModAction(request: Pick<ModRequest, 'installId'>, issue: ModIssue, detail?: string): ModActionProblem {
+export function invalidModAction(request: ModRequest, issue: ModIssue, detail?: string): ModActionProblem {
    const problem: ModActionProblem = { status: 'invalid', installId: request.installId, issue };
    if (detail) problem.detail = detail;
    return problem;
 }
 
-export function unavailableModsSnapshot(request: Pick<ModRequest, 'installId'>, issue: ModIssue, detail?: string): UnavailableModsSnapshot {
+export function unavailableModsSnapshot(request: ModRequest, issue: ModIssue, detail?: string): UnavailableModsSnapshot {
    const snapshot: UnavailableModsSnapshot = { status: 'unavailable', installId: request.installId, issue };
    if (detail) snapshot.detail = detail;
    return snapshot;
-}
-
-export function modPlatformForStore(store: string | null): ModPlatform {
-   return store === 'oculus' ? 'oculuspc' : 'steampc';
-}
-
-export function isRequiredModCategory(category: ModCategory) {
-   return category === 'core' || category === 'essential' || category === 'library';
 }

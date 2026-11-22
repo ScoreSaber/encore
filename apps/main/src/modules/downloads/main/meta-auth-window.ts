@@ -1,8 +1,10 @@
 import { Result } from 'better-result';
 import { BrowserWindow, session } from 'electron';
+import { z } from 'zod';
 
-import { causeMessage } from '@/lib/errors';
-import { isMetaAuthToken, metaAuthProblems, type MetaAuthProblem, type MetaAuthRequest } from '@/modules/downloads/main/meta-auth';
+import { causeMessage, createProblem } from '@/lib/errors';
+import { translate } from '@/lib/messages';
+import { isMetaAuthToken, type MetaAuthProblem, type MetaAuthRequest } from '@/modules/downloads/main/meta-auth';
 
 const metaLoginUrl = 'https://secure.oculus.com';
 const metaProfileUrl = 'https://secure.oculus.com/my/profile';
@@ -10,37 +12,57 @@ const metaProfileUrl = 'https://secure.oculus.com/my/profile';
 const metaAuthPartition = 'encore-meta-auth';
 const metaAuthCookieName = 'oc_ac_at';
 const metaAuthTimeoutMs = 600_000;
+const clearStorageTimeoutMs = 5_000;
 let metaAuthQueue = Promise.resolve();
 
 export const requestMetaAuthToken: MetaAuthRequest = async (options) => {
+   if (options.signal.aborted) return Result.err(createProblem('downloads.oculus.sign-in-cancelled'));
+
    const previous = metaAuthQueue;
    let release: () => void = () => undefined;
    metaAuthQueue = new Promise<void>((resolve) => {
       release = resolve;
    });
-   await previous;
 
-   if (options.signal.aborted) {
-      release();
-      return Result.err<string, MetaAuthProblem>(metaAuthProblems.cancelled);
+   const abortedWhileQueued = await waitForTurn(previous, options.signal);
+   if (abortedWhileQueued || options.signal.aborted) {
+      void previous.finally(release);
+      return Result.err(createProblem('downloads.oculus.sign-in-cancelled'));
    }
 
    const authenticated = await Result.tryPromise({
       try: () => openMetaAuthWindow(options),
-      catch: () => metaAuthProblems.failed
+      catch: () => createProblem('downloads.oculus.sign-in-failed')
    });
    release();
 
-   return Result.isError(authenticated) ? Result.err<string, MetaAuthProblem>(authenticated.error) : authenticated.value;
+   return Result.isError(authenticated) ? Result.err(authenticated.error) : authenticated.value;
 };
 
+function waitForTurn(previous: Promise<void>, signal: AbortSignal) {
+   return new Promise<boolean>((resolve) => {
+      if (signal.aborted) return resolve(true);
+
+      let done = false;
+      const finish = (aborted: boolean) => {
+         if (done) return;
+         done = true;
+         signal.removeEventListener('abort', onAbort);
+         resolve(aborted);
+      };
+      const onAbort = () => finish(true);
+      signal.addEventListener('abort', onAbort, { once: true });
+      void previous.then(() => finish(false));
+   });
+}
+
 const openMetaAuthWindow: MetaAuthRequest = ({ signal }) => {
-   if (signal.aborted) return Promise.resolve(Result.err<string, MetaAuthProblem>(metaAuthProblems.cancelled));
+   if (signal.aborted) return Promise.resolve(Result.err(createProblem('downloads.oculus.sign-in-cancelled')));
 
    const authWindow = new BrowserWindow({
       width: 560,
       height: 820,
-      title: 'Meta sign-in',
+      title: translate('downloads.metaSignIn'),
       autoHideMenuBar: true,
       backgroundColor: '#09090b',
       webPreferences: {
@@ -87,8 +109,8 @@ const openMetaAuthWindow: MetaAuthRequest = ({ signal }) => {
          void finishMetaAuth(result, resolve);
       };
 
-      const abort = () => settle(Result.err<string, MetaAuthProblem>(metaAuthProblems.cancelled));
-      const timeout = setTimeout(() => settle(Result.err<string, MetaAuthProblem>(metaAuthProblems.timedOut)), metaAuthTimeoutMs);
+      const abort = () => settle(Result.err(createProblem('downloads.oculus.sign-in-cancelled')));
+      const timeout = setTimeout(() => settle(Result.err(createProblem('downloads.oculus.sign-in-timed-out'))), metaAuthTimeoutMs);
 
       const tryReadToken = async () => {
          if (settled || authWindow.isDestroyed()) return;
@@ -102,14 +124,14 @@ const openMetaAuthWindow: MetaAuthRequest = ({ signal }) => {
          const token = Result.unwrapOr(cookies, []).at(0)?.value;
          if (!isMetaAuthToken(token)) return;
 
-         settle(Result.ok<string, MetaAuthProblem>(token));
+         settle(Result.ok(token));
       };
 
       signal.addEventListener('abort', abort, { once: true });
       authWindow.webContents.on('did-stop-loading', () => void tryReadToken());
       authWindow.webContents.on('did-navigate', () => void tryReadToken());
       authWindow.webContents.on('did-navigate-in-page', () => void tryReadToken());
-      authWindow.on('closed', () => settle(Result.err<string, MetaAuthProblem>(metaAuthProblems.cancelled)));
+      authWindow.on('closed', () => settle(Result.err(createProblem('downloads.oculus.sign-in-cancelled'))));
 
       void loadMetaLogin(authWindow, settle);
    });
@@ -118,16 +140,32 @@ const openMetaAuthWindow: MetaAuthRequest = ({ signal }) => {
 async function loadMetaLogin(authWindow: BrowserWindow, settle: (result: Result<string, MetaAuthProblem>) => void) {
    const loaded = await Result.tryPromise({
       try: () => authWindow.loadURL(metaLoginUrl),
-      catch: () => metaAuthProblems.failed
+      catch: (cause) => cause
    });
-   if (Result.isError(loaded)) settle(Result.err<string, MetaAuthProblem>(loaded.error));
+   if (Result.isError(loaded) && !isNavigationRedirectAbort(loaded.error)) {
+      settle(Result.err(createProblem('downloads.oculus.sign-in-failed')));
+   }
+}
+
+const navigationAbortSchema = z.object({ errno: z.number().optional(), code: z.string().optional() });
+
+function isNavigationRedirectAbort(cause: unknown) {
+   const parsed = navigationAbortSchema.safeParse(cause);
+   return parsed.success && (parsed.data.errno === -3 || parsed.data.code === 'ERR_ABORTED');
 }
 
 async function finishMetaAuth(result: Result<string, MetaAuthProblem>, resolve: (result: Result<string, MetaAuthProblem>) => void) {
    // clear the ephemeral session after every outcome so a cancelled flow leaves no Meta login behind
-   await Result.tryPromise({
-      try: () => session.fromPartition(metaAuthPartition).clearStorageData(),
-      catch: () => undefined
+   const timeout = new Promise<void>((done) => {
+      const timer = setTimeout(done, clearStorageTimeoutMs);
+      timer.unref();
    });
+   await Promise.race([
+      Result.tryPromise({
+         try: () => session.fromPartition(metaAuthPartition).clearStorageData(),
+         catch: () => undefined
+      }),
+      timeout
+   ]);
    resolve(result);
 }

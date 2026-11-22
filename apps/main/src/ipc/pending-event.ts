@@ -1,15 +1,16 @@
+const maxPendingEvents = 32;
+
 export function createPendingIpcEvent<Payload>(send: (payload: Payload) => void) {
-   let pending: Payload | null = null;
+   const pending: Payload[] = [];
 
    return {
       publish(payload: Payload) {
-         pending = payload;
+         if (pending.length >= maxPendingEvents) pending.shift();
+         pending.push(payload);
          send(payload);
       },
       take() {
-         const payload = pending;
-         pending = null;
-         return payload;
+         return pending.shift() ?? null;
       }
    };
 }

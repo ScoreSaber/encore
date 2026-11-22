@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { installIdSchema } from '@/modules/installs/contract';
 import { launchOptionsSchema, launchRecordSchema } from '@/modules/launch/contract';
 import { defaultModSourceResolutionSettings, modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
+import { defaultReceiverPort, receiverBindHostSchema, receiverPortSchema } from '@/modules/receiver/address';
 import { customSharedFolderSchema } from '@/modules/shared-content/contract';
 import { localTargetId, targetIdSchema } from '@/modules/targets/contract';
 import { defaultLocale, localeSchema } from '@/renderer/i18n/config';
@@ -14,12 +15,13 @@ export const accentColorSchema = z
    .transform((value) => value.toLowerCase());
 
 export const themeSchema = z.enum(['light', 'dark', 'system']);
+const setupChoiceSchema = z.enum(['pc', 'quest', 'both']);
 export const themes = themeSchema.options;
 
-export type Theme = z.infer<typeof themeSchema>;
+export type SetupChoice = z.infer<typeof setupChoiceSchema>;
 export type ResolvedTheme = 'light' | 'dark';
 
-export const pairedDeviceSchema = z.object({
+const pairedDeviceSchema = z.object({
    id: z.string(),
    name: z.string(),
    tokenHash: z.string(),
@@ -27,7 +29,7 @@ export const pairedDeviceSchema = z.object({
    lastSeenAt: z.string().optional()
 });
 
-export const remoteTargetRecordSchema = z.object({
+const remoteTargetRecordSchema = z.object({
    id: z.string(),
    name: z.string(),
    host: z.string(),
@@ -38,19 +40,21 @@ export const remoteTargetRecordSchema = z.object({
    lastConnectedAt: z.string().optional()
 });
 
-export const receiverSettingsSchema = z.object({
+const receiverSettingsSchema = z.object({
    enabled: z.boolean(),
    interfaceName: z.string().nullable(),
+   bindHost: receiverBindHostSchema.nullable(),
+   port: receiverPortSchema,
    pairedDevices: z.array(pairedDeviceSchema),
    remoteTargets: z.array(remoteTargetRecordSchema)
 });
 
-export const selectionSettingsSchema = z.object({
+const selectionSettingsSchema = z.object({
    targetId: z.string().trim().min(1),
    installIds: z.record(z.string().trim().min(1), z.string().trim().min(1))
 });
 
-export const modGroupSettingsSchema = z.object({
+const modGroupSettingsSchema = z.object({
    order: z.array(z.string().trim().min(1)),
    collapsed: z.array(z.string().trim().min(1))
 });
@@ -59,16 +63,14 @@ export function createDefaultModGroupSettings() {
    return { order: [], collapsed: ['category:library'] };
 }
 
-export const downloadInstallSettingsSchema = z
-   .object({
-      targetId: targetIdSchema,
-      installId: installIdSchema
-   })
-   .nullable();
+const linkDestinationSchema = z.object({
+   targetId: targetIdSchema,
+   installId: installIdSchema
+});
 
-export const linkHandlingSettingsSchema = z.object({
+const linkHandlingSettingsSchema = z.object({
    launchWithoutAsking: z.boolean(),
-   downloadInstall: downloadInstallSettingsSchema
+   downloadInstalls: z.array(linkDestinationSchema)
 });
 
 export const appSettingsSchema = z.object({
@@ -78,60 +80,46 @@ export const appSettingsSchema = z.object({
    selection: selectionSettingsSchema,
    receiver: receiverSettingsSchema,
    modRepositories: z.array(modRepositoryRecordSchema),
-   officialModSourceEnabled: z.boolean().default(true),
-   scoreSaberModSourceEnabled: z.boolean().default(true),
-   modSourceResolution: modSourceResolutionSettingsSchema.default(defaultModSourceResolutionSettings),
-   alphaWarningAccepted: z.boolean().default(false),
-   bsmanagerPromptDismissed: z.boolean().default(false),
-   telemetryEnabled: z.boolean().default(true),
-   modGroups: modGroupSettingsSchema.default(createDefaultModGroupSettings()),
-   linkHandling: linkHandlingSettingsSchema.default({ launchWithoutAsking: false, downloadInstall: null })
+   officialModSourceEnabled: z.boolean(),
+   scoreSaberModSourceEnabled: z.boolean(),
+   questModSourceEnabled: z.boolean(),
+   modSourceResolution: modSourceResolutionSettingsSchema,
+   alphaWarningAccepted: z.boolean(),
+   setup: setupChoiceSchema.nullable(),
+   telemetryEnabled: z.boolean(),
+   runInBackground: z.boolean(),
+   startAtLogin: z.boolean(),
+   combineInstalls: z.boolean(),
+   launchVia: z.record(z.string(), z.string()),
+   dismissedHints: z.array(z.string()),
+   modGroups: modGroupSettingsSchema,
+   linkHandling: linkHandlingSettingsSchema
 });
 
 export const librarySettingsSchema = z.object({
    installRoot: z.string().trim().min(1),
    sharedRoot: z.string().trim().min(1).nullable(),
    // other shared content roots installs may stay linked to (the active one lives in sharedRoot)
-   sharedRoots: z.array(z.string().trim().min(1)).default([]),
-   customFolders: z.array(customSharedFolderSchema).default([]),
+   sharedRoots: z.array(z.string().trim().min(1)),
+   customFolders: z.array(customSharedFolderSchema),
    protonPath: z.string().trim().min(1).nullable(),
-   useSymlinks: z.boolean().default(false),
-   launchOptions: z.record(z.string().min(1), launchOptionsSchema).default({}),
-   lastLaunch: launchRecordSchema.nullable()
+   useSymlinks: z.boolean(),
+   launchOptions: z.record(z.string().min(1), launchOptionsSchema),
+   lastLaunch: launchRecordSchema.nullable(),
+   mirrors: z.array(z.object({ targetId: z.string(), installId: z.string(), path: z.string() }))
 });
 
-export const appSettingsPatchSchema = z.object({
-   theme: themeSchema.optional(),
-   accentColor: accentColorSchema.optional(),
-   locale: localeSchema.optional(),
+export const appSettingsPatchSchema = appSettingsSchema.partial().extend({
    selection: selectionSettingsSchema.partial().optional(),
    receiver: receiverSettingsSchema.partial().optional(),
-   modRepositories: z.array(modRepositoryRecordSchema).optional(),
-   officialModSourceEnabled: z.boolean().optional(),
-   scoreSaberModSourceEnabled: z.boolean().optional(),
-   modSourceResolution: modSourceResolutionSettingsSchema.optional(),
-   alphaWarningAccepted: z.boolean().optional(),
-   bsmanagerPromptDismissed: z.boolean().optional(),
-   telemetryEnabled: z.boolean().optional(),
-   modGroups: modGroupSettingsSchema.optional(),
    linkHandling: linkHandlingSettingsSchema.partial().optional()
 });
 
-export const librarySettingsPatchSchema = z.object({
-   installRoot: z.string().trim().min(1).optional(),
-   sharedRoot: z.union([z.string().trim().min(1), z.null()]).optional(),
-   sharedRoots: z.array(z.string().trim().min(1)).optional(),
-   customFolders: z.array(customSharedFolderSchema).optional(),
-   protonPath: z.union([z.string().trim().min(1), z.null()]).optional(),
-   useSymlinks: z.boolean().optional(),
-   launchOptions: z.record(z.string().min(1), launchOptionsSchema).optional(),
-   lastLaunch: launchRecordSchema.nullable().optional()
-});
+export const librarySettingsPatchSchema = librarySettingsSchema.partial();
 
 export type PairedDevice = z.infer<typeof pairedDeviceSchema>;
 export type RemoteTargetRecord = z.infer<typeof remoteTargetRecordSchema>;
 export type ReceiverSettings = z.infer<typeof receiverSettingsSchema>;
-export type ModGroupSettings = z.infer<typeof modGroupSettingsSchema>;
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 export type LibrarySettings = z.infer<typeof librarySettingsSchema>;
 export type AppSettingsPatch = z.infer<typeof appSettingsPatchSchema>;
@@ -173,18 +161,26 @@ export function createDefaultAppSettings(): AppSettings {
       receiver: {
          enabled: false,
          interfaceName: null,
+         bindHost: null,
+         port: defaultReceiverPort,
          pairedDevices: [],
          remoteTargets: []
       },
       modRepositories: [],
       officialModSourceEnabled: true,
       scoreSaberModSourceEnabled: true,
+      questModSourceEnabled: true,
       modSourceResolution: defaultModSourceResolutionSettings,
       alphaWarningAccepted: false,
-      bsmanagerPromptDismissed: false,
+      setup: null,
       telemetryEnabled: true,
+      runInBackground: true,
+      startAtLogin: false,
+      combineInstalls: false,
+      launchVia: {},
+      dismissedHints: [],
       modGroups: createDefaultModGroupSettings(),
-      linkHandling: { launchWithoutAsking: false, downloadInstall: null }
+      linkHandling: { launchWithoutAsking: false, downloadInstalls: [] }
    };
 }
 
@@ -197,46 +193,25 @@ export function createDefaultLibrarySettings(installRoot: string): LibrarySettin
       protonPath: null,
       useSymlinks: false,
       launchOptions: {},
-      lastLaunch: null
+      lastLaunch: null,
+      mirrors: []
    };
 }
 
 export function applyAppSettingsPatch(settings: AppSettings, patch: AppSettingsPatch): AppSettings {
    return {
-      theme: patch.theme ?? settings.theme,
-      accentColor: patch.accentColor ?? settings.accentColor,
-      locale: patch.locale ?? settings.locale,
+      ...settings,
+      ...patch,
       selection: {
-         targetId: patch.selection?.targetId ?? settings.selection.targetId,
+         ...settings.selection,
+         ...patch.selection,
          installIds: { ...settings.selection.installIds, ...patch.selection?.installIds }
       },
-      receiver: {
-         enabled: patch.receiver?.enabled ?? settings.receiver.enabled,
-         interfaceName: patch.receiver?.interfaceName === undefined ? settings.receiver.interfaceName : patch.receiver.interfaceName,
-         pairedDevices: patch.receiver?.pairedDevices ?? settings.receiver.pairedDevices,
-         remoteTargets: patch.receiver?.remoteTargets ?? settings.receiver.remoteTargets
-      },
-      modRepositories: patch.modRepositories ?? settings.modRepositories,
-      officialModSourceEnabled: patch.officialModSourceEnabled ?? settings.officialModSourceEnabled,
-      scoreSaberModSourceEnabled: patch.scoreSaberModSourceEnabled ?? settings.scoreSaberModSourceEnabled,
-      modSourceResolution: patch.modSourceResolution ?? settings.modSourceResolution,
-      alphaWarningAccepted: patch.alphaWarningAccepted ?? settings.alphaWarningAccepted,
-      bsmanagerPromptDismissed: patch.bsmanagerPromptDismissed ?? settings.bsmanagerPromptDismissed,
-      telemetryEnabled: patch.telemetryEnabled ?? settings.telemetryEnabled,
-      modGroups: patch.modGroups ?? settings.modGroups,
+      receiver: { ...settings.receiver, ...patch.receiver },
       linkHandling: { ...settings.linkHandling, ...patch.linkHandling }
    };
 }
 
 export function applyLibrarySettingsPatch(settings: LibrarySettings, patch: LibrarySettingsPatch): LibrarySettings {
-   return {
-      installRoot: patch.installRoot ?? settings.installRoot,
-      sharedRoot: patch.sharedRoot === undefined ? settings.sharedRoot : patch.sharedRoot,
-      sharedRoots: patch.sharedRoots ?? settings.sharedRoots,
-      customFolders: patch.customFolders ?? settings.customFolders,
-      protonPath: patch.protonPath === undefined ? settings.protonPath : patch.protonPath,
-      useSymlinks: patch.useSymlinks ?? settings.useSymlinks,
-      launchOptions: { ...settings.launchOptions, ...patch.launchOptions },
-      lastLaunch: patch.lastLaunch === undefined ? settings.lastLaunch : patch.lastLaunch
-   };
+   return { ...settings, ...patch, launchOptions: { ...settings.launchOptions, ...patch.launchOptions } };
 }

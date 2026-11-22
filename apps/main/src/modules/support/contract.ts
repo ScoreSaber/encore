@@ -17,7 +17,7 @@ export const supportLinkIdSchema = z.enum([
 ]);
 export type SupportLinkId = z.infer<typeof supportLinkIdSchema>;
 type QuickLinkId = Exclude<SupportLinkId, 'modelsaber'>;
-export type QuickLinkSectionId = 'encore' | 'support' | 'services' | 'wikis';
+type QuickLinkSectionId = 'encore' | 'support' | 'services' | 'wikis';
 
 export const quickLinkSections: { id: QuickLinkSectionId; links: readonly QuickLinkId[] }[] = [
    { id: 'encore', links: ['give-feedback', 'source-code', 'report-issue', 'support-encore'] },
@@ -36,7 +36,7 @@ export const supportLinkUrls = {
    beatmods: 'https://beatmods.com/',
    beatsaver: 'https://beatsaver.com/',
    scoresaber: 'https://scoresaber.com/',
-   modelsaber: 'https://modelsaber.com/',
+   modelsaber: 'https://beatmods.com/assets',
    'encore-docs': 'https://encore.scoresaber.com/docs',
    'bsmg-wiki': 'https://bsmg.wiki/',
    'scoresaber-wiki': 'https://wiki.scoresaber.com/'
@@ -48,8 +48,8 @@ const supportLinkResultSchema = z.object({
    reason: z.string().optional()
 });
 
-export const supportLogGroupStatusSchema = z.enum(['ready', 'missing', 'unreadable', 'unsupported']);
-export const supportLogIssueSchema = z.enum(['invalid-path', 'not-found', 'unreadable', 'unsupported-target']);
+const supportLogGroupStatusSchema = z.enum(['ready', 'missing', 'unreadable', 'unsupported']);
+const supportLogIssueSchema = z.enum(['invalid-path', 'not-found', 'unreadable', 'unsupported-target']);
 
 const supportLogFileSchema = z.object({
    id: z.string().min(1),
@@ -57,12 +57,12 @@ const supportLogFileSchema = z.object({
    modifiedAt: z.string()
 });
 
-export const supportInstallLogFileSchema = supportLogFileSchema.extend({
+const supportInstallLogFileSchema = supportLogFileSchema.extend({
    installId: z.string().min(1),
    installName: z.string().min(1)
 });
 
-export const supportAppLogGroupSchema = z.object({
+const supportAppLogGroupSchema = z.object({
    source: z.literal('app'),
    status: supportLogGroupStatusSchema,
    rootPath: z.string().nullable(),
@@ -78,7 +78,7 @@ export const supportInstallLogGroupSchema = z.object({
    detail: z.string().optional()
 });
 
-export const supportLogGroupSchema = z.discriminatedUnion('source', [supportAppLogGroupSchema, supportInstallLogGroupSchema]);
+const supportLogGroupSchema = z.discriminatedUnion('source', [supportAppLogGroupSchema, supportInstallLogGroupSchema]);
 
 const supportLogsSnapshotSchema = z.object({
    targetId: z.string(),
@@ -131,16 +131,16 @@ const supportExportResultSchema = z.discriminatedUnion('status', [
    z.object({ status: z.literal('saved'), path: z.string() }),
    z.object({ status: z.literal('copied') }),
    z.object({ status: z.literal('cancelled') }),
-   z.object({ status: z.literal('failed'), message: z.string() })
+   z.object({ status: z.literal('failed'), detail: z.string() })
 ]);
 
 const supportLogOpenResultSchema = z.discriminatedUnion('status', [
    z.object({ status: z.literal('opened') }),
-   z.object({ status: z.literal('failed'), message: z.string() })
+   z.object({ status: z.literal('failed'), detail: z.string() })
 ]);
 
 export type SupportLinkResult = z.infer<typeof supportLinkResultSchema>;
-export type SupportLogIssue = z.infer<typeof supportLogIssueSchema>;
+type SupportLogIssue = z.infer<typeof supportLogIssueSchema>;
 export type SupportLogFile = z.infer<typeof supportLogFileSchema>;
 export type SupportInstallLogFile = z.infer<typeof supportInstallLogFileSchema>;
 export type SupportLogGroup = z.infer<typeof supportLogGroupSchema>;

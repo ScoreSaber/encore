@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Outlet, redirect, useRouterState } from '@tanstack/react-router';
 import { AlertTriangle, Check } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
@@ -6,69 +6,48 @@ import { RefreshButton } from '@/components/refresh-button';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
-import { RemoteSection } from '@/modules/receiver/renderer/remote-section';
-import { AdvancedSection } from '@/modules/settings/renderer/advanced-section';
-import { AppearanceSection } from '@/modules/settings/renderer/appearance-section';
-import { BSManagerSection } from '@/modules/settings/renderer/bsmanager-section';
-import { DeepLinkSection } from '@/modules/settings/renderer/deep-link-section';
-import { InstallationSection } from '@/modules/settings/renderer/installation-section';
-import { ModRepositoriesSection } from '@/modules/settings/renderer/mod-repositories-section';
-import { SettingsLoading, SettingsPageShell } from '@/modules/settings/renderer/settings-layout';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
-import { TelemetrySection } from '@/modules/settings/renderer/telemetry-section';
-import { useSelectedTarget } from '@/modules/targets/renderer/use-selected-target';
+import { SettingsLoading } from '@/modules/settings/renderer/settings-layout';
+import { settingsPages } from '@/modules/settings/renderer/settings-nav';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
+import { PageBody } from '@/renderer/shell/page-body';
 
 export const Route = createFileRoute('/settings')({
-   component: SettingsRoute
+   beforeLoad: ({ location }) => {
+      if (location.pathname === '/settings') throw redirect({ to: '/settings/general', replace: true });
+   },
+   component: SettingsLayout
 });
 
-function SettingsRoute() {
+function SettingsLayout() {
    const t = useTranslations('settings');
    const common = useTranslations('common');
    const settings = useSettings();
-   const targetList = useSelectedTarget();
+   const pathname = useRouterState({ select: (state) => state.location.pathname });
+   const page = settingsPages.find((candidate) => candidate.to === pathname)?.page;
    const snapshot = settings.snapshot;
-   const controlsDisabled = settings.loadStatus !== 'ready' || settings.saveStatus === 'saving';
-   const targets = targetList.targets;
 
-   if (settings.loadStatus === 'error') {
-      return (
-         <SettingsPageShell title={t('pageTitle')}>
+   return (
+      <PageBody className="max-w-4xl gap-8">
+         <h1 className="text-2xl font-semibold">{page ? t(`pages.${page}`) : t('pageTitle')}</h1>
+
+         {settings.loadStatus === 'error' ? (
             <Alert variant="destructive">
                <AlertTriangle />
                <AlertTitle>{t('loadError.title')}</AlertTitle>
                <AlertDescription>
                   <p>{settings.loadError ?? t('loadError.description')}</p>
-                  <RefreshButton className="mt-3" label={common('retry')} onClick={() => void settings.reload()} />
+                  <RefreshButton className="mt-3" label={common('retry')} onClick={settings.reload} />
                </AlertDescription>
             </Alert>
-         </SettingsPageShell>
-      );
-   }
+         ) : null}
 
-   if (settings.loadStatus === 'loading' || !snapshot) {
-      return (
-         <SettingsPageShell title={t('pageTitle')}>
-            <SettingsLoading />
-         </SettingsPageShell>
-      );
-   }
-
-   return (
-      <SettingsPageShell title={t('pageTitle')}>
-         {snapshot.problem ? (
+         {snapshot?.problem ? (
             <Alert variant="warning">
                <AlertTriangle />
                <AlertTitle>{t('recovery.title')}</AlertTitle>
                <AlertDescription>
                   <p>{t('recovery.description', { path: snapshot.problem.path })}</p>
-                  <Button
-                     className="mt-3"
-                     variant="outline"
-                     size="sm"
-                     disabled={settings.saveStatus === 'saving'}
-                     onClick={() => void settings.updateApp({})}
-                  >
+                  <Button className="mt-3" variant="outline" size="sm" disabled={settings.saving} onClick={() => void settings.updateApp({})}>
                      <Check data-icon="inline-start" />
                      {t('recovery.action')}
                   </Button>
@@ -84,31 +63,7 @@ function SettingsRoute() {
             </Alert>
          ) : null}
 
-         <div className="flex flex-col">
-            <AppearanceSection disabled={controlsDisabled} />
-
-            <InstallationSection disabled={controlsDisabled} />
-
-            <ModRepositoriesSection />
-
-            <DeepLinkSection disabled={controlsDisabled} />
-
-            <BSManagerSection />
-
-            <RemoteSection
-               receiverSettings={snapshot.app.receiver}
-               disabled={controlsDisabled}
-               canShareThisComputer={targets.some((target) => target.kind === 'local' && target.capabilities.includes('list-installs'))}
-               remoteTargets={targets.filter((target) => target.kind === 'remote')}
-               targetsStatus={targetList.status}
-               onReloadTargets={targetList.reload}
-               onRemotePaired={targetList.selectTarget}
-            />
-
-            <AdvancedSection disabled={controlsDisabled} />
-
-            <TelemetrySection disabled={controlsDisabled} />
-         </div>
-      </SettingsPageShell>
+         {snapshot ? <Outlet /> : settings.loadStatus === 'loading' ? <SettingsLoading /> : null}
+      </PageBody>
    );
 }

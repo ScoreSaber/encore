@@ -1,19 +1,16 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { causeMessage } from '@/lib/errors';
+import type { IpcTransportValue } from '@/ipc/core';
+import { createProblem, type Problem } from '@/lib/errors';
 import { receiverOperations } from '@/modules/receiver/operations';
-import { isSupportedReceiverProtocolVersion, receiverProtocolVersionHeader } from '@/modules/receiver/protocol';
+import { receiverProtocolVersionHeader, receiverSupportedProtocolVersions } from '@/modules/receiver/protocol';
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 const maxJsonBodyBytes = 32 * 1_024;
 
-export type HttpFailure = {
-   status: number;
-   code: string;
-   message: string;
-};
+export type HttpFailure = Problem & { status: number };
 
 export function readBearerToken(request: IncomingMessage) {
    const header = request.headers.authorization;
@@ -23,10 +20,6 @@ export function readBearerToken(request: IncomingMessage) {
    return token.length > 0 ? token : null;
 }
 
-export function readRequestAddress(request: IncomingMessage) {
-   return request.socket.remoteAddress ?? 'unknown';
-}
-
 export function checkProtocolVersion(request: IncomingMessage, path: string): HttpFailure | null {
    // discovery must answer mismatched builds so they can negotiate a protocol
    if (path === receiverOperations.health.path) return null;
@@ -34,13 +27,9 @@ export function checkProtocolVersion(request: IncomingMessage, path: string): Ht
    const header = request.headers[receiverProtocolVersionHeader];
    const parsedHeader = z.string().safeParse(header);
    const version = parsedHeader.success ? Number.parseInt(parsedHeader.data, 10) : Number.NaN;
-   if (Number.isInteger(version) && isSupportedReceiverProtocolVersion(version)) return null;
+   if (Number.isInteger(version) && receiverSupportedProtocolVersions.includes(version)) return null;
 
-   return {
-      status: 426,
-      code: 'receiver.protocol.unsupported',
-      message: 'Receiver does not support the requested protocol version'
-   };
+   return { status: 426, ...createProblem('receiver.protocol.unsupported') };
 }
 
 export function readJsonBody(request: IncomingMessage) {
@@ -50,7 +39,8 @@ export function readJsonBody(request: IncomingMessage) {
          let size = 0;
 
          for await (const chunk of request) {
-            const buffer = Buffer.from(z.instanceof(Uint8Array).parse(chunk));
+            if (!(chunk instanceof Uint8Array)) throw new TypeError('Expected binary chunk');
+            const buffer = Buffer.from(chunk);
             size += buffer.byteLength;
             if (size > maxJsonBodyBytes) {
                throw new Error('request body is too large');
@@ -61,15 +51,11 @@ export function readJsonBody(request: IncomingMessage) {
 
          return z.json().parse(JSON.parse(Buffer.concat(chunks).toString('utf8')));
       },
-      catch: (cause): HttpFailure => ({
-         status: 400,
-         code: 'receiver.body.invalid',
-         message: causeMessage(cause)
-      })
+      catch: (cause): HttpFailure => ({ status: 400, ...createProblem('receiver.body.invalid', { cause }) })
    });
 }
 
-export function writeJson(response: ServerResponse, status: number, body: z.infer<ReturnType<typeof z.json>>) {
+export function writeJson(response: ServerResponse, status: number, body: IpcTransportValue) {
    response.writeHead(status, {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store'
@@ -84,12 +70,4 @@ export function writeError(response: ServerResponse, failure: HttpFailure) {
          message: failure.message
       }
    });
-}
-
-export function unauthorizedFailure(): HttpFailure {
-   return {
-      status: 401,
-      code: 'receiver.auth.required',
-      message: 'A valid pairing token is required'
-   };
 }

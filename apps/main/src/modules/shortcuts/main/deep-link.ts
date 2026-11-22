@@ -1,5 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 
+import type { IpcResult, LinkProtocolResult, LinkProtocolState } from '@/ipc/core';
 import { encoreProtocol } from '@/modules/shortcuts/contract';
 
 import { extname, resolve } from 'node:path';
@@ -20,6 +21,7 @@ const subscriptions = new Set<DeepLinkSubscription>();
 const fileSubscriptions = new Set<FileSubscription>();
 let knownSchemes: string[] = [encoreProtocol];
 let knownExtensions: string[] = [];
+let intakeRegistered = false;
 
 type ProtocolAction = (protocol: string, path?: string, args?: string[]) => boolean;
 
@@ -44,9 +46,43 @@ export function setProtocolRegistered(scheme: string, registered: boolean) {
    return isProtocolRegistered(scheme);
 }
 
-export function registerDeepLinkIntake(schemes: readonly string[] = [encoreProtocol], fileExtensions: readonly string[] = []) {
+export function readProtocolLinkState(scheme: string): LinkProtocolState {
+   return {
+      scheme,
+      registered: isProtocolRegistered(scheme),
+      canUnregister: canUnregisterProtocol()
+   };
+}
+
+export function setProtocolLinkRegistered(scheme: string, registered: boolean): LinkProtocolResult {
+   setProtocolRegistered(scheme, registered);
+   return { ok: true, value: readProtocolLinkState(scheme) };
+}
+
+export function readProtocolsLinkState<Scheme extends string>(schemes: readonly Scheme[]) {
+   return {
+      schemes: [...schemes],
+      registered: schemes.every((scheme) => isProtocolRegistered(scheme)),
+      canUnregister: canUnregisterProtocol()
+   };
+}
+
+export function setProtocolsLinkRegistered<Scheme extends string>(
+   schemes: readonly Scheme[],
+   registered: boolean
+): IpcResult<{ schemes: Scheme[]; registered: boolean; canUnregister: boolean }> {
+   for (const scheme of schemes) {
+      setProtocolRegistered(scheme, registered);
+   }
+
+   return { ok: true, value: readProtocolsLinkState(schemes) };
+}
+
+export function registerDeepLinkIntake(schemes: readonly string[], fileExtensions: readonly string[]) {
    knownSchemes = schemes.map((scheme) => scheme.toLowerCase());
    knownExtensions = fileExtensions.map((extension) => extension.toLowerCase());
+   if (intakeRegistered) return;
+   intakeRegistered = true;
 
    app.on('second-instance', (_event, argv) => {
       focusExistingWindow();
@@ -55,6 +91,7 @@ export function registerDeepLinkIntake(schemes: readonly string[] = [encoreProto
 
    app.on('open-url', (event, url) => {
       event.preventDefault();
+      focusExistingWindow();
       queueDeepLink(url);
    });
 
@@ -67,9 +104,9 @@ export function registerDeepLinkIntake(schemes: readonly string[] = [encoreProto
    queueOpenFromArgv(process.argv);
 }
 
-export function queueDeepLink(link: string) {
-   const scheme = readScheme(link);
-   if (!scheme) return;
+function queueDeepLink(link: string) {
+   const scheme = URL.canParse(link) ? new URL(link).protocol.slice(0, -1).toLowerCase() : null;
+   if (!scheme || !knownSchemes.includes(scheme)) return;
 
    const matched = [...subscriptions].filter((subscription) => subscription.schemes.includes(scheme));
    if (matched.length === 0) {
@@ -95,8 +132,8 @@ export function onDeepLink(schemes: readonly string[], listener: (link: string) 
    };
 }
 
-export function queueOpenedFile(path: string) {
-   const extension = readExtension(path);
+function queueOpenedFile(path: string) {
+   const extension = extname(path).toLowerCase();
    if (!extension || !knownExtensions.includes(extension)) return;
 
    const matched = [...fileSubscriptions].filter((subscription) => subscription.extensions.includes(extension));
@@ -123,12 +160,6 @@ export function onFileOpened(extensions: readonly string[], listener: (path: str
    };
 }
 
-function readScheme(link: string) {
-   if (!URL.canParse(link)) return null;
-
-   return new URL(link).protocol.slice(0, -1).toLowerCase();
-}
-
 function queueOpenFromArgv(argv: readonly string[]) {
    const link = argv.find((argument) => knownSchemes.some((scheme) => argument.toLowerCase().startsWith(`${scheme}://`)));
    if (link) {
@@ -136,14 +167,12 @@ function queueOpenFromArgv(argv: readonly string[]) {
       return;
    }
 
-   const path = argv.find((argument) => !argument.startsWith('-') && knownExtensions.includes(readExtension(argument) ?? ''));
+   const path = argv.find((argument) => {
+      if (argument.startsWith('-')) return false;
+      const extension = extname(argument).toLowerCase();
+      return extension !== '' && knownExtensions.includes(extension);
+   });
    if (path) queueOpenedFile(path);
-}
-
-function readExtension(path: string) {
-   const extension = extname(path).toLowerCase();
-
-   return extension || null;
 }
 
 function focusExistingWindow() {

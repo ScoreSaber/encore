@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Result } from 'better-result';
 
-import type { IpcError } from '@/ipc/core';
+import { createProblem } from '@/lib/errors';
 import type { TargetModRequest } from '@/modules/mods/api';
 import type {
    ModActionProblem,
@@ -14,253 +14,246 @@ import type {
    ReadyModUninstallPreview
 } from '@/modules/mods/contract';
 import { modListQueryOptions } from '@/modules/mods/renderer/mod-queries';
-import type { OperationId } from '@/modules/operations/contract';
-import { useOperations } from '@/modules/operations/renderer/use-operations';
-import { inlineIpcResult, inlineTargetIpcResult } from '@/renderer/ipc-result';
-import { useSnapshotMutation } from '@/renderer/query/use-snapshot-mutation';
+import { useOperationFlow, type OperationFlowDismissOutcome, type OperationFlowState } from '@/modules/operations/renderer/use-operation-flow';
+import { useTargets } from '@/modules/targets/renderer/use-targets';
+import { unwrapTarget } from '@/renderer/ipc-result';
+import { queryStatus, useSnapshotMutation } from '@/renderer/query/api-query';
 
-type ReadyAction =
+type ModActionReady =
    | { kind: 'install'; preview: ReadyModInstallPreview }
    | { kind: 'uninstall'; preview: ReadyModUninstallPreview }
    | { kind: 'changes'; preview: ReadyModChangesPreview; installModIds: string[]; removeModIds: string[] }
    | { kind: 'import'; preview: ReadyModImportPreview };
 
-type ModActionKind = ReadyAction['kind'];
-
-type ModActionState =
-   | { status: 'idle' }
-   | { status: 'previewing'; kind: ModActionKind }
-   | { status: 'invalid'; kind: ModActionKind; problem: ModActionProblem }
-   | ({ status: 'ready' | 'starting' } & ReadyAction)
-   | ({ status: 'running'; operationId: OperationId } & ReadyAction)
-   | { status: 'failed'; kind: ModActionKind; error: IpcError };
+const previewFailure = createProblem('mods.preview-failed');
+const startFailure = createProblem('mods.start-failed');
 
 export type InstallMods = ReturnType<typeof useInstallMods>;
 
 export function useInstallMods(request: TargetModRequest) {
    const modsApi = window.encore.mods;
    const queryClient = useQueryClient();
-   const { operations, cancelOperation } = useOperations(request.targetId);
-   const queryKey = modListQueryOptions(request).queryKey;
+   const { queryKey } = modListQueryOptions(request);
    const mods = useQuery(modListQueryOptions(request));
-   const refreshMods = useSnapshotMutation({ queryKey, run: () => modsApi.refreshMods(request) });
-   const [selection, setSelection] = useState<{ key: string; ids: string[] } | null>(null);
-   const [state, setState] = useState<ModActionState>({ status: 'idle' });
-   const [linkBlocked, setLinkBlocked] = useState(false);
+   const { targets } = useTargets();
+   const platform = targets.find((target) => target.id === request.targetId)?.kind === 'quest' ? 'quest' : 'pc';
+   const refreshMods = useSnapshotMutation(queryKey, async () => unwrapTarget(await modsApi.refreshMods(request)));
+   const [edits, setEdits] = useState<{ scope: string; added: ReadonlySet<string>; removed: ReadonlySet<string> } | null>(null);
+   const [linkBlocked, setLinkBlocked] = useState<{ scope: string; blocked: boolean }>({ scope: '', blocked: false });
    const refreshedRequest = useRef<string | null>(null);
+   const reload = useCallback(() => queryClient.invalidateQueries({ queryKey }), [queryClient, queryKey]);
 
-   const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
-   const snapshot = mods.data?.status === 'ok' ? mods.data.value : null;
+   const onDismiss = useCallback(
+      (state: OperationFlowState<ModActionReady, ModActionProblem>, outcome: OperationFlowDismissOutcome) => {
+         if ((state.status === 'ready' || state.status === 'repreviewing') && state.kind === 'import' && state.preview.uploadId) {
+            void modsApi.discardImportUpload({ ...request, uploadId: state.preview.uploadId });
+         }
+         if (state.status === 'running') {
+            if (outcome.completed) setEdits(null);
+            void reload();
+         }
+      },
+      [modsApi, reload, request]
+   );
+   const flow = useOperationFlow<ModActionReady, ModActionProblem>(request.targetId, onDismiss);
+   const { choose, preview, settle, start } = flow;
+
+   const snapshot = mods.data ?? null;
    const refreshKey = `${request.targetId}\0${request.installId}`;
 
    const installedIds = useMemo(
       () => (snapshot?.status === 'ready' ? snapshot.mods.filter((mod) => mod.state !== 'available').map((mod) => mod.modId) : []),
       [snapshot]
    );
-   const selectionKey = JSON.stringify([request.targetId, request.installId, [...installedIds].sort()]);
-   const selected = selection?.key === selectionKey ? selection.ids : installedIds;
+   const catalogModIds = useMemo(() => new Set(snapshot?.status === 'ready' ? snapshot.mods.map((mod) => mod.modId) : []), [snapshot]);
+   const activeEdits = edits?.scope === refreshKey ? edits : null;
+   const selected = useMemo(() => {
+      if (!activeEdits) return installedIds;
 
-   if (selection && selection.key !== selectionKey) setSelection(null);
+      const next = new Set(installedIds);
+      for (const id of activeEdits.removed) next.delete(id);
+      for (const id of activeEdits.added) {
+         if (catalogModIds.has(id)) next.add(id);
+      }
+      return [...next];
+   }, [activeEdits, catalogModIds, installedIds]);
 
-   useEffect(() => {
-      if (!snapshot || refreshedRequest.current === refreshKey) return;
+   const refreshOnVisit = useEffectEvent(() => {
+      if (!snapshot || refreshedRequest.current === refreshKey || refreshMods.isPending) return;
 
       refreshedRequest.current = refreshKey;
       const updatedAt = snapshot.status === 'ready' ? Date.parse(snapshot.updatedAt) : 0;
       if (snapshot.status === 'ready' && snapshot.source === 'remote' && Date.now() - updatedAt < 30_000) return;
 
-      void Result.tryPromise({ try: () => modsApi.refreshMods(request), catch: (cause) => cause }).then((refreshed) => {
-         if (Result.isOk(refreshed)) queryClient.setQueryData(queryKey, refreshed.value);
-      });
-   }, [modsApi, queryClient, queryKey, refreshKey, request, snapshot]);
+      const targetKey = queryKey;
+      const targetRequest = request;
+      void Result.tryPromise({ try: async () => unwrapTarget(await modsApi.refreshMods(targetRequest)), catch: (cause) => cause }).then(
+         (refreshed) => {
+            if (Result.isOk(refreshed)) queryClient.setQueryData(targetKey, refreshed.value);
+         }
+      );
+   });
+   const loaded = snapshot !== null;
 
-   const reload = useCallback(() => void queryClient.invalidateQueries({ queryKey }), [queryClient, queryKey]);
+   useEffect(() => {
+      if (loaded) refreshOnVisit();
+   }, [loaded, refreshKey]);
+
+   const installedSet = useMemo(() => new Set(installedIds), [installedIds]);
 
    const toggle = useCallback(
-      (modId: string) => {
-         setSelection((current) => {
-            const ids = current?.key === selectionKey ? current.ids : installedIds;
-            return {
-               key: selectionKey,
-               ids: ids.includes(modId) ? ids.filter((candidate) => candidate !== modId) : [...ids, modId]
-            };
-         });
-      },
-      [installedIds, selectionKey]
-   );
+      (modId: string) =>
+         setEdits((current) => {
+            const added = new Set(current?.scope === refreshKey ? current.added : []);
+            const removed = new Set(current?.scope === refreshKey ? current.removed : []);
+            const isSelected = (installedSet.has(modId) && !removed.has(modId)) || added.has(modId);
 
-   const resetSelection = useCallback(() => setSelection(null), []);
+            if (isSelected) {
+               added.delete(modId);
+               if (installedSet.has(modId)) removed.add(modId);
+            } else {
+               removed.delete(modId);
+               if (!installedSet.has(modId)) added.add(modId);
+            }
+
+            return added.size === 0 && removed.size === 0 ? null : { scope: refreshKey, added, removed };
+         }),
+      [installedSet, refreshKey]
+   );
 
    const select = useCallback(
-      (modIds: string[]) => {
-         setSelection((current) => {
-            const ids = current?.key === selectionKey ? current.ids : installedIds;
-            return { key: selectionKey, ids: [...new Set([...ids, ...modIds])] };
-         });
-      },
-      [installedIds, selectionKey]
+      (modIds: string[]) =>
+         setEdits((current) => {
+            const added = new Set(current?.scope === refreshKey ? current.added : []);
+            const removed = new Set(current?.scope === refreshKey ? current.removed : []);
+
+            for (const modId of modIds) {
+               removed.delete(modId);
+               if (!installedSet.has(modId)) added.add(modId);
+            }
+
+            return added.size === 0 && removed.size === 0 ? null : { scope: refreshKey, added, removed };
+         }),
+      [installedSet, refreshKey]
    );
 
-   const openLink = useCallback((url: string) => {
-      void window.encore.app.openLink({ url }).then(
-         (result) => setLinkBlocked(result.status === 'blocked'),
-         () => setLinkBlocked(true)
-      );
-   }, []);
+   const resetSelection = useCallback(() => setEdits(null), []);
 
-   const previewInstall = useCallback(
-      async (modIds: string[]) => {
-         setState({ status: 'previewing', kind: 'install' });
-
-         const response = await modsApi.previewInstall({ ...request, modIds }).catch(() => null);
-         if (!response || response.status !== 'ok') {
-            setState({ status: 'failed', kind: 'install', error: { code: 'mods.preview-failed', message: 'the mods could not be read' } });
-            return;
-         }
-
-         const previewed = response.value;
-         setState(
-            previewed.status === 'ok'
-               ? { status: 'ready', kind: 'install', preview: previewed }
-               : { status: 'invalid', kind: 'install', problem: previewed }
+   const openLink = useCallback(
+      (url: string) => {
+         const scope = refreshKey;
+         void window.encore.app.openLink({ url }).then(
+            (result) => setLinkBlocked({ scope, blocked: result.status === 'blocked' }),
+            () => setLinkBlocked({ scope, blocked: true })
          );
       },
-      [modsApi, request]
+      [refreshKey]
+   );
+
+   const previewInstall = useCallback(
+      (modIds: string[]) =>
+         preview(
+            'install',
+            async () => {
+               const previewed = unwrapTarget(await modsApi.previewInstall({ ...request, modIds }));
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: 'install', preview: previewed }
+                  : { status: 'invalid', kind: 'install', problem: previewed };
+            },
+            previewFailure
+         ),
+      [modsApi, preview, request]
    );
 
    const previewUninstall = useCallback(
-      async (scope: ModUninstallScope, modIds: string[]) => {
-         setState({ status: 'previewing', kind: 'uninstall' });
-
-         const response = await modsApi.previewUninstall({ ...request, scope, modIds }).catch(() => null);
-         if (!response || response.status !== 'ok') {
-            setState({ status: 'failed', kind: 'uninstall', error: { code: 'mods.preview-failed', message: 'the mods could not be read' } });
-            return;
-         }
-
-         const previewed = response.value;
-         setState(
-            previewed.status === 'ok'
-               ? { status: 'ready', kind: 'uninstall', preview: previewed }
-               : { status: 'invalid', kind: 'uninstall', problem: previewed }
-         );
-      },
-      [modsApi, request]
+      (scope: ModUninstallScope, modIds: string[], externalIds: string[] = []) =>
+         preview(
+            'uninstall',
+            async () => {
+               const previewed = unwrapTarget(await modsApi.previewUninstall({ ...request, scope, modIds, externalIds }));
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: 'uninstall', preview: previewed }
+                  : { status: 'invalid', kind: 'uninstall', problem: previewed };
+            },
+            previewFailure
+         ),
+      [modsApi, preview, request]
    );
 
    const previewChanges = useCallback(
-      async (installModIds: string[], removeModIds: string[]) => {
-         setState({ status: 'previewing', kind: 'changes' });
-
-         const response = await Result.tryPromise({
-            try: () => modsApi.previewChanges({ ...request, installModIds, removeModIds }),
-            catch: (cause) => cause
-         });
-         if (Result.isError(response) || response.value.status !== 'ok') {
-            setState({ status: 'failed', kind: 'changes', error: { code: 'mods.preview-failed', message: 'the mods could not be read' } });
-            return;
-         }
-
-         const previewed = response.value.value;
-         setState(
-            previewed.status === 'ok'
-               ? { status: 'ready', kind: 'changes', preview: previewed, installModIds, removeModIds }
-               : { status: 'invalid', kind: 'changes', problem: previewed }
-         );
-      },
-      [modsApi, request]
+      (installModIds: string[], removeModIds: string[]) =>
+         preview(
+            'changes',
+            async () => {
+               const previewed = unwrapTarget(await modsApi.previewChanges({ ...request, installModIds, removeModIds }));
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: 'changes', preview: previewed, installModIds, removeModIds }
+                  : { status: 'invalid', kind: 'changes', problem: previewed };
+            },
+            previewFailure
+         ),
+      [modsApi, preview, request]
    );
 
-   const chooseImport = useCallback(async () => {
-      setState({ status: 'previewing', kind: 'import' });
+   const chooseImport = useCallback(
+      () =>
+         choose(
+            'import',
+            async () => {
+               const chosen = await modsApi.chooseImportSource(request);
+               return chosen.status === 'cancelled' ? null : chosen;
+            },
+            (chosen) => {
+               if (chosen.status === 'unsupported') {
+                  settle({ status: 'invalid', kind: 'import', problem: { status: 'invalid', ...request, issue: 'unsupported-target' } });
+                  return;
+               }
 
-      const chosen = await modsApi.chooseImportSource(request).catch(() => null);
-      if (!chosen) {
-         setState({ status: 'failed', kind: 'import', error: { code: 'mods.import.preview-failed', message: 'the file could not be read' } });
-         return;
-      }
+               settle(
+                  chosen.preview.status === 'ok'
+                     ? { status: 'ready', kind: 'import', preview: chosen.preview }
+                     : { status: 'invalid', kind: 'import', problem: chosen.preview }
+               );
+            },
+            createProblem('mods.import.preview-failed'),
+            (superseded) => {
+               if (superseded.status === 'selected' && superseded.preview.status === 'ok' && superseded.preview.uploadId) {
+                  void modsApi.discardImportUpload({ ...request, uploadId: superseded.preview.uploadId });
+               }
+            }
+         ),
+      [choose, modsApi, request, settle]
+   );
 
-      if (chosen.status === 'cancelled') {
-         setState({ status: 'idle' });
-         return;
-      }
+   const confirm = useCallback(
+      (ready: ModActionReady) => {
+         const run = () => {
+            if (ready.kind === 'import')
+               return modsApi.import({ ...request, sourcePath: ready.preview.sourcePath, uploadId: ready.preview.uploadId });
+            if (ready.kind === 'changes')
+               return modsApi.applyChanges({ ...request, installModIds: ready.installModIds, removeModIds: ready.removeModIds });
+            if (ready.kind === 'install') return modsApi.installMods({ ...request, modIds: ready.preview.mods.map((mod) => mod.modId) });
 
-      if (chosen.status === 'unsupported') {
-         setState({ status: 'invalid', kind: 'import', problem: { status: 'invalid', ...request, issue: 'unsupported-target' } });
-         return;
-      }
+            return modsApi.uninstallMods({
+               ...request,
+               scope: ready.preview.scope,
+               modIds: ready.preview.mods.map((mod) => mod.modId),
+               externalIds: ready.preview.external.map((file) => file.id)
+            });
+         };
 
-      setState(
-         chosen.preview.status === 'ok'
-            ? { status: 'ready', kind: 'import', preview: chosen.preview }
-            : { status: 'invalid', kind: 'import', problem: chosen.preview }
-      );
-   }, [modsApi, request]);
-
-   const confirm = useCallback(async () => {
-      if (state.status !== 'ready') return;
-
-      const pending: ModActionState = { ...state, status: 'starting' };
-      setState(pending);
-
-      const fallback = {
-         code: 'mods.start-failed',
-         message: 'the action could not be started'
-      };
-      const started =
-         state.kind === 'import'
-            ? await inlineIpcResult(
-                 () => modsApi.import({ ...request, sourcePath: state.preview.sourcePath, uploadId: state.preview.uploadId }),
-                 fallback
-              )
-            : state.kind === 'changes'
-              ? await inlineTargetIpcResult(
-                   () =>
-                      modsApi.applyChanges({
-                         ...request,
-                         installModIds: state.installModIds,
-                         removeModIds: state.removeModIds
-                      }),
-                   fallback
-                )
-              : await inlineTargetIpcResult(
-                   () =>
-                      state.kind === 'install'
-                         ? modsApi.installMods({ ...request, modIds: state.preview.mods.map((mod) => mod.modId) })
-                         : modsApi.uninstallMods({ ...request, scope: state.preview.scope, modIds: state.preview.mods.map((mod) => mod.modId) }),
-                   fallback
-                );
-
-      setState(
-         started.ok ? { ...pending, status: 'running', operationId: started.value.id } : { status: 'failed', kind: state.kind, error: started.error }
-      );
-   }, [modsApi, request, state]);
-
-   const cancel = useCallback(() => {
-      if (state.status !== 'running') return;
-
-      void cancelOperation(state.operationId);
-   }, [cancelOperation, state]);
-
-   const dismiss = useCallback(() => {
-      const rescan = state.status === 'running';
-      if (state.status === 'ready' && state.kind === 'import' && state.preview.uploadId) {
-         void modsApi.discardImportUpload({ ...request, uploadId: state.preview.uploadId });
-      }
-      setState({ status: 'idle' });
-
-      if (rescan) reload();
-   }, [modsApi, reload, request, state]);
-
-   const status = mods.isError ? 'error' : mods.isPending || refreshMods.isPending ? 'loading' : 'ready';
+         void start(ready, run, startFailure);
+      },
+      [modsApi, request, start]
+   );
 
    return {
       snapshot,
-      status,
+      platform,
+      status: refreshMods.isPending ? 'loading' : queryStatus(mods),
       selected,
-      state,
-      operation,
-      linkBlocked,
+      flow,
+      linkBlocked: linkBlocked.scope === refreshKey && linkBlocked.blocked,
       reload,
       refresh: () => refreshMods.mutate(),
       toggle,
@@ -271,8 +264,6 @@ export function useInstallMods(request: TargetModRequest) {
       previewUninstall,
       previewChanges,
       chooseImport,
-      confirm,
-      cancel,
-      dismiss
+      confirm
    };
 }

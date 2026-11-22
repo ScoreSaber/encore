@@ -1,12 +1,13 @@
-import { Result, type Err, type Ok } from 'better-result';
+import { Result } from 'better-result';
 
-import { createFilesystemProblem, resolveFilesystemPath, type FilesystemProblem } from '@/lib/filesystem/path';
+import { createProblem } from '@/lib/errors';
+import { resolveFilesystemPath, type FilesystemProblem } from '@/lib/filesystem/path';
+import { throttleReports } from '@/lib/progress';
 
 import { lstat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const defaultBatchSize = 16;
-const progressThrottleMs = 150;
 
 type ScanBatchOptions = {
    batchSize?: number;
@@ -16,87 +17,42 @@ type ScanBatchOptions = {
 
 export async function scanInBatches<Entry, Row>(entries: Entry[], options: ScanBatchOptions, read: (entry: Entry) => Promise<Row>) {
    const rows: Row[] = [];
-   let lastProgressAt = 0;
+   const report = throttleReports(options.onProgress);
    const batchSize = options.batchSize ?? defaultBatchSize;
 
    for (let index = 0; index < entries.length; index += batchSize) {
       if (options.signal?.aborted) break;
 
       rows.push(...(await Promise.all(entries.slice(index, index + batchSize).map(read))));
-
-      const now = Date.now();
-      if (rows.length === entries.length || now - lastProgressAt >= progressThrottleMs) {
-         lastProgressAt = now;
-         options.onProgress?.({ scanned: rows.length, total: entries.length });
-      }
+      report({ scanned: rows.length, total: entries.length }, rows.length === entries.length);
    }
 
    return rows;
 }
 
-export type DirectorySize = {
+type DirectorySize = {
    bytes: number;
    files: number;
-   directories: number;
-   links: number;
-   skipped: number;
 };
 
-type DirectorySizeResult = Ok<DirectorySize, FilesystemProblem> | Err<DirectorySize, FilesystemProblem>;
-
-export async function getDirectorySize(targetPath: string): Promise<DirectorySizeResult> {
-   const normalizedPath = resolveFilesystemPath(targetPath);
-
-   return readSize(normalizedPath);
+export function getDirectorySize(targetPath: string) {
+   return readSize(resolveFilesystemPath(targetPath));
 }
 
-function emptySize(): DirectorySize {
-   return {
-      bytes: 0,
-      files: 0,
-      directories: 0,
-      links: 0,
-      skipped: 0
-   };
-}
-
-async function readSize(targetPath: string): Promise<DirectorySizeResult> {
+async function readSize(targetPath: string): Promise<Result<DirectorySize, FilesystemProblem>> {
    const stats = await Result.tryPromise({
       try: () => lstat(targetPath),
-      catch: (cause) => createFilesystemProblem('filesystem.size.failed', 'failed to calculate directory size', targetPath, cause)
+      catch: (cause) => createProblem('filesystem.size.failed', { path: targetPath, cause })
    });
    if (Result.isError(stats)) return Result.err<DirectorySize, FilesystemProblem>(stats.error);
 
-   if (stats.value.isSymbolicLink()) {
-      return Result.ok<DirectorySize, FilesystemProblem>({
-         ...emptySize(),
-         files: 1,
-         links: 1
-      });
-   }
+   if (stats.value.isFile()) return Result.ok<DirectorySize, FilesystemProblem>({ bytes: stats.value.size, files: 1 });
+   if (!stats.value.isDirectory()) return Result.ok<DirectorySize, FilesystemProblem>({ bytes: 0, files: 1 });
 
-   if (stats.value.isFile()) {
-      return Result.ok<DirectorySize, FilesystemProblem>({
-         ...emptySize(),
-         bytes: stats.value.size,
-         files: 1
-      });
-   }
-
-   if (!stats.value.isDirectory()) {
-      return Result.ok<DirectorySize, FilesystemProblem>({
-         ...emptySize(),
-         files: 1
-      });
-   }
-
-   const size: DirectorySize = {
-      ...emptySize(),
-      directories: 1
-   };
+   const size: DirectorySize = { bytes: 0, files: 0 };
    const entries = await Result.tryPromise({
       try: () => readdir(targetPath, { withFileTypes: true }),
-      catch: (cause) => createFilesystemProblem('filesystem.size.failed', 'failed to calculate directory size', targetPath, cause)
+      catch: (cause) => createProblem('filesystem.size.failed', { path: targetPath, cause })
    });
    if (Result.isError(entries)) return Result.err<DirectorySize, FilesystemProblem>(entries.error);
 
@@ -114,9 +70,6 @@ async function readSize(targetPath: string): Promise<DirectorySizeResult> {
 
       size.bytes += entrySize.value.bytes;
       size.files += entrySize.value.files;
-      size.directories += entrySize.value.directories;
-      size.links += entrySize.value.links;
-      size.skipped += entrySize.value.skipped;
    }
 
    return Result.ok<DirectorySize, FilesystemProblem>(size);

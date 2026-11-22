@@ -221,6 +221,11 @@
       user-select: none;
    }
 
+   a:not([draggable='true']),
+   img:not([draggable='true']) {
+      -webkit-user-drag: none;
+   }
+
    input,
    textarea,
    [contenteditable='true'],

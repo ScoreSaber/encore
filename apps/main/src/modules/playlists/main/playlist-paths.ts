@@ -3,9 +3,9 @@ import { playlistFileExtension } from '@/modules/playlists/contract';
 
 import { extname, join } from 'node:path';
 
-export const playlistsFolderName = 'Playlists';
+const playlistsFolderName = 'Playlists';
 
-export const playlistFileExtensions = [playlistFileExtension, '.json'];
+const playlistFileExtensions = [playlistFileExtension, '.json'];
 
 export function playlistsPath(installPath: string) {
    return join(installPath, playlistsFolderName);

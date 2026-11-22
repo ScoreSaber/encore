@@ -1,3 +1,4 @@
+import { Result } from 'better-result';
 import { z } from 'zod';
 
 import type { IpcResult } from '@/ipc/core';
@@ -7,10 +8,11 @@ import type { OperationSnapshot } from '@/modules/operations/contract';
 
 export type PlaylistId = string;
 
-export const playlistProblemCodeSchema = z.enum([
-   'playlists.export.cancelled',
-   'playlists.export.failed',
+const playlistProblemCodeSchema = z.enum([
    'playlists.file.invalid',
+   'playlists.file.invalid-songs',
+   'playlists.file.no-title',
+   'playlists.file.not-json',
    'playlists.file.too-large',
    'playlists.file.unreadable',
    'playlists.root.unreadable',
@@ -18,20 +20,19 @@ export const playlistProblemCodeSchema = z.enum([
    'playlists.write.failed'
 ]);
 
-export const playlistProblemSchema = z.object({
+const playlistProblemSchema = z.object({
    code: playlistProblemCodeSchema,
    message: z.string(),
    fileName: z.string().optional(),
    detail: z.string().optional()
 });
 
-export const playlistCollectionStatusSchema = z.enum(['missing', 'ready', 'scanning', 'unsupported']);
+const playlistCollectionStatusSchema = z.enum(['missing', 'ready', 'scanning', 'unsupported']);
 
-export type PlaylistProblemCode = z.infer<typeof playlistProblemCodeSchema>;
 export type PlaylistProblem = z.infer<typeof playlistProblemSchema>;
-export type PlaylistCollectionStatus = z.infer<typeof playlistCollectionStatusSchema>;
+type PlaylistCollectionStatus = z.infer<typeof playlistCollectionStatusSchema>;
 
-export const playlistSongRefSchema = z.object({
+const playlistSongRefSchema = z.object({
    hash: z.string().nullable(),
    key: z.string().nullable(),
    songName: z.string(),
@@ -90,9 +91,7 @@ export type PlaylistDeleteRequest = PlaylistSelectionRequest & {
    deleteMaps?: boolean;
 };
 
-export type PlaylistOpenFolderResult = { status: 'opened' } | { status: 'unsupported' } | { status: 'failed'; message: string };
-
-export const playlistActionIssueSchema = z.enum([
+const playlistActionIssueSchema = z.enum([
    'install-not-found',
    'inspect-failed',
    'invalid-source',
@@ -107,14 +106,14 @@ export const playlistActionIssueSchema = z.enum([
 
 export type PlaylistActionIssue = z.infer<typeof playlistActionIssueSchema>;
 
-export const playlistActionProblemSchema = z.object({
+const playlistActionProblemSchema = z.object({
    status: z.literal('invalid'),
    installId: z.string(),
    issue: playlistActionIssueSchema,
    detail: z.string().optional()
 });
 
-export const readyPlaylistDeletePreviewSchema = z.object({
+const readyPlaylistDeletePreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    playlistsPath: z.string(),
@@ -139,13 +138,9 @@ export type PlaylistDownloadRequest = PlaylistCollectionRequest & {
    url: string;
 };
 
-export type PlaylistImportChoice = { status: 'selected'; paths: string[] } | { status: 'cancelled' } | { status: 'unsupported' };
-
 export type PlaylistImportRequest = PlaylistCollectionRequest & {
    paths: string[];
 };
-
-export type PlaylistExportChoice = { status: 'selected'; path: string } | { status: 'cancelled' } | { status: 'unsupported' };
 
 export type PlaylistExportRequest = PlaylistSelectionRequest & {
    destinationPath: string;
@@ -156,21 +151,13 @@ export const playlistFileExtension = '.bplist';
 
 const playlistLinkIssueSchema = z.enum(['invalid-source', 'unsupported-link']);
 
-export type PlaylistLinkIssue = z.infer<typeof playlistLinkIssueSchema>;
+type PlaylistLinkIssue = z.infer<typeof playlistLinkIssueSchema>;
 
 export type PlaylistLinkSource = { kind: 'url'; url: string } | { kind: 'file'; path: string; fileName: string };
 
-export type PlaylistLinkParse = { status: 'ok'; url: string } | { status: 'invalid'; issue: PlaylistLinkIssue };
+type PlaylistLinkParse = { status: 'ok'; url: string } | { status: 'invalid'; issue: PlaylistLinkIssue };
 
 export type PlaylistLinkEvent = { status: 'ready'; source: PlaylistLinkSource } | { status: 'rejected'; issue: PlaylistLinkIssue; detail?: string };
-
-export type PlaylistLinkProtocolState = {
-   scheme: string;
-   registered: boolean;
-   canUnregister: boolean;
-};
-
-export type PlaylistLinkProtocolResult = IpcResult<PlaylistLinkProtocolState>;
 
 export function parsePlaylistLink(value: string): PlaylistLinkParse {
    const url = URL.canParse(value) ? new URL(value) : null;
@@ -178,7 +165,7 @@ export function parsePlaylistLink(value: string): PlaylistLinkParse {
    if (url.host !== 'playlist') return { status: 'invalid', issue: 'invalid-source' };
 
    const rawSource = `${url.pathname.replace(/^\//, '')}${url.search}`;
-   const source = [rawSource, decodeLinkSource(rawSource)].find(
+   const source = [rawSource, Result.try(() => decodeURIComponent(rawSource)).unwrapOr(null)].find(
       (candidate) => candidate && URL.canParse(candidate) && new URL(candidate).protocol === 'https:'
    );
    if (!source) return { status: 'invalid', issue: 'invalid-source' };
@@ -205,12 +192,4 @@ export function createEmptyPlaylistCollectionSnapshot(
       problems: [],
       progress: null
    };
-}
-
-function decodeLinkSource(raw: string) {
-   try {
-      return decodeURIComponent(raw);
-   } catch {
-      return null;
-   }
 }

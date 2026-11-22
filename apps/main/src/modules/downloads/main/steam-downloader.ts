@@ -1,50 +1,26 @@
 import { Result } from 'better-result';
 
 import { abortableSleep } from '@/lib/async';
+import { createProblem, type Problem } from '@/lib/errors';
 import { copyPathWithProgress, deletePathWithProgress } from '@/lib/filesystem/operations';
-import { createUniquePath, pathExists, type FilesystemProblem } from '@/lib/filesystem/path';
+import { removeQuietly } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
-import {
-   unavailableDownloadPreview,
-   type DownloadIssue,
-   type DownloadOutcome,
-   type DownloadResult,
-   type DownloadWarning,
-   type SteamDownloadPreview,
-   type UnavailableDownloadPreview
-} from '@/modules/downloads/contract';
-import { beatSaberSteamAppId, beatSaberSteamDepotId, readSteamClientState, type SteamClientState } from '@/modules/downloads/main/steam-client';
-import type { VersionCatalog } from '@/modules/downloads/main/version-catalog';
-import { readBeatSaberVersion } from '@/modules/installs/main/beat-saber-version';
-import type { InstallRegistry } from '@/modules/installs/main/install-registry';
-import type { OperationError, OperationId } from '@/modules/operations/contract';
+import { translate } from '@/lib/messages';
+import { createSerialQueue } from '@/lib/state/machine';
+import type { DownloadIssue, DownloadVersion, DownloadWarning, SteamDownloadPreview } from '@/modules/downloads/contract';
+import { isSteamDepotComplete, readSteamManifest } from '@/modules/downloads/main/steam-manifest';
+import type { OperationId } from '@/modules/operations/contract';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
-import type { SettingsStore } from '@/modules/settings/main/settings-store';
-import { logRecoveredProblem } from '@/modules/support/main/problem-log';
+import { beatSaberSteamAppId, beatSaberSteamDepotId, readSteamClientState, type SteamClientState } from '@/modules/stores/main/steam-client';
 
 import { spawn } from 'node:child_process';
 import { mkdir, readdir } from 'node:fs/promises';
-import { basename, join } from 'node:path';
-
-const depotLayoutFiles = ['Beat Saber.exe', 'UnityPlayer.dll', join('Beat Saber_Data', 'globalgamemanagers')];
-
-const steamIssueMessages = new Map<DownloadIssue, string>([
-   ['catalog-unavailable', 'the Beat Saber version list is unavailable'],
-   ['depot-not-empty', 'the Steam depot folder still holds content Encore did not download'],
-   ['inspect-failed', 'the download could not be prepared'],
-   ['steam-missing', 'the Steam client is not installed on this machine'],
-   ['steam-signed-out', 'no Steam account is signed in on this machine'],
-   ['unknown-version', 'this Beat Saber version is not in the version list'],
-   ['unsupported-platform', 'Steam downloads need the Windows Steam client']
-]);
+import { dirname, join, resolve } from 'node:path';
 
 type SteamLaunch = (input: { executablePath: string; manifestId: string }) => Promise<Result<void, string>>;
 
 type SteamDownloaderOptions = {
-   settingsStore: SettingsStore;
-   registry: InstallRegistry;
    operations: OperationRegistry;
-   catalog: VersionCatalog;
    readClientState?: () => Promise<SteamClientState>;
    launch?: SteamLaunch;
    pollIntervalMs?: number;
@@ -64,191 +40,129 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
    const settleMs = options.settleMs ?? 10_000;
    const firstBytesTimeoutMs = options.firstBytesTimeoutMs ?? 120_000;
    const timeoutMs = options.timeoutMs ?? 3_600_000;
+   const depotQueue = createSerialQueue();
 
-   async function getCatalog() {
-      return options.catalog.get();
-   }
-
-   async function refreshCatalog() {
-      return options.catalog.refresh();
-   }
-
-   async function preview(version: string): Promise<SteamDownloadPreview | UnavailableDownloadPreview> {
+   async function preview(
+      entry: DownloadVersion,
+      destination: Pick<SteamDownloadPreview, 'name' | 'installRoot' | 'destinationPath' | 'warnings'>
+   ): Promise<Result<SteamDownloadPreview, { issue: DownloadIssue }>> {
       const client = await readClientState();
-      if (client.status !== 'ready') {
-         const issue: DownloadIssue =
-            client.status === 'missing' ? 'steam-missing' : client.status === 'signed-out' ? 'steam-signed-out' : 'unsupported-platform';
-         return unavailable(version, issue);
-      }
+      if (client.status === 'missing') return Result.err({ issue: 'steam-missing' });
+      if (client.status === 'signed-out') return Result.err({ issue: 'steam-signed-out' });
+      if (client.status === 'unsupported-platform') return Result.err({ issue: 'unsupported-platform' });
 
-      const catalog = await options.catalog.get();
-      if (catalog.status !== 'ready') return unavailable(version, 'catalog-unavailable', catalog.problem?.code);
-
-      const entry = catalog.versions.find((candidate) => candidate.version === version);
-      if (!entry) return unavailable(version, 'unknown-version');
-
-      const settings = await options.settingsStore.getSnapshot();
-      const installRoot = settings.library.installRoot;
-      const desiredPath = join(installRoot, `Beat Saber ${entry.version}`);
-      const destination = await createUniquePath(desiredPath);
-      if (Result.isError(destination)) return unavailable(version, 'inspect-failed', destination.error.detail);
-
-      const warnings: DownloadWarning[] = ['steam-console-opens'];
+      const warnings: DownloadWarning[] = process.platform === 'win32' ? ['steam-console-opens'] : [];
       if ((await readDepotEntries(client.depotPath)).length > 0) warnings.push('depot-not-empty');
-      if (destination.value !== desiredPath) warnings.push('name-conflict');
 
-      return {
+      return Result.ok({
          status: 'ok',
          store: 'steam',
          version: entry.version,
          manifestId: entry.manifestId,
-         name: basename(destination.value),
-         installRoot,
-         destinationPath: destination.value,
+         ...destination,
          steamPath: client.executablePath,
          depotPath: client.depotPath,
-         warnings
-      };
-   }
-
-   async function start(version: string): Promise<DownloadResult> {
-      const previewed = await preview(version);
-
-      if (previewed.status === 'unavailable') {
-         return {
-            ok: false,
-            error: {
-               code: `downloads.steam.${previewed.issue}`,
-               message: steamIssueMessages.get(previewed.issue) ?? 'the download could not be prepared',
-               details: { version: previewed.version, detail: previewed.detail }
-            }
-         };
-      }
-
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'download',
-         title: `Download Beat Saber ${previewed.version}`,
-         message: previewed.destinationPath,
-         progress: { phase: 'preparing', current: 0, percent: 0, unit: 'bytes' },
-         metadata: {
-            version: previewed.version,
-            destinationPath: previewed.destinationPath,
-            depotPath: previewed.depotPath
-         },
-         cancel: () => controller.abort()
+         warnings: [...warnings, ...destination.warnings]
       });
-
-      void runDownload(operation.id, previewed, controller.signal);
-
-      return { ok: true, value: operation };
    }
 
-   async function runDownload(operationId: OperationId, previewed: SteamDownloadPreview, signal: AbortSignal) {
-      const preexisting = new Set(await readDepotEntries(previewed.depotPath));
-      const initialSize = await getDirectorySize(previewed.depotPath);
-      const initial = Result.isOk(initialSize) ? { bytes: initialSize.value.bytes, files: initialSize.value.files } : { bytes: 0, files: 0 };
+   function download(previewed: SteamDownloadPreview, operationId: OperationId, signal: AbortSignal): Promise<Result<DepotSummary, Problem>> {
+      return depotQueue.run(async () => {
+         if (signal.aborted) return Result.err(createProblem('downloads.steam.cancelled'));
 
-      const launched = await launch({ executablePath: previewed.steamPath, manifestId: previewed.manifestId });
-      if (Result.isError(launched)) {
-         return failOperation(operationId, {
-            code: 'downloads.steam.launch-failed',
-            message: 'the Steam client could not be started',
-            details: { detail: launched.error }
+         const preexisting = new Set(await readDepotEntries(previewed.depotPath));
+         const initial = await readDepotSummary(previewed.depotPath);
+
+         const launched = await launch({ executablePath: previewed.steamPath, manifestId: previewed.manifestId });
+         if (Result.isError(launched)) return Result.err(createProblem('downloads.steam.launch-failed', { cause: launched.error }));
+
+         const watched = await watchDepot(operationId, previewed.depotPath, previewed.manifestId, initial, signal);
+         if (Result.isError(watched)) return Result.err(watched.error);
+
+         const prepared = await Result.tryPromise({
+            try: () => mkdir(previewed.installRoot, { recursive: true }),
+            catch: (cause) => createProblem('downloads.steam.prepare-failed', { path: previewed.installRoot, cause })
          });
-      }
+         if (Result.isError(prepared)) return Result.err(prepared.error);
 
-      const watched = await watchDepot(operationId, previewed.depotPath, previewed.version, initial, signal);
-      if (Result.isError(watched)) return failOperation(operationId, watched.error);
+         const copied = await copyPathWithProgress({
+            sourcePath: previewed.depotPath,
+            destinationPath: previewed.destinationPath,
+            destinationRoot: previewed.installRoot,
+            onProgress: (progress) => options.operations.update(operationId, { progress }),
+            signal
+         });
+         if (Result.isError(copied)) {
+            await removeQuietly(previewed.destinationPath);
+            return Result.err(copied.error);
+         }
 
-      const prepared = await Result.tryPromise({
-         try: () => mkdir(previewed.installRoot, { recursive: true }),
-         catch: (cause) => ({
-            code: 'downloads.steam.copy-failed',
-            message: 'the install root could not be prepared',
-            details: { detail: String(cause) }
-         })
+         await clearDownloadedDepot(operationId, previewed.depotPath, preexisting, signal);
+
+         return Result.ok({ bytes: copied.value.bytes, files: copied.value.files });
       });
-      if (Result.isError(prepared)) return failOperation(operationId, prepared.error);
-
-      const copied = await copyPathWithProgress({
-         sourcePath: previewed.depotPath,
-         destinationPath: previewed.destinationPath,
-         destinationRoot: previewed.installRoot,
-         scope: 'install',
-         operationId,
-         onProgress: (progress) => options.operations.update(operationId, { progress }),
-         signal
-      });
-      if (Result.isError(copied)) {
-         logRecoveredProblem('downloads.steam.copy', copied.error);
-         return failOperation(operationId, operationErrorFromProblem(copied.error));
-      }
-
-      const registered = await options.registry.register({
-         source: 'library',
-         path: previewed.destinationPath,
-         store: 'steam'
-      });
-      if (Result.isError(registered)) return failOperation(operationId, operationErrorFromProblem(registered.error));
-
-      await clearDownloadedDepot(operationId, previewed.depotPath, preexisting, signal);
-
-      const outcome: DownloadOutcome = {
-         installId: registered.value.id,
-         store: 'steam',
-         name: registered.value.name,
-         path: previewed.destinationPath,
-         version: previewed.version,
-         bytes: copied.value.bytes,
-         files: copied.value.files
-      };
-      options.operations.complete(operationId, outcome);
    }
 
-   async function watchDepot(operationId: OperationId, depotPath: string, version: string, initial: DepotSummary, signal: AbortSignal) {
+   async function watchDepot(operationId: OperationId, depotPath: string, manifestId: string, initial: DepotSummary, signal: AbortSignal) {
       const startedAt = Date.now();
       let previous = initial;
       let changedAt = Date.now();
-      let downloadStarted = false;
+      let watchPhase: 'waiting-for-start' | 'downloading' = 'waiting-for-start';
+      let lastReportedRate: number | undefined;
+      let manifest: Awaited<ReturnType<typeof readSteamManifest>> = null;
+      const recent: { at: number; bytes: number }[] = [];
 
       while (!signal.aborted) {
-         const size = await getDirectorySize(depotPath);
-         const summary = Result.isOk(size) ? { bytes: size.value.bytes, files: size.value.files } : { bytes: 0, files: 0 };
+         const summary = await readDepotSummary(depotPath);
          const now = Date.now();
+         recent.push({ at: now, bytes: summary.bytes });
+         if (recent.length > rateWindow) recent.shift();
+         const rate = bytesPerSecond(recent);
 
          if (summary.bytes !== previous.bytes || summary.files !== previous.files) {
             previous = summary;
             changedAt = now;
-            downloadStarted = true;
+            watchPhase = 'downloading';
+            lastReportedRate = rate;
             options.operations.update(operationId, {
-               progress: { phase: 'downloading', current: summary.bytes, unit: 'bytes', label: `${summary.files} files` }
+               progress: {
+                  phase: 'downloading',
+                  current: summary.bytes,
+                  perSecond: rate,
+                  unit: 'bytes',
+                  label: translate('common.operation.files', { count: summary.files })
+               }
+            });
+         } else if (watchPhase === 'downloading' && rate === 0 && lastReportedRate !== 0) {
+            lastReportedRate = 0;
+            options.operations.update(operationId, {
+               progress: {
+                  phase: 'downloading',
+                  current: summary.bytes,
+                  perSecond: 0,
+                  unit: 'bytes',
+                  label: translate('common.operation.files', { count: summary.files })
+               }
             });
          }
 
-         if (now - changedAt >= settleMs && (await hasDepotLayout(depotPath)) && (await readBeatSaberVersion(depotPath)) === version) {
-            return Result.ok<DepotSummary, OperationError>(summary);
+         if (now - changedAt >= settleMs) {
+            manifest ??= await readDepotManifest(depotPath, manifestId);
+            if (manifest && (await isSteamDepotComplete(depotPath, manifest))) return Result.ok<DepotSummary, Problem>(summary);
+            if (!manifest && watchPhase === 'downloading') return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.unverified'));
+            changedAt = Date.now();
          }
-         if (!downloadStarted && now - startedAt >= firstBytesTimeoutMs) {
-            return Result.err<DepotSummary, OperationError>({
-               code: 'downloads.steam.manifest-unavailable',
-               message: 'Steam did not start this download. This build may no longer be available to this Steam account'
-            });
+         if (watchPhase === 'waiting-for-start' && now - startedAt >= firstBytesTimeoutMs) {
+            return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.manifest-unavailable'));
          }
          if (now - startedAt >= timeoutMs) {
-            return Result.err<DepotSummary, OperationError>({
-               code: 'downloads.steam.timed-out',
-               message: 'Steam did not finish this download in time'
-            });
+            return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.timed-out'));
          }
 
          await abortableSleep(pollIntervalMs, signal);
       }
 
-      return Result.err<DepotSummary, OperationError>({
-         code: 'downloads.steam.cancelled',
-         message: 'the download was cancelled'
-      });
+      return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.cancelled'));
    }
 
    async function clearDownloadedDepot(operationId: OperationId, depotPath: string, preexisting: Set<string>, signal: AbortSignal) {
@@ -258,23 +172,36 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
          await deletePathWithProgress({
             targetPath: join(depotPath, entry),
             root: depotPath,
-            scope: 'content',
             allowMissing: true,
-            operationId,
             onProgress: (progress) => options.operations.update(operationId, { progress })
          });
       }
    }
 
-   function failOperation(operationId: OperationId, error: OperationError) {
-      options.operations.fail(operationId, error);
-   }
+   return { preview, download };
+}
 
-   function unavailable(version: string | null, issue: DownloadIssue, detail?: string) {
-      return unavailableDownloadPreview({ store: 'steam', version, issue, detail });
-   }
+const rateWindow = 5;
 
-   return { getCatalog, refreshCatalog, preview, start };
+function bytesPerSecond(recent: { at: number; bytes: number }[]) {
+   const first = recent[0];
+   const last = recent.at(-1);
+   if (!first || !last || last.at <= first.at) return undefined;
+   return Math.max(0, ((last.bytes - first.bytes) * 1000) / (last.at - first.at));
+}
+
+async function readDepotManifest(depotPath: string, manifestId: string) {
+   const steamappsParent = resolve(depotPath, '..', '..', '..', '..');
+   const name = `${beatSaberSteamDepotId}_${manifestId}.manifest`;
+   return (
+      (await readSteamManifest(join(steamappsParent, 'depotcache', name))) ??
+      (await readSteamManifest(join(dirname(steamappsParent), 'depotcache', name)))
+   );
+}
+
+async function readDepotSummary(depotPath: string): Promise<DepotSummary> {
+   const size = await getDirectorySize(depotPath);
+   return Result.isOk(size) ? { bytes: size.value.bytes, files: size.value.files } : { bytes: 0, files: 0 };
 }
 
 async function readDepotEntries(depotPath: string) {
@@ -286,18 +213,10 @@ async function readDepotEntries(depotPath: string) {
    return Result.isOk(entries) ? entries.value : [];
 }
 
-async function hasDepotLayout(depotPath: string) {
-   for (const file of depotLayoutFiles) {
-      const exists = await pathExists(join(depotPath, file));
-      if (Result.isError(exists) || !exists.value) return false;
-   }
-
-   return true;
-}
-
 function launchSteamDownload(input: { executablePath: string; manifestId: string }) {
    return new Promise<Result<void, string>>((resolve) => {
-      const child = spawn(input.executablePath, ['-console', '+download_depot', beatSaberSteamAppId, beatSaberSteamDepotId, input.manifestId], {
+      const consoleFlag = process.platform === 'win32' ? ['-console'] : [];
+      const child = spawn(input.executablePath, [...consoleFlag, '+download_depot', beatSaberSteamAppId, beatSaberSteamDepotId, input.manifestId], {
          detached: true,
          stdio: 'ignore'
       });
@@ -306,18 +225,8 @@ function launchSteamDownload(input: { executablePath: string; manifestId: string
          child.unref();
          resolve(Result.ok<void, string>(undefined));
       });
-      child.once('error', (cause: Error) => {
+      child.once('error', (cause) => {
          resolve(Result.err<void, string>(cause.message));
       });
    });
-}
-
-function operationErrorFromProblem(problem: FilesystemProblem): OperationError {
-   const context = [problem.detail, problem.path].filter(Boolean).join(' - ');
-
-   return {
-      code: problem.code,
-      message: context ? `${problem.message}: ${context}` : problem.message,
-      details: { path: problem.path, detail: problem.detail }
-   };
 }

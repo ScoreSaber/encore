@@ -1,115 +1,80 @@
 import { Result } from 'better-result';
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { expect, onTestFinished, test } from 'vite-plus/test';
 
-import type { LaunchOptions } from '@/modules/launch/contract';
 import { encoreProtocol, type ShortcutRequest } from '@/modules/shortcuts/contract';
-import { parseBinaryVdf, serializeBinaryVdf, vdfMap, vdfText, type BinaryVdfMap, type BinaryVdfValue } from '@/modules/shortcuts/main/binary-vdf';
-import { resolveLaunchLink } from '@/modules/shortcuts/main/launch-link-intake';
-import type { ShortcutRuntime } from '@/modules/shortcuts/main/shortcut-runtime';
+import { parseBinaryVdf, serializeBinaryVdf, vdfMap, vdfText, type BinaryVdfValue } from '@/modules/shortcuts/main/binary-vdf';
 import { createShortcutService } from '@/modules/shortcuts/main/shortcut-service';
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterEach(async () => {
-   for (const cleanup of cleanups.reverse()) {
-      await cleanup();
-   }
-   cleanups.length = 0;
-});
-
-describe('shortcut service', () => {
-   test('adds a Steam shortcut without touching the entries Steam already had', async () => {
-      const root = await mkdtemp(join(tmpdir(), 'encore-shortcuts-'));
-      cleanups.push(() => rm(root, { recursive: true, force: true }));
-      const steamShortcutsPath = join(root, 'steam', 'userdata', '12345', 'config', 'shortcuts.vdf');
-      await mkdir(join(root, 'steam', 'userdata', '12345', 'config'), {
-         recursive: true
-      });
-      const executablePath = join(root, 'app', 'encore');
-      const install = { id: 'install_abcdef012345', name: 'Beat Saber 1.37.0' };
-      const runtime: ShortcutRuntime = {
+test('adds a Steam shortcut without touching the entries Steam already had', async () => {
+   const root = await mkdtemp(join(tmpdir(), 'encore-shortcuts-'));
+   onTestFinished(() => rm(root, { recursive: true, force: true }));
+   const configPath = join(root, 'steam', 'userdata', '12345', 'config');
+   await mkdir(configPath, { recursive: true });
+   const other = new Map<string, BinaryVdfValue>([
+      ['appid', 12],
+      ['AppName', 'Another game'],
+      ['SomeFutureField', 'kept']
+   ]);
+   await writeFile(join(configPath, 'shortcuts.vdf'), serializeBinaryVdf(new Map([['shortcuts', new Map([['0', other]])]])));
+   const shortcuts = createShortcutService({
+      runtime: {
          platform: 'linux',
-         executablePath,
+         executablePath: join(root, 'encore'),
          desktopPath: join(root, 'Desktop'),
          getSteamRoots: async () => [join(root, 'steam')],
          writeWindowsShortcut: () => Result.ok(undefined),
-         getProtocolState: () => ({
-            scheme: encoreProtocol,
-            registered: false,
-            canUnregister: false
-         }),
-         setProtocolRegistered: () => ({
-            scheme: encoreProtocol,
-            registered: true,
-            canUnregister: false
-         })
-      };
-      const shortcuts = createShortcutService({
-         runtime,
-         getInstall: async () => install
-      });
-      const other: BinaryVdfMap = new Map<string, BinaryVdfValue>([
-         ['appid', 12],
-         ['AppName', 'Another game'],
-         ['Exe', '"/games/another"'],
-         ['SomeFutureField', 'kept']
-      ]);
-      const shortcutFile = new Map<string, BinaryVdfValue>([['shortcuts', new Map<string, BinaryVdfValue>([['0', other]])]]);
-      await writeFile(steamShortcutsPath, serializeBinaryVdf(shortcutFile));
-      const options: LaunchOptions = {
-         flags: ['fpfc'],
-         args: ['--room', 'my room'],
-         environment: { SOME_ENV_VAR: '1' },
-         runAsAdmin: false,
-         closeEncore: true
-      };
-      const request: ShortcutRequest = {
-         targetId: 'local',
-         installId: install.id,
-         kind: 'steam',
-         options
-      };
-
-      expect((await shortcuts.create(request)).ok).toBe(true);
-      expect((await shortcuts.create(request)).ok).toBe(true);
-
-      const entries = vdfMap(parseBinaryVdf(await readFile(steamShortcutsPath)).get('shortcuts'));
-      expect(entries?.size).toBe(2);
-      expect(vdfMap(entries?.get('0'))).toEqual(other);
-      expect(vdfText(vdfMap(entries?.get('1'))?.get('AppName'))).toBe('Beat Saber 1.37.0');
-      expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('encore://launch?target=local&install=install_abcdef012345');
-      expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('close=1');
-      expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).not.toContain('SOME_ENV_VAR');
+         getProtocolState: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false }),
+         setProtocolRegistered: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false })
+      },
+      getInstall: async () => ({ id: 'install_abcdef012345', name: 'Beat Saber 1.37.0' })
    });
+   const request: ShortcutRequest = {
+      targetId: 'local',
+      installId: 'install_abcdef012345',
+      kind: 'steam',
+      options: { flags: [], args: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: false, closeEncore: false }
+   };
+
+   expect(Result.isOk(await shortcuts.create(request))).toBe(true);
+   expect(Result.isOk(await shortcuts.create(request))).toBe(true);
+
+   const entries = vdfMap(parseBinaryVdf(await readFile(join(configPath, 'shortcuts.vdf'))).get('shortcuts'));
+   expect(entries?.size).toBe(2);
+   expect(vdfMap(entries?.get('0'))).toEqual(other);
+   expect(vdfText(vdfMap(entries?.get('1'))?.get('LaunchOptions'))).toContain('encore://launch?target=local&install=install_abcdef012345');
 });
 
-describe('launch link intake', () => {
-   test('resolves a link against the installs that exist right now', async () => {
-      const install = { id: 'install_abcdef012345', name: 'Beat Saber 1.37.0' };
-      const getInstall = async (request: { installId: string }) => (request.installId === install.id ? install : null);
-      const getLaunchEnvironment = async () => ({ SOME_ENV_VAR: '1' });
-
-      expect(await resolveLaunchLink(`encore://launch?install=${install.id}&flag=fpfc`, getInstall, getLaunchEnvironment)).toEqual({
-         status: 'ready',
-         request: {
-            targetId: 'local',
-            installId: install.id,
-            options: { flags: ['fpfc'], args: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: false, closeEncore: false }
-         },
-         installName: install.name
-      });
-      expect(await resolveLaunchLink('encore://launch?install=install_000000000000', getInstall, getLaunchEnvironment)).toEqual({
-         status: 'rejected',
-         issue: 'unknown-install',
-         detail: 'install_000000000000'
-      });
-      expect(await resolveLaunchLink('encore://launch?install=/bin/sh', getInstall, getLaunchEnvironment)).toEqual({
-         status: 'rejected',
-         issue: 'invalid-request'
-      });
+test('writes a desktop entry Exec line that survives percent-encoded args and reserved characters', async () => {
+   const root = await mkdtemp(join(tmpdir(), 'encore-shortcuts-'));
+   onTestFinished(() => rm(root, { recursive: true, force: true }));
+   await mkdir(join(root, 'Desktop'));
+   const shortcuts = createShortcutService({
+      runtime: {
+         platform: 'linux',
+         executablePath: '/opt/My "$Apps"/Encore.AppImage',
+         desktopPath: join(root, 'Desktop'),
+         getSteamRoots: async () => [],
+         writeWindowsShortcut: () => Result.ok(undefined),
+         getProtocolState: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false }),
+         setProtocolRegistered: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false })
+      },
+      getInstall: async () => ({ id: 'install_abcdef012345', name: 'Beat Saber' })
    });
+
+   const created = await shortcuts.create({
+      targetId: 'local',
+      installId: 'install_abcdef012345',
+      kind: 'desktop',
+      options: { flags: [], args: ['100%', 'C:\\x'], environment: {}, runAsAdmin: false, closeEncore: false }
+   });
+   if (Result.isError(created)) throw new Error('the shortcut was not written');
+
+   const entry = await readFile(join(root, 'Desktop', 'Beat Saber.desktop'), 'utf8');
+   expect(entry).toContain(
+      'Exec="/opt/My \\\\"\\\\$Apps\\\\"/Encore.AppImage" "encore://launch?target=local&install=install_abcdef012345&arg=100%%25&arg=C%%3A%%5Cx"\n'
+   );
 });

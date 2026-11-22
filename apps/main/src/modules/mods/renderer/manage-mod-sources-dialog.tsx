@@ -2,7 +2,6 @@ import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FieldGroup } from '@/components/ui/field';
 
 import { ModRepositoriesFields } from '@/modules/settings/renderer/mod-repositories-section';
 
@@ -27,9 +26,9 @@ export function ManageModSourcesDialog({
             </DialogHeader>
 
             {open ? (
-               <FieldGroup className="min-h-0 gap-0 overflow-y-auto pr-2">
+               <div className="flex min-h-0 flex-col gap-6 overflow-y-auto pr-2">
                   <ModRepositoriesFields onChanged={onChanged} />
-               </FieldGroup>
+               </div>
             ) : null}
 
             <DialogFooter>

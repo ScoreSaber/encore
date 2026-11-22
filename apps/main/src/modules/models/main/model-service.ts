@@ -1,17 +1,13 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { createContentScanCache } from '@/lib/content/content-cache';
-import { createContentFailure, createOperationFailure } from '@/lib/content/content-errors';
-import { createContentEvents } from '@/lib/content/content-events';
-import { createContentIngestionService, type ContentIngestionService, type IngestFileRequest } from '@/lib/content/content-ingestion';
-import type { ContentLimits } from '@/lib/content/content-limits';
+import type { IpcFailureResult } from '@/ipc/core';
+import { createContentIngestionService } from '@/lib/content/content-ingestion';
 import type { ContentStaging } from '@/lib/content/content-staging';
-import type { ContentProblem, ContentSource } from '@/lib/content/contract';
-import { ensureContentFolder, isManagedPath, resolveManagedEntries } from '@/lib/content/managed-selection';
-import { createScanStates, pruneScanCache, type ContentScanState } from '@/lib/content/scan-states';
-import { deletePathWithProgress } from '@/lib/filesystem/operations';
-import { createFilesystemProblem, pathExists, type FilesystemProblem } from '@/lib/filesystem/path';
+import { deleteManagedEntries, ensureContentFolder, isManagedPath, resolveManagedEntries } from '@/lib/content/managed-selection';
+import { createScanStates, pruneScanCache, type ScanRequest } from '@/lib/content/scan-states';
+import { createProblem } from '@/lib/errors';
+import { translate } from '@/lib/messages';
 import type { InstallId } from '@/modules/installs/contract';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
@@ -22,49 +18,37 @@ import {
    modelCollectionSnapshotSchema,
    type LocalModelSummary,
    type ModelActionIssue,
-   type ModelCollectionRequest,
    type ModelCollectionSnapshot,
    type ModelDeletePreview,
    type ModelDetailRequest,
    type ModelDownloadRequest,
    type ModelExportRequest,
-   type ModelHash,
    type ModelImportRequest,
    type ModelOperationResult,
-   type ModelProblem,
-   type ModelSaberModelSummary,
    type ModelSearchRequest,
    type ModelSearchResult,
-   type ModelSelectionRequest,
-   type ModelType
+   type ModelSelectionRequest
 } from '@/modules/models/contract';
+import { createBeatModsAssetCatalog, modelDownloadHosts } from '@/modules/models/main/beatmods-assets';
 import { exportModelsToZip } from '@/modules/models/main/model-archive';
-import { computeModelHash } from '@/modules/models/main/model-hash';
-import { createModelIndex, type ModelIndex } from '@/modules/models/main/model-index';
-import { modelDisplayName, modelExtension, modelFolderPath, modelTypeForFileName, toSafeModelFileName } from '@/modules/models/main/model-paths';
-import { createModelProblem } from '@/modules/models/main/model-problem';
-import { createModelSaberCatalog, modelSaberDownloadHosts, type ModelSaberCatalog } from '@/modules/models/main/model-saber-catalog';
+import { createModelIndex } from '@/modules/models/main/model-index';
+import {
+   installModelFiles,
+   modelContentLimits,
+   modelKey,
+   type InstallModelFilesInput,
+   type ModelFileSource
+} from '@/modules/models/main/model-install';
+import { modelFolderPath, modelTypeForFileName, toSafeModelFileName } from '@/modules/models/main/model-paths';
 import { scanModelFolders, type ModelScanCacheEntry } from '@/modules/models/main/model-scanner';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
-import { createBytesProgress, createInstallProgress } from '@/modules/operations/main/progress';
+import { createBytesProgress, createInstallProgress } from '@/modules/operations/main/operation-reporting';
+import type { AppLogWriter } from '@/modules/support/main/app-log';
 
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
 
-const actionIssueMessages = {
-   'already-installed': 'this model is already in the install',
-   'inspect-failed': 'the model could not be inspected',
-   'install-not-found': 'the install is not in the registry anymore',
-   'models-missing': 'this install has no model folders yet',
-   'no-selection': 'no models were selected',
-   'no-source': 'no model file was chosen',
-   'not-found': 'the model is not in this install anymore',
-   'source-unavailable': 'ModelSaber did not return this model',
-   'unsupported-target': 'this target cannot manage models',
-   'unsupported-type': 'this kind of model is not supported'
-};
-
-function modelKey(type: ModelType, hash: ModelHash) {
-   return `${type}:${hash}`;
+function failure(installId: InstallId, issue: ModelActionIssue, detail?: string): IpcFailureResult {
+   return { ok: false, error: createProblem(`models.${issue}`, { installId, detail }) };
 }
 
 const modelScanCacheEntrySchema = z.object({
@@ -72,21 +56,13 @@ const modelScanCacheEntrySchema = z.object({
    model: localModelSummarySchema
 });
 
-const modelContentLimits: Partial<ContentLimits> = {
-   maxDownloadBytes: 256 * 1024 * 1024
-};
-
 type ModelServiceOptions = {
    registry: InstallRegistry;
    operations: OperationRegistry;
    dataPath: string;
-   ingestion?: ContentIngestionService;
+   log: AppLogWriter;
    staging?: ContentStaging;
-   catalog?: ModelSaberCatalog;
-   index?: ModelIndex;
 };
-
-type ModelScanState = ContentScanState<ModelCollectionSnapshot, ModelScanCacheEntry, null>;
 
 export type ModelService = ReturnType<typeof createModelService>;
 
@@ -94,69 +70,35 @@ type ReadyDeletePreview = Extract<ModelDeletePreview, { status: 'ok' }>;
 
 type ResolvedSelection = { status: 'invalid'; issue: ModelActionIssue } | { status: 'ok'; models: LocalModelSummary[] };
 
-type InstallModelSource = {
-   source: ContentSource;
-   type: ModelType;
-   fileName: string;
-   expectedHash?: ModelHash;
-};
-
-type InstallModelsInput = {
-   installId: InstallId;
-   installPath: string;
-   sources: InstallModelSource[];
-   allowedHosts?: readonly string[];
-   installed: Set<string>;
-   signal: AbortSignal;
-};
-
 export function createModelService(options: ModelServiceOptions) {
-   const ingestion =
-      options.ingestion ??
-      createContentIngestionService({
-         dataPath: options.dataPath,
-         limits: modelContentLimits,
-         staging: options.staging
-      });
-   const catalog = options.catalog ?? createModelSaberCatalog();
-   const modelIndex = options.index ?? createModelIndex({ dataPath: options.dataPath });
-   const events = createContentEvents<ModelCollectionSnapshot>();
-   const failure = createContentFailure<ModelActionIssue>('models', actionIssueMessages);
-   const failOperation = createOperationFailure(options.operations);
+   const ingestion = createContentIngestionService({
+      dataPath: options.dataPath,
+      limits: modelContentLimits,
+      staging: options.staging
+   });
+   const catalog = createBeatModsAssetCatalog();
+   const modelIndex = createModelIndex({ dataPath: options.dataPath });
    const reportInstallProgress = createInstallProgress(options.operations);
    const reportBytesProgress = createBytesProgress(options.operations);
-   const states = createScanStates<ModelCollectionSnapshot, ModelScanCacheEntry, null>({
+   const states = createScanStates({
+      dataPath: options.dataPath,
+      log: options.log,
+      cacheName: 'models',
+      snapshotSchema: modelCollectionSnapshotSchema,
+      cacheEntrySchema: modelScanCacheEntrySchema,
+      extraSchema: z.null(),
+      emptyExtra: null,
       getInstallPath: async (installId) => (await options.registry.get(installId))?.path ?? null,
       emptySnapshot: (installId, status) => createEmptyModelCollectionSnapshot({ installId }, status),
-      emptyExtra: () => null,
-      runScan,
-      publish: events.publish,
-      cache: createContentScanCache({
-         dataPath: options.dataPath,
-         name: 'models',
-         snapshotSchema: modelCollectionSnapshotSchema,
-         cacheEntrySchema: modelScanCacheEntrySchema,
-         extraSchema: z.null()
-      })
+      runScan
    });
-   const { list: scan, rescan: rescanInstall } = states;
+   const { list, rescan } = states;
 
-   function list(request: ModelCollectionRequest) {
-      return scan(request.installId);
-   }
-
-   function rescan(request: ModelCollectionRequest) {
-      return rescanInstall(request.installId);
-   }
-
-   async function runScan({ installId, installPath, state }: { installId: InstallId; installPath: string; state: ModelScanState }) {
+   async function runScan({ installId, installPath, state, onProgress }: ScanRequest<ModelCollectionSnapshot, ModelScanCacheEntry, null>) {
       const scanned = await scanModelFolders({
          installPath,
          cache: state.cache,
-         onProgress: (progress) => {
-            state.snapshot = { ...state.snapshot, status: 'scanning', progress };
-            if (!state.background) events.publish(state.snapshot);
-         }
+         onProgress
       });
 
       pruneScanCache(state.cache, new Set(scanned.models.map((model) => model.id)));
@@ -197,13 +139,16 @@ export function createModelService(options: ModelServiceOptions) {
    }
 
    async function getModelPath(request: ModelDetailRequest) {
-      const located = await locateModel(request.installId, request.modelId);
-      return located?.path ?? null;
+      const snapshot = await list({ installId: request.installId });
+      const model = snapshot.models.find((entry) => entry.id === request.modelId);
+      if (!model || !snapshot.installPath) return null;
+
+      return (await isManagedPath(modelFolderPath(snapshot.installPath, model.type), model.path)) ? model.path : null;
    }
 
    async function previewDelete(request: ModelSelectionRequest): Promise<ModelDeletePreview> {
       const selected = await resolveSelection(request);
-      if (selected.status === 'invalid') return invalidModelAction({ installId: request.installId }, selected.issue);
+      if (selected.status === 'invalid') return invalidModelAction(request, selected.issue);
 
       const folders = [...new Set(selected.models.map((model) => model.type))].sort();
 
@@ -221,98 +166,56 @@ export function createModelService(options: ModelServiceOptions) {
       const previewed = await previewDelete(request);
       if (previewed.status === 'invalid') return failure(request.installId, previewed.issue, previewed.detail);
 
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'delete',
-         title: `Delete ${previewed.modelCount} ${previewed.modelCount === 1 ? 'model' : 'models'}`,
-         message: previewed.names.slice(0, 3).join(', '),
-         progress: {
-            phase: 'preparing',
-            current: 0,
-            total: previewed.sizeBytes,
-            percent: 0,
-            unit: 'bytes'
+      const operation = options.operations.start(
+         {
+            kind: 'delete',
+            title: translate('models.actions.delete.action', { count: previewed.modelCount }),
+            message: previewed.names.slice(0, 3).join(', '),
+            progress: {
+               phase: 'preparing',
+               current: 0,
+               total: previewed.sizeBytes,
+               percent: 0,
+               unit: 'bytes'
+            },
+            metadata: {
+               installId: request.installId,
+               modelCount: previewed.modelCount
+            }
          },
-         metadata: {
-            installId: request.installId,
-            modelCount: previewed.modelCount
-         },
-         cancel: () => controller.abort()
-      });
-
-      void runDelete(operation.id, request, previewed, controller.signal);
+         (operationId, signal) => runDelete(operationId, request, previewed, signal)
+      );
 
       return { ok: true, value: operation };
    }
 
    async function runDelete(operationId: string, request: ModelSelectionRequest, previewed: ReadyDeletePreview, signal: AbortSignal) {
-      const deleted = await deleteSelection({
-         request,
-         signal,
-         onProgress: ({ bytes, label }) => reportBytesProgress(operationId, 'deleting', bytes, previewed.sizeBytes, label)
-      });
+      const selected = await resolveSelection(request);
+      if (selected.status === 'invalid') {
+         return options.operations.fail(operationId, createProblem(`models.${selected.issue}`));
+      }
 
-      if (Result.isError(deleted)) return failOperation(operationId, deleted.error);
+      const install = await options.registry.get(request.installId);
+      if (!install) {
+         return options.operations.fail(operationId, createProblem('models.install-not-found'));
+      }
+
+      const deleted = await deleteManagedEntries(
+         selected.models.map((model) => ({
+            path: model.path,
+            root: modelFolderPath(install.path, model.type),
+            label: model.name || model.fileName
+         })),
+         { signal, onProgress: ({ bytes, label }) => reportBytesProgress(operationId, 'deleting', bytes, previewed.sizeBytes, label) }
+      );
+      await rescan({ installId: request.installId });
+      if (Result.isError(deleted)) return options.operations.fail(operationId, deleted.error);
 
       options.operations.complete(operationId, {
          installId: request.installId,
-         modelCount: deleted.value.modelCount,
+         modelCount: selected.models.length,
          bytes: deleted.value.bytes,
          files: deleted.value.files
-      });
-   }
-
-   async function deleteSelection(input: {
-      request: ModelSelectionRequest;
-      signal: AbortSignal;
-      onProgress?: (progress: { bytes: number; label: string }) => void;
-   }) {
-      const selected = await resolveSelection(input.request);
-      if (selected.status === 'invalid') {
-         return Result.err<{ bytes: number; files: number; modelCount: number }, FilesystemProblem>(
-            createFilesystemProblem('filesystem.operation.delete-failed', actionIssueMessages[selected.issue])
-         );
-      }
-
-      const install = await options.registry.get(input.request.installId);
-      if (!install) {
-         return Result.err<{ bytes: number; files: number; modelCount: number }, FilesystemProblem>(
-            createFilesystemProblem('filesystem.operation.delete-failed', actionIssueMessages['install-not-found'])
-         );
-      }
-
-      let bytes = 0;
-      let files = 0;
-
-      for (const model of selected.models) {
-         const deleted = await deletePathWithProgress({
-            targetPath: model.path,
-            root: modelFolderPath(install.path, model.type),
-            allowMissing: true,
-            scope: 'content',
-            signal: input.signal,
-            onProgress: (progress) =>
-               input.onProgress?.({
-                  bytes: bytes + (progress.current ?? 0),
-                  label: model.name || model.fileName
-               })
-         });
-
-         if (Result.isError(deleted)) {
-            await rescan({ installId: input.request.installId });
-            return Result.err<{ bytes: number; files: number; modelCount: number }, FilesystemProblem>(deleted.error);
-         }
-
-         bytes += deleted.value.bytes;
-         files += deleted.value.files;
-      }
-
-      await rescan({ installId: input.request.installId });
-
-      return Result.ok<{ bytes: number; files: number; modelCount: number }, FilesystemProblem>({
-         bytes,
-         files,
-         modelCount: selected.models.length
       });
    }
 
@@ -337,8 +240,8 @@ export function createModelService(options: ModelServiceOptions) {
       }
 
       const installed = await installedKeys(request.installId);
-      for (const record of found.value) {
-         await modelIndex.remember(record.summary);
+      for (const model of found.value.models) {
+         await modelIndex.remember(model);
       }
       await modelIndex.flush();
 
@@ -347,19 +250,22 @@ export function createModelService(options: ModelServiceOptions) {
          type: request.type,
          query: request.query,
          page,
-         hasMore: found.value.length >= catalog.pageSize,
-         models: found.value.map((record) => withInstalledFlag(record.summary, installed))
+         hasMore: found.value.hasMore,
+         models: found.value.models.map((model) => ({
+            ...model,
+            installed: installed.has(modelKey(model.type, model.hash))
+         }))
       };
    }
 
-   async function lookup(id: string, installId?: InstallId) {
+   async function lookup(id: string) {
       const record = await catalog.getById(id);
       if (Result.isError(record)) return null;
 
       await modelIndex.remember(record.value.summary);
       await modelIndex.flush();
 
-      return withInstalledFlag(record.value.summary, installId ? await installedKeys(installId) : new Set<string>());
+      return record.value.summary;
    }
 
    async function startDownload(request: ModelDownloadRequest): Promise<ModelOperationResult> {
@@ -373,47 +279,47 @@ export function createModelService(options: ModelServiceOptions) {
       const installed = await installedKeys(request.installId);
       if (installed.has(modelKey(summary.type, summary.hash))) return failure(request.installId, 'already-installed', summary.name);
 
-      const folder = await ensureModelFolder(install.path, summary.type);
+      const folder = await ensureContentFolder(modelFolderPath(install.path, summary.type));
       if (!folder) return failure(request.installId, 'inspect-failed', summary.type);
 
       await modelIndex.remember(summary);
       await modelIndex.flush();
 
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'download',
-         title: `Download ${summary.name}`,
-         message: summary.author,
-         progress: {
-            phase: 'preparing',
-            current: 0,
-            total: 1,
-            percent: 0,
-            unit: 'items'
-         },
-         metadata: {
-            installId: request.installId,
-            modelId: summary.id,
-            type: summary.type
-         },
-         cancel: () => controller.abort()
-      });
-
-      void runInstall(operation.id, {
-         installId: request.installId,
-         installPath: install.path,
-         sources: [
-            {
-               source: { kind: 'url', url: record.value.downloadUrl },
-               type: summary.type,
-               fileName: toSafeModelFileName(summary.name, summary.type, summary.id),
-               expectedHash: summary.hash
+      const operation = options.operations.start(
+         {
+            kind: 'download',
+            title: translate('models.operations.download', { name: summary.name }),
+            message: summary.author,
+            progress: {
+               phase: 'preparing',
+               current: 0,
+               total: 1,
+               percent: 0,
+               unit: 'items'
+            },
+            metadata: {
+               installId: request.installId,
+               modelId: summary.id,
+               type: summary.type
             }
-         ],
-         allowedHosts: modelSaberDownloadHosts,
-         installed,
-         signal: controller.signal
-      });
+         },
+         (operationId, signal) =>
+            runInstall(operationId, {
+               installId: request.installId,
+               installPath: install.path,
+               sources: [
+                  {
+                     source: { kind: 'url', url: record.value.downloadUrl },
+                     type: summary.type,
+                     fileName: toSafeModelFileName(summary.name, summary.type, summary.id),
+                     expectedHash: summary.hash
+                  }
+               ],
+               allowedHosts: modelDownloadHosts,
+               installed,
+               signal
+            })
+      );
 
       return { ok: true, value: operation };
    }
@@ -424,7 +330,7 @@ export function createModelService(options: ModelServiceOptions) {
       const install = await options.registry.get(request.installId);
       if (!install) return failure(request.installId, 'install-not-found');
 
-      const sources: InstallModelSource[] = request.paths.flatMap((path) => {
+      const sources: ModelFileSource[] = request.paths.flatMap((path) => {
          const type = modelTypeForFileName(path);
          return type
             ? [
@@ -439,168 +345,57 @@ export function createModelService(options: ModelServiceOptions) {
       if (sources.length === 0) return failure(request.installId, 'unsupported-type');
 
       for (const source of sources) {
-         const folder = await ensureModelFolder(install.path, source.type);
+         const folder = await ensureContentFolder(modelFolderPath(install.path, source.type));
          if (!folder) return failure(request.installId, 'inspect-failed', source.type);
       }
 
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'import',
-         title: `Import ${sources.length} ${sources.length === 1 ? 'model' : 'models'}`,
-         message: install.path,
-         progress: {
-            phase: 'preparing',
-            current: 0,
-            total: sources.length,
-            percent: 0,
-            unit: 'items'
+      const installed = await installedKeys(request.installId);
+      const operation = options.operations.start(
+         {
+            kind: 'import',
+            title: translate('models.operations.import', { count: sources.length }),
+            message: install.path,
+            progress: {
+               phase: 'preparing',
+               current: 0,
+               total: sources.length,
+               percent: 0,
+               unit: 'items'
+            },
+            metadata: { installId: request.installId }
          },
-         metadata: { installId: request.installId },
-         cancel: () => controller.abort()
-      });
-
-      void runInstall(operation.id, {
-         installId: request.installId,
-         installPath: install.path,
-         sources,
-         installed: await installedKeys(request.installId),
-         signal: controller.signal
-      });
+         (operationId, signal) =>
+            runInstall(operationId, {
+               installId: request.installId,
+               installPath: install.path,
+               sources,
+               installed,
+               signal
+            })
+      );
 
       return { ok: true, value: operation };
    }
 
-   async function runInstall(operationId: string, input: InstallModelsInput) {
-      let bytes = 0;
-      let files = 0;
-      let modelCount = 0;
-      let lastProblem: ModelProblem | null = null;
-
-      for (const [index, entry] of input.sources.entries()) {
-         if (input.signal.aborted) break;
-
-         const installed = await installModel({
-            ...input,
-            ...entry,
-            operationId,
-            index
-         });
-         if (Result.isError(installed)) {
-            lastProblem = installed.error;
-            continue;
-         }
-
-         bytes += installed.value.bytes;
-         files += installed.value.files;
-         modelCount += 1;
-      }
+   async function runInstall(operationId: string, input: Omit<InstallModelFilesInput, 'ingestion' | 'onProgress'> & { installId: InstallId }) {
+      const outcome = await installModelFiles({
+         ...input,
+         ingestion,
+         onProgress: (index, progress) => reportInstallProgress(operationId, index, input.sources.length, progress)
+      });
 
       await rescan({ installId: input.installId });
 
-      if (modelCount === 0) {
-         const problem = lastProblem ?? createModelProblem('models.import.rejected', 'no model was installed');
-         options.operations.fail(operationId, {
-            code: problem.code,
-            message: problem.message,
-            details: { detail: problem.detail }
-         });
+      if (outcome.modelCount === 0) {
+         options.operations.fail(operationId, outcome.lastProblem ?? createProblem('models.nothing-installed'));
          return;
       }
 
       options.operations.complete(operationId, {
          installId: input.installId,
-         modelCount,
-         bytes,
-         files
-      });
-   }
-
-   async function installModel(input: InstallModelsInput & InstallModelSource & { operationId: string; index: number }) {
-      const folderPath = modelFolderPath(input.installPath, input.type);
-      const request: IngestFileRequest = {
-         source: input.source,
-         targetKind: 'local',
-         limits: modelContentLimits,
-         fileName: input.fileName,
-         signal: input.signal,
-         validate: ({ fileName }) =>
-            modelTypeForFileName(fileName) === input.type
-               ? Result.ok<void, ContentProblem>(undefined)
-               : Result.err<void, ContentProblem>({
-                    code: 'content.ingest.layout-rejected',
-                    message: `this file is not a ${input.type} model`,
-                    detail: modelExtension(input.type)
-                 }),
-         onProgress: (progress) => reportInstallProgress(input.operationId, input.index, input.sources.length, progress)
-      };
-      if (input.allowedHosts) request.urlPolicy = { allowedHosts: input.allowedHosts };
-      const staged = await ingestion.ingestFile(request);
-      if (Result.isError(staged)) {
-         return Result.err<{ bytes: number; files: number }, ModelProblem>(
-            createModelProblem('models.import.rejected', staged.error.message, {
-               type: input.type,
-               fileName: input.fileName,
-               cause: staged.error.code
-            })
-         );
-      }
-
-      const hash = await computeModelHash({
-         path: staged.value.path,
-         fileName: input.fileName,
-         type: input.type
-      });
-      if (Result.isError(hash)) {
-         await staged.value.dispose();
-         return Result.err<{ bytes: number; files: number }, ModelProblem>(hash.error);
-      }
-
-      if (input.expectedHash && input.expectedHash !== hash.value) {
-         await staged.value.dispose();
-         return Result.err<{ bytes: number; files: number }, ModelProblem>(
-            createModelProblem('models.import.rejected', 'the downloaded model did not match what ModelSaber described', {
-               type: input.type,
-               fileName: input.fileName
-            })
-         );
-      }
-
-      if (input.installed.has(modelKey(input.type, hash.value))) {
-         await staged.value.dispose();
-         return Result.err<{ bytes: number; files: number }, ModelProblem>(
-            createModelProblem('models.import.rejected', 'this model is already in the install', { type: input.type, fileName: input.fileName })
-         );
-      }
-
-      const destinationPath = await uniqueModelPath(folderPath, staged.value.fileName);
-      if (Result.isError(destinationPath)) {
-         await staged.value.dispose();
-         return Result.err<{ bytes: number; files: number }, ModelProblem>(
-            createModelProblem('models.import.rejected', destinationPath.error.message, { type: input.type, fileName: input.fileName })
-         );
-      }
-
-      const committed = await staged.value.commit({
-         destinationPath: destinationPath.value,
-         destinationRoot: folderPath,
-         signal: input.signal,
-         onProgress: (progress) => reportInstallProgress(input.operationId, input.index, input.sources.length, progress)
-      });
-      if (Result.isError(committed)) {
-         return Result.err<{ bytes: number; files: number }, ModelProblem>(
-            createModelProblem('models.import.rejected', committed.error.message, {
-               type: input.type,
-               fileName: input.fileName,
-               cause: committed.error.code
-            })
-         );
-      }
-
-      input.installed.add(modelKey(input.type, hash.value));
-
-      return Result.ok<{ bytes: number; files: number }, ModelProblem>({
-         bytes: committed.value.bytes,
-         files: committed.value.files
+         modelCount: outcome.modelCount,
+         bytes: outcome.bytes,
+         files: outcome.files
       });
    }
 
@@ -608,27 +403,26 @@ export function createModelService(options: ModelServiceOptions) {
       const selected = await resolveSelection(request);
       if (selected.status === 'invalid') return failure(request.installId, selected.issue);
 
-      const controller = new AbortController();
       const totalBytes = selected.models.reduce((total, model) => total + model.sizeBytes, 0);
-      const operation = options.operations.create({
-         kind: 'copy',
-         title: `Export ${selected.models.length} ${selected.models.length === 1 ? 'model' : 'models'}`,
-         message: request.destinationPath,
-         progress: {
-            phase: 'preparing',
-            current: 0,
-            total: totalBytes,
-            percent: 0,
-            unit: 'bytes'
+      const operation = options.operations.start(
+         {
+            kind: 'copy',
+            title: translate('models.export', { count: selected.models.length }),
+            message: request.destinationPath,
+            progress: {
+               phase: 'preparing',
+               current: 0,
+               total: totalBytes,
+               percent: 0,
+               unit: 'bytes'
+            },
+            metadata: {
+               installId: request.installId,
+               destinationPath: request.destinationPath
+            }
          },
-         metadata: {
-            installId: request.installId,
-            destinationPath: request.destinationPath
-         },
-         cancel: () => controller.abort()
-      });
-
-      void runExport(operation.id, request, selected.models, controller.signal);
+         (operationId, signal) => runExport(operationId, request, selected.models, signal)
+      );
 
       return { ok: true, value: operation };
    }
@@ -641,14 +435,7 @@ export function createModelService(options: ModelServiceOptions) {
          onProgress: (progress) => options.operations.update(operationId, { progress })
       });
 
-      if (Result.isError(exported)) {
-         options.operations.fail(operationId, {
-            code: exported.error.code,
-            message: exported.error.message,
-            details: { detail: exported.error.detail }
-         });
-         return;
-      }
+      if (Result.isError(exported)) return options.operations.fail(operationId, exported.error);
 
       options.operations.complete(operationId, {
          installId: request.installId,
@@ -658,40 +445,10 @@ export function createModelService(options: ModelServiceOptions) {
       });
    }
 
-   async function ensureModelFolder(installPath: string, type: ModelType) {
-      return ensureContentFolder(modelFolderPath(installPath, type));
-   }
-
-   async function uniqueModelPath(folderPath: string, fileName: string) {
-      const extension = modelExtension(modelTypeForFileName(fileName) ?? 'saber');
-      const base = modelDisplayName(fileName);
-
-      for (let attempt = 1; attempt <= 200; attempt += 1) {
-         const candidate = join(folderPath, attempt === 1 ? fileName : `${base} (${attempt})${extension}`);
-         const exists = await pathExists(candidate);
-         if (Result.isError(exists)) return Result.err<string, FilesystemProblem>(exists.error);
-
-         if (!exists.value) return Result.ok<string, FilesystemProblem>(candidate);
-      }
-
-      return Result.err<string, FilesystemProblem>({
-         code: 'filesystem.operation.destination-exists',
-         message: 'could not find a free file name',
-         path: folderPath
-      });
-   }
-
    async function installedKeys(installId: InstallId) {
       const snapshot = await list({ installId });
 
       return new Set(snapshot.models.flatMap((model) => (model.hash ? [modelKey(model.type, model.hash)] : [])));
-   }
-
-   function withInstalledFlag(summary: ModelSaberModelSummary, installed: Set<string>): ModelSaberModelSummary {
-      return {
-         ...summary,
-         installed: installed.has(modelKey(summary.type, summary.hash))
-      };
    }
 
    async function resolveSelection(request: ModelSelectionRequest): Promise<ResolvedSelection> {
@@ -712,16 +469,7 @@ export function createModelService(options: ModelServiceOptions) {
       return resolved.status === 'invalid' ? resolved : { status: 'ok', models: resolved.entries };
    }
 
-   async function locateModel(installId: InstallId, modelId: string) {
-      const snapshot = await list({ installId });
-      const model = snapshot.models.find((entry) => entry.id === modelId);
-      if (!model || !snapshot.installPath) return null;
-
-      return (await isManagedPath(modelFolderPath(snapshot.installPath, model.type), model.path)) ? model : null;
-   }
-
    function dispose() {
-      events.dispose();
       states.dispose();
    }
 
@@ -736,7 +484,7 @@ export function createModelService(options: ModelServiceOptions) {
       startDownload,
       startImport,
       startExport,
-      subscribe: events.subscribe,
+      subscribe: states.subscribe,
       dispose
    };
 }

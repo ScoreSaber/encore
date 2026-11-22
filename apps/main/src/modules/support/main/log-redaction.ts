@@ -17,7 +17,7 @@ const rules = [
    { pattern: /\b[A-Za-z0-9+/]{40,}={0,2}\b/g, replace: redactedMarker }
 ];
 
-export function redactSupportText(input: string, options: { homePath?: string | null } = {}) {
+export function redactSupportText(input: string, options: { homePath?: string }) {
    let text = input;
 
    const homePath = options.homePath?.trim();

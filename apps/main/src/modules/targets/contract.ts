@@ -1,14 +1,24 @@
 import { z } from 'zod';
 
+import { installIdSchema } from '@/modules/installs/contract';
+
 export const localTargetId = 'local';
+export const questTargetIdPrefix = 'quest:';
+
+export function isQuestTargetId(targetId: string) {
+   return targetId.startsWith(questTargetIdPrefix);
+}
 
 export const targetIdSchema = z.string().min(1);
+export const targetIdRequestSchema = z.object({ targetId: targetIdSchema });
+export const targetInstallRequestSchema = targetIdRequestSchema.extend({ installId: installIdSchema });
 
 export type TargetId = string;
 export type TargetRequest<Request> = Request & { targetId: TargetId };
 
 export const targetCapabilitySchema = z.enum([
    'adopt-bsmanager',
+   'browse-files',
    'download-install',
    'import-install',
    'launch-install',
@@ -18,20 +28,26 @@ export const targetCapabilitySchema = z.enum([
    'manage-models',
    'manage-mods',
    'manage-playlists',
+   'mirror-install',
+   'patch-game',
    'read-logs',
    'run-operations',
-   'share-content'
+   'share-content',
+   'update-app'
 ]);
-export const targetStatusSchema = z.enum(['ready', 'unpaired', 'disconnected', 'incompatible']);
+const targetStatusSchema = z.enum(['ready', 'unpaired', 'disconnected', 'incompatible']);
 export const targetSchema = z.object({
    id: z.string(),
-   kind: z.enum(['local', 'remote']),
+   kind: z.enum(['local', 'remote', 'quest']),
    name: z.string(),
    status: targetStatusSchema,
    capabilities: z.array(targetCapabilitySchema),
    address: z.string().optional(),
    fingerprint: z.string().optional(),
-   message: z.string().optional()
+   message: z.string().optional(),
+   via: z.string().optional(),
+   connection: z.enum(['usb', 'wifi', 'remote']).optional(),
+   hardware: z.enum(['steam-frame']).optional()
 });
 
 const targetEventSchema = z.discriminatedUnion('type', [
@@ -46,13 +62,11 @@ const targetEventSchema = z.discriminatedUnion('type', [
 ]);
 
 export type Target = z.infer<typeof targetSchema>;
-export type TargetStatus = z.infer<typeof targetStatusSchema>;
+
+export function runsOnSteamFrame(targets: Target[]) {
+   return targets.some((target) => target.id === localTargetId && target.hardware === 'steam-frame');
+}
 export type TargetCapability = z.infer<typeof targetCapabilitySchema>;
+export type TargetConnection = NonNullable<Target['connection']>;
 
 export type TargetEvent = z.infer<typeof targetEventSchema>;
-
-export type TargetHealth = {
-   status: TargetStatus;
-   capabilities: TargetCapability[];
-   message?: string;
-};

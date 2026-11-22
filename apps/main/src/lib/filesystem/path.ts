@@ -1,41 +1,23 @@
 import { Result } from 'better-result';
 
-import { causeCode } from '@/lib/errors';
+import { createProblem, type Problem } from '@/lib/errors';
+import type { ProblemCode } from '@/lib/messages';
 
 import { randomUUID } from 'node:crypto';
-import { lstat, readlink, realpath, stat } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
+import { lstat, readlink, realpath, rm, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-export type FilesystemPathKind = 'file' | 'directory' | 'link' | 'other';
+type FilesystemPathKind = 'file' | 'directory' | 'link' | 'other';
 
-export type FilesystemProblemCode =
-   | 'filesystem.path.empty'
-   | 'filesystem.path.outside-root'
-   | 'filesystem.path.root-target'
-   | 'filesystem.path.not-found'
-   | 'filesystem.path.copy-into-self'
-   | 'filesystem.path.exists-check-failed'
-   | 'filesystem.path.inspect-failed'
-   | 'filesystem.size.failed'
-   | 'filesystem.json.read-failed'
-   | 'filesystem.json.write-failed'
-   | 'filesystem.json.invalid'
-   | 'filesystem.operation.cancelled'
-   | 'filesystem.operation.destination-exists'
-   | 'filesystem.operation.copy-failed'
-   | 'filesystem.operation.move-failed'
-   | 'filesystem.operation.delete-failed'
-   | 'filesystem.operation.write-failed';
+type FilesystemProblemCode = Extract<ProblemCode, `filesystem.${string}`>;
 
-export type FilesystemProblem = {
-   code: FilesystemProblemCode;
-   message: string;
+export type FilesystemProblem = Problem<FilesystemProblemCode> & {
    path?: string;
    root?: string;
-   detail?: string;
 };
 
-export type ManagedPathPolicy = {
+type ManagedPathPolicy = {
    root: string;
    path: string;
    allowRoot?: boolean;
@@ -47,7 +29,7 @@ export type ManagedPath = {
    relativePath: string;
 };
 
-export type TempPathOptions = {
+type TempPathOptions = {
    parentPath: string;
    prefix: string;
    suffix?: string;
@@ -62,8 +44,10 @@ export type PathInfo = {
    targetKind?: FilesystemPathKind;
 };
 
+const maxUniquePathAttempts = 200;
+
 export function resolveFilesystemPath(input: string, basePath = process.cwd()) {
-   return isAbsolute(input) ? resolve(input) : resolve(basePath, input);
+   return resolve(basePath, input);
 }
 
 export function isSamePath(firstPath: string, secondPath: string) {
@@ -80,18 +64,11 @@ export function isPathInside(parentPath: string, childPath: string) {
 
 export async function resolveManagedPath(policy: ManagedPathPolicy) {
    if (!policy.root.trim()) {
-      return Result.err<ManagedPath, FilesystemProblem>({
-         code: 'filesystem.path.empty',
-         message: 'managed root path is empty'
-      });
+      return Result.err<ManagedPath, FilesystemProblem>(createProblem('filesystem.path.empty'));
    }
 
    if (!policy.path.trim()) {
-      return Result.err<ManagedPath, FilesystemProblem>({
-         code: 'filesystem.path.empty',
-         message: 'managed target path is empty',
-         root: resolveFilesystemPath(policy.root)
-      });
+      return Result.err<ManagedPath, FilesystemProblem>(createProblem('filesystem.path.empty', { root: resolveFilesystemPath(policy.root) }));
    }
 
    const root = resolveFilesystemPath(policy.root);
@@ -99,21 +76,11 @@ export async function resolveManagedPath(policy: ManagedPathPolicy) {
    const samePath = isSamePath(root, targetPath);
 
    if (samePath && !policy.allowRoot) {
-      return Result.err<ManagedPath, FilesystemProblem>({
-         code: 'filesystem.path.root-target',
-         message: 'managed write cannot target the root path',
-         path: targetPath,
-         root
-      });
+      return Result.err<ManagedPath, FilesystemProblem>(createProblem('filesystem.path.root-target', { path: targetPath, root }));
    }
 
    if (!samePath && !isPathInside(root, targetPath)) {
-      return Result.err<ManagedPath, FilesystemProblem>({
-         code: 'filesystem.path.outside-root',
-         message: 'managed write path is outside the expected root',
-         path: targetPath,
-         root
-      });
+      return Result.err<ManagedPath, FilesystemProblem>(createProblem('filesystem.path.outside-root', { path: targetPath, root }));
    }
 
    const physicalRoot = await readRealPath(root);
@@ -124,12 +91,7 @@ export async function resolveManagedPath(policy: ManagedPathPolicy) {
       if (Result.isError(physicalParent)) return Result.err<ManagedPath, FilesystemProblem>(physicalParent.error);
 
       if (!isSamePath(physicalRoot.value, physicalParent.value) && !isPathInside(physicalRoot.value, physicalParent.value)) {
-         return Result.err<ManagedPath, FilesystemProblem>({
-            code: 'filesystem.path.outside-root',
-            message: 'managed write path escapes the expected root through a filesystem link',
-            path: targetPath,
-            root
-         });
+         return Result.err<ManagedPath, FilesystemProblem>(createProblem('filesystem.path.outside-root', { path: targetPath, root }));
       }
    }
 
@@ -140,59 +102,40 @@ export async function resolveManagedPath(policy: ManagedPathPolicy) {
    });
 }
 
-export async function assertCanCopyToDestination(sourcePath: string, destinationPath: string) {
+export async function assertCanCopyToDestination(sourcePath: string, destinationPath: string): Promise<Result<void, FilesystemProblem>> {
    const source = resolveFilesystemPath(sourcePath);
    const destination = resolveFilesystemPath(destinationPath);
 
    if (pathsOverlap(source, destination)) {
-      return Result.err<{ source: string; destination: string }, FilesystemProblem>({
-         code: 'filesystem.path.copy-into-self',
-         message: 'copy source and destination cannot contain each other',
-         path: destination,
-         root: source
-      });
+      return Result.err(createProblem('filesystem.path.copy-into-self', { path: destination, root: source }));
    }
 
    const sourcePhysical = await readRealPath(source);
    const destinationPhysical = await readRealPath(destination);
-   if (Result.isError(sourcePhysical) && sourcePhysical.error.detail !== 'ENOENT') {
-      return Result.err<{ source: string; destination: string }, FilesystemProblem>(sourcePhysical.error);
-   }
-   if (Result.isError(destinationPhysical) && destinationPhysical.error.detail !== 'ENOENT') {
-      return Result.err<{ source: string; destination: string }, FilesystemProblem>(destinationPhysical.error);
-   }
+   if (Result.isError(sourcePhysical) && sourcePhysical.error.detail !== 'ENOENT') return Result.err(sourcePhysical.error);
+   if (Result.isError(destinationPhysical) && destinationPhysical.error.detail !== 'ENOENT') return Result.err(destinationPhysical.error);
 
    if (Result.isOk(sourcePhysical) && Result.isOk(destinationPhysical) && pathsOverlap(sourcePhysical.value, destinationPhysical.value)) {
-      return Result.err<{ source: string; destination: string }, FilesystemProblem>({
-         code: 'filesystem.path.copy-into-self',
-         message: 'copy source and destination resolve to overlapping filesystem paths',
-         path: destination,
-         root: source
-      });
+      return Result.err(createProblem('filesystem.path.copy-into-self', { path: destination, root: source }));
    }
 
-   return Result.ok<{ source: string; destination: string }, FilesystemProblem>({
-      source,
-      destination
-   });
+   return Result.ok();
 }
 
-export async function createUniquePath(desiredPath: string, maxAttempts = 200) {
+export async function createUniquePath(desiredPath: string, extension = '') {
    const path = resolveFilesystemPath(desiredPath);
+   const base = extension && path.endsWith(extension) ? path.slice(0, -extension.length) : path;
+   const suffix = base === path ? '' : extension;
 
-   for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
-      const candidate = attempt === 0 ? path : `${path} (${attempt})`;
+   for (let attempt = 0; attempt <= maxUniquePathAttempts; attempt += 1) {
+      const candidate = attempt === 0 ? path : `${base} (${attempt})${suffix}`;
       const exists = await pathExists(candidate);
       if (Result.isError(exists)) return Result.err<string, FilesystemProblem>(exists.error);
 
       if (!exists.value) return Result.ok<string, FilesystemProblem>(candidate);
    }
 
-   return Result.err<string, FilesystemProblem>({
-      code: 'filesystem.operation.destination-exists',
-      message: 'could not find a free destination name',
-      path
-   });
+   return Result.err<string, FilesystemProblem>(createProblem('filesystem.operation.destination-exists', { path }));
 }
 
 export function toSafeFileName(name: string, fallback: string, maxLength = 120) {
@@ -237,8 +180,7 @@ export async function readPathInfo(targetPath: string) {
          const target = await readlink(normalizedPath);
          const targetStats = await Result.tryPromise({
             try: () => stat(normalizedPath),
-            catch: (cause) =>
-               createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect filesystem link target', normalizedPath, cause)
+            catch: (cause) => createProblem('filesystem.path.inspect-failed', { path: normalizedPath, cause })
          });
 
          const info: PathInfo = {
@@ -251,7 +193,7 @@ export async function readPathInfo(targetPath: string) {
          if (Result.isOk(targetStats)) info.targetKind = pathKindFromStats(targetStats.value);
          return info;
       },
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect filesystem path', normalizedPath, cause)
+      catch: (cause) => createProblem('filesystem.path.inspect-failed', { path: normalizedPath, cause })
    });
 }
 
@@ -262,7 +204,7 @@ export async function pathExists(targetPath: string) {
          await lstat(normalizedPath);
          return true;
       },
-      catch: (cause) => createFilesystemProblem('filesystem.path.exists-check-failed', 'failed to check whether path exists', normalizedPath, cause)
+      catch: (cause) => createProblem('filesystem.path.exists-check-failed', { path: normalizedPath, cause })
    });
 
    if (Result.isOk(exists)) return Result.ok<boolean, FilesystemProblem>(true);
@@ -277,35 +219,29 @@ export async function pathExistsSafely(targetPath: string) {
    return Result.isOk(exists) && exists.value;
 }
 
-export function createFilesystemProblem(code: FilesystemProblemCode, message: string, targetPath?: string, cause?: unknown): FilesystemProblem {
-   const problem: FilesystemProblem = { code, message };
-   if (targetPath) problem.path = targetPath;
-   if (cause) problem.detail = causeCode(cause);
-   return problem;
+export async function removeQuietly(targetPath: string) {
+   await Result.tryPromise(() => rm(targetPath, { recursive: true, force: true }));
 }
 
-async function readRealPath(targetPath: string) {
-   const normalizedPath = resolveFilesystemPath(targetPath);
-
+async function readRealPath(targetPath: string): Promise<Result<string, FilesystemProblem>> {
    return Result.tryPromise({
-      try: async () => resolveFilesystemPath(await realpath(normalizedPath)),
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to resolve filesystem path', normalizedPath, cause)
+      try: async () => resolveFilesystemPath(await realpath(targetPath)),
+      catch: (cause) => createProblem('filesystem.path.inspect-failed', { path: targetPath, cause })
    });
 }
 
 async function readPhysicalParentPath(targetPath: string, root: string) {
    let candidate = dirname(targetPath);
-   const normalizedRoot = resolveFilesystemPath(root);
 
    for (;;) {
       const exists = await pathExists(candidate);
       if (Result.isError(exists)) return Result.err<string, FilesystemProblem>(exists.error);
 
       if (exists.value) return readRealPath(candidate);
-      if (isSamePath(candidate, normalizedRoot)) return readRealPath(normalizedRoot);
+      if (isSamePath(candidate, root)) return readRealPath(root);
 
       const nextCandidate = dirname(candidate);
-      if (isSamePath(nextCandidate, candidate)) return readRealPath(normalizedRoot);
+      if (isSamePath(nextCandidate, candidate)) return readRealPath(root);
       candidate = nextCandidate;
    }
 }
@@ -314,7 +250,7 @@ function pathsOverlap(firstPath: string, secondPath: string) {
    return isSamePath(firstPath, secondPath) || isPathInside(firstPath, secondPath) || isPathInside(secondPath, firstPath);
 }
 
-function pathKindFromStats(stats: Awaited<ReturnType<typeof lstat>>): FilesystemPathKind {
+function pathKindFromStats(stats: Stats): FilesystemPathKind {
    if (stats.isFile()) return 'file';
    if (stats.isDirectory()) return 'directory';
    if (stats.isSymbolicLink()) return 'link';

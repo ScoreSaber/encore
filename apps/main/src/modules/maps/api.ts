@@ -1,14 +1,18 @@
-import { defineDomainApi, targetProcedure, type TargetCall } from '@/lib/api';
+import { defineDomainApi, targetDownload, targetProcedure, targetUpload, type TargetCall } from '@/lib/api';
 import {
    mapCollectionRequestSchema,
    mapCollectionSnapshotSchema,
    mapCoversRequestSchema,
    mapCoversResultSchema,
    mapDeletePreviewSchema,
+   mapDetailRequestSchema,
    mapDownloadRequestSchema,
    mapSearchRequestSchema,
    mapSearchResultSchema,
-   mapSelectionRequestSchema
+   mapSelectionRequestSchema,
+   mapSyncPreviewSchema,
+   mapSyncStartResultSchema,
+   mapSyncRequestSchema
 } from '@/modules/maps/contract';
 import { operationResultSchema } from '@/modules/operations/contract';
 
@@ -51,11 +55,17 @@ export const mapsApi = defineDomainApi(
          output: mapSearchResultSchema
       })
    },
-   { snapshot: mapCollectionSnapshotSchema }
+   {
+      snapshot: mapCollectionSnapshotSchema,
+      uploads: { importArchive: targetUpload({ capability: 'manage-maps', input: mapCollectionRequestSchema }) },
+      downloads: { exportArchive: targetDownload({ capability: 'manage-maps', input: mapDetailRequestSchema }) }
+   }
 );
 
+export const mapSyncApi = defineDomainApi('map-sync', {
+   preview: targetProcedure({ capability: 'manage-maps', input: mapSyncRequestSchema, output: mapSyncPreviewSchema }),
+   start: targetProcedure({ capability: 'manage-maps', input: mapSyncRequestSchema, output: mapSyncStartResultSchema })
+});
+
 export type TargetMapCollectionRequest = TargetCall<typeof mapsApi.procedures.list>;
-export type TargetMapCoversRequest = TargetCall<typeof mapsApi.procedures.getCovers>;
 export type TargetMapSelectionRequest = TargetCall<typeof mapsApi.procedures.previewDelete>;
-export type TargetMapDownloadRequest = TargetCall<typeof mapsApi.procedures.startDownload>;
-export type TargetMapSearchRequest = TargetCall<typeof mapsApi.procedures.search>;

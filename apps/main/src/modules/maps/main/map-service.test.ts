@@ -1,282 +1,157 @@
 import { Result } from 'better-result';
 import { zipSync } from 'fflate';
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { expect, onTestFinished, test } from 'vite-plus/test';
 
-import type { ContentFetch } from '@/lib/content/content-download';
-import { createContentIngestionService } from '@/lib/content/content-ingestion';
-import { createInstallRegistry } from '@/modules/installs/main/install-registry';
-import type { BeatSaverCatalog } from '@/modules/maps/main/beatsaver-catalog';
+import { implementApi } from '@/lib/api';
+import { createSecretStore } from '@/lib/security/secret-store';
+import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/main/install-registry.fixture';
+import { mapsApi } from '@/modules/maps/api';
 import { customLevelsPath } from '@/modules/maps/main/map-paths';
-import { createMapService, type MapServiceOptions } from '@/modules/maps/main/map-service';
-import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
+import { createMapService } from '@/modules/maps/main/map-service';
+import { createMapSyncService } from '@/modules/maps/main/map-sync';
 import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
-import { createSettingsStore } from '@/modules/settings/main/settings-store';
-import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
+import { createRemoteReceiverClient } from '@/modules/receiver/main/remote-receiver-client';
+import { createRemoteTargetStore } from '@/modules/receiver/main/remote-receiver-store';
+import { localTargetId } from '@/modules/targets/contract';
+import { createTargetRegistry } from '@/modules/targets/main/target-registry';
 
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const cleanups: (() => Promise<void>)[] = [];
+test('refuses a download that does not match the BeatSaver hash and deletes only the selected map', async () => {
+   const { dataPath, installRoot, registry, operations, log, register } = await createInstallTestbed();
+   const install = await register(await writeInstallFolder(join(installRoot, 'Beat Saber')));
+   const mapsPath = customLevelsPath(install.path);
+   await mkdir(join(mapsPath, 'Keep'), { recursive: true });
+   await writeFile(join(mapsPath, 'Keep', 'Info.dat'), mapInfo('Keep'));
+   await writeFile(join(mapsPath, 'Keep', 'Expert.dat'), difficulty);
+   await writeFile(join(mapsPath, 'Keep', 'song.egg'), 'song');
 
-afterEach(async () => {
-   for (const cleanup of cleanups.reverse()) {
-      await cleanup();
-   }
-   cleanups.length = 0;
-});
-
-describe('map service', () => {
-   test('returns requested map covers without leaking missing entries', async () => {
-      const harness = await createHarness();
-      const install = await harness.firstInstall();
-      const mapPath = join(customLevelsPath(install.path), 'Reality Check');
-      await mkdir(mapPath, { recursive: true });
-      await writeFile(join(mapPath, 'Info.dat'), rawMapInfo('Reality Check', 'cover.png'));
-      await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
-      await writeFile(join(mapPath, 'song.egg'), 'song');
-      await writeFile(join(mapPath, 'cover.png'), 'cover');
-
-      const snapshot = await harness.maps.list({ installId: install.id });
-      const map = snapshot.maps[0];
-      if (!map) throw new Error('map was not scanned');
-      const mapId = map.id;
-
-      expect(await harness.maps.getCovers({ installId: install.id, mapIds: [mapId, 'missing'] })).toEqual({
-         covers: [{ mapId, dataUrl: 'data:image/png;base64,Y292ZXI=' }],
-         deferredMapIds: []
-      });
-   });
-
-   test('defers cover art that would overflow one remote response', async () => {
-      const harness = await createHarness();
-      const install = await harness.firstInstall();
-      const cover = new Uint8Array((5 * 1024 * 1024) / 2);
-
-      for (const title of ['First', 'Second']) {
-         const mapPath = join(customLevelsPath(install.path), title);
-         await mkdir(mapPath, { recursive: true });
-         await writeFile(join(mapPath, 'Info.dat'), rawMapInfo(title, 'cover.png'));
-         await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
-         await writeFile(join(mapPath, 'song.egg'), 'song');
-         await writeFile(join(mapPath, 'cover.png'), cover);
-      }
-
-      const snapshot = await harness.maps.list({ installId: install.id });
-      const mapIds = snapshot.maps.map((map) => map.id);
-      const result = await harness.maps.getCovers({ installId: install.id, mapIds });
-
-      expect(result.covers).toHaveLength(1);
-      expect(result.deferredMapIds).toHaveLength(1);
-      expect(new Set([...result.covers.map((entry) => entry.mapId), ...result.deferredMapIds])).toEqual(new Set(mapIds));
-   });
-
-   test('reuses an indexed map folder shared by another install', async () => {
-      const harness = await createHarness();
-      const first = await harness.firstInstall();
-      const second = await harness.addInstall('Beat Saber 1.38');
-      const sharedMapsPath = join(harness.dataPath, 'shared-maps');
-      const mapPath = join(sharedMapsPath, 'Reality Check');
-      await mkdir(mapPath, { recursive: true });
-      await writeFile(join(mapPath, 'Info.dat'), rawMapInfo('Reality Check'));
-      await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
-      await writeFile(join(mapPath, 'song.egg'), 'song');
-      await symlink(sharedMapsPath, customLevelsPath(first.path), 'dir');
-      await symlink(sharedMapsPath, customLevelsPath(second.path), 'dir');
-
-      await harness.maps.list({ installId: first.id });
-      const published: { installId: string; progress: { scanned: number; total: number } | null }[] = [];
-      const unsubscribe = harness.maps.subscribe((snapshot) => published.push(snapshot));
-
-      const snapshot = await harness.maps.list({ installId: second.id });
-      unsubscribe();
-
-      expect(snapshot.maps.map((map) => map.title)).toEqual(['Reality Check']);
-      expect(snapshot.maps[0]?.path).toBe(join(customLevelsPath(second.path), 'Reality Check'));
-      expect(published.filter((entry) => entry.installId === second.id && entry.progress !== null)).toEqual([]);
-   });
-
-   test('imports and deletes one map while keeping the snapshot in sync', async () => {
-      const harness = await createHarness();
-      const install = await harness.firstInstall();
-      const archivePath = await writeMapArchive(harness.dataPath, 'reality-check.zip', 'Reality Check');
-
-      const started = await harness.maps.startImport({ installId: install.id, paths: [archivePath] });
-
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      const finished = await waitForOperation(harness.operations, started.value.id);
-      expect(finished?.status).toBe('completed');
-
-      const snapshot = await harness.maps.list({ installId: install.id });
-      expect(snapshot.maps.map((map) => map.title)).toEqual(['Reality Check']);
-      expect(await readdir(customLevelsPath(install.path))).toEqual(['Reality Check - Artist - Mapper']);
-
-      const importedMap = snapshot.maps[0];
-      if (!importedMap) throw new Error('imported map was not scanned');
-      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [importedMap.id] });
-      expect(deleted.ok).toBe(true);
-      if (!deleted.ok) return;
-
-      expect((await waitForOperation(harness.operations, deleted.value.id))?.status).toBe('completed');
-      expect((await harness.maps.list({ installId: install.id })).maps).toEqual([]);
-      expect(await readdir(customLevelsPath(install.path))).toEqual([]);
-   });
-
-   test('uses the replacement folder after an already scanned install is repointed', async () => {
-      const harness = await createHarness();
-      const install = await harness.firstInstall();
-      await writeInstalledMap(install.path, 'old-map', 'Old map');
-      const oldSnapshot = await harness.maps.list({ installId: install.id });
-      expect(oldSnapshot.maps.map((map) => map.title)).toEqual(['Old map']);
-
-      const replacementPath = await createInstallFolder(harness.dataPath, 'Replacement Beat Saber');
-      await writeInstalledMap(replacementPath, 'new-map', 'New map');
-      await harness.repointInstall(install.id, replacementPath);
-
-      const replacementSnapshot = await harness.maps.list({ installId: install.id });
-      expect(replacementSnapshot.mapsPath).toBe(customLevelsPath(replacementPath));
-      expect(replacementSnapshot.maps.map((map) => map.title)).toEqual(['New map']);
-
-      const replacement = replacementSnapshot.maps[0];
-      if (!replacement) throw new Error('replacement map was not scanned');
-      const deleted = await harness.maps.startDelete({ installId: install.id, mapIds: [replacement.id] });
-      expect(deleted.ok).toBe(true);
-      if (!deleted.ok) return;
-
-      expect((await waitForOperation(harness.operations, deleted.value.id))?.status).toBe('completed');
-      expect(await readdir(customLevelsPath(replacementPath))).toEqual([]);
-      expect(await readdir(customLevelsPath(install.path))).toEqual(['old-map']);
-   });
-
-   test('refuses a second copy of a map that is already installed', async () => {
-      const harness = await createHarness();
-      const install = await harness.firstInstall();
-      const archivePath = await writeMapArchive(harness.dataPath, 'reality-check.zip', 'Reality Check');
-
-      const first = await harness.maps.startImport({ installId: install.id, paths: [archivePath] });
-      expect(first.ok).toBe(true);
-      if (!first.ok) return;
-      await waitForOperation(harness.operations, first.value.id);
-
-      const second = await harness.maps.startImport({ installId: install.id, paths: [archivePath] });
-      expect(second.ok).toBe(true);
-      if (!second.ok) return;
-
-      const finished = await waitForOperation(harness.operations, second.value.id);
-      expect(finished?.status).toBe('failed');
-      expect(await readdir(customLevelsPath(install.path))).toHaveLength(1);
-   });
-
-   test('refuses a downloaded archive whose contents do not match the hash BeatSaver published', async () => {
-      const harness = await createHarness({ fetchContent: () => Promise.resolve(new Response(buildMapArchive('Swapped Map'))) });
-      const install = await harness.firstInstall();
-      harness.setCatalogHash(mapArchiveHash('Reality Check'));
-
-      const started = await harness.maps.startDownload({
-         installId: install.id,
-         source: { kind: 'beatsaver', key: '2a1b' }
-      });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      const finished = await waitForOperation(harness.operations, started.value.id);
-
-      expect(finished?.status).toBe('failed');
-      expect(finished?.error?.code).toBe('maps.hash.failed');
-      expect(await readdir(customLevelsPath(install.path)).catch(() => [])).toEqual([]);
-   });
-
-   test('installs a downloaded v4 map whose BeatSaver hash includes audio data', async () => {
-      const archive = buildV4MapArchive();
-      const harness = await createHarness({ fetchContent: () => Promise.resolve(new Response(archive)) });
-      const install = await harness.firstInstall();
-      harness.setCatalogHash(v4MapArchiveHash());
-
-      const started = await harness.maps.startDownload({
-         installId: install.id,
-         source: { kind: 'beatsaver', key: '2a1b' }
-      });
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      const finished = await waitForOperation(harness.operations, started.value.id);
-
-      expect(finished?.status).toBe('completed');
-      expect((await harness.maps.list({ installId: install.id })).maps.map((map) => map.title)).toEqual(['Reality Check']);
-   });
-});
-
-async function createHarness(options: { fetchContent?: ContentFetch } = {}) {
-   const dataPath = await mkdtemp(join(tmpdir(), 'encore-map-service-'));
-   const installRoot = join(dataPath, 'library');
-   await mkdir(installRoot, { recursive: true });
-
-   const settingsStore = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-   await settingsStore.updateLibrarySettings({ installRoot });
-   const installPath = await createInstallFolder(installRoot, 'Beat Saber');
-
-   const detectStores = (): Promise<StoreDetectionSnapshot> =>
-      Promise.resolve({
-         targetId: 'local',
-         platform: 'linux',
-         scannedAt: new Date().toISOString(),
-         stores: [],
-         candidates: [],
-         diagnostics: []
-      });
-
-   const registry = createInstallRegistry({ dataPath, settingsStore, detectStores });
-   await registry.register({ source: 'library', path: installPath });
-   const operations = createOperationRegistry();
-   let catalogHash = 'a1b2c3';
-   const catalog: BeatSaverCatalog = {
-      search: () => Promise.resolve(Result.ok([catalogRecord(catalogHash)])),
-      getByKey: () => Promise.resolve(Result.ok(catalogRecord(catalogHash))),
-      getByHashes: (hashes) => Promise.resolve(Result.ok(new Map(hashes.map((hash) => [hash, catalogRecord(hash)])))),
-      pageSize: 20
-   };
-   const serviceOptions: MapServiceOptions = {
+   let served = mapArchive('Swapped Map');
+   const record = catalogRecord(createHash('sha1').update(mapInfo('Reality Check')).update(difficulty).digest('hex'));
+   const maps = createMapService({
       registry,
       operations,
       dataPath,
-      catalog
-   };
-   if (options.fetchContent) serviceOptions.ingestion = createContentIngestionService({ dataPath, fetchContent: options.fetchContent });
-   const maps = createMapService(serviceOptions);
-
-   cleanups.push(async () => {
-      maps.dispose();
-      registry.dispose();
-      await rm(dataPath, { recursive: true, force: true });
-   });
-
-   return {
-      dataPath,
-      operations,
-      maps,
-      firstInstall: async () => {
-         const install = (await registry.list()).installs[0];
-         if (!install) throw new Error('test install was not registered');
-         return install;
-      },
-      addInstall: async (name: string) => {
-         const path = await createInstallFolder(installRoot, name);
-         await registry.register({ source: 'library', path });
-         const install = (await registry.list()).installs.find((candidate) => candidate.path === path);
-         if (!install) throw new Error('test install was not registered');
-         return install;
-      },
-      repointInstall: async (installId: string, path: string) => {
-         const updated = await registry.update(installId, { path });
-         if (Result.isError(updated) || !updated.value) throw new Error('the test install could not be repointed');
-      },
-      setCatalogHash: (hash: string) => {
-         catalogHash = hash;
+      log,
+      fetchContent: () => Promise.resolve(new Response(served)),
+      catalog: {
+         search: () => Promise.resolve(Result.ok([record])),
+         getByKey: () => Promise.resolve(Result.ok(record)),
+         getByHashes: () => Promise.resolve(Result.ok(new Map())),
+         pageSize: 20
       }
+   });
+   onTestFinished(() => maps.dispose());
+   const run = async (started: Awaited<ReturnType<typeof maps.startDelete>>) => {
+      if (!started.ok) throw new Error('the map operation did not start');
+
+      return waitForOperation(operations, started.value.id);
    };
+   const download = () => maps.startDownload({ installId: install.id, source: { kind: 'beatsaver', key: '2a1b' } });
+
+   expect(await run(await download())).toMatchObject({ status: 'failed', error: { code: 'maps.hash.mismatch' } });
+   expect(await readdir(mapsPath)).toEqual(['Keep']);
+
+   served = mapArchive('Reality Check');
+   expect(await run(await download())).toMatchObject({ status: 'completed' });
+   const downloaded = (await maps.list({ installId: install.id })).maps.find((map) => map.title === 'Reality Check');
+   if (!downloaded) throw new Error('the downloaded map was not scanned');
+
+   expect(await run(await maps.startDelete({ installId: install.id, mapIds: [downloaded.id] }))).toMatchObject({ status: 'completed' });
+   expect(await readdir(mapsPath)).toEqual(['Keep']);
+});
+
+test('syncs one copy of each map both ways between two installs through the target registry', async () => {
+   const { dataPath, installRoot, settingsStore, registry, operations, log, register } = await createInstallTestbed();
+   const first = await register(await writeInstallFolder(join(installRoot, 'First')));
+   const second = await register(await writeInstallFolder(join(installRoot, 'Second')));
+   await writeMap(customLevelsPath(first.path), 'Reality Check');
+   await writeMap(customLevelsPath(first.path), 'Reality Check', 'Reality Check (copy)');
+   await writeMap(customLevelsPath(second.path), 'Second Song');
+   const maps = createMapService({ registry, operations, dataPath, log });
+   onTestFinished(() => maps.dispose());
+   const secretStore = createSecretStore({
+      dataPath,
+      platform: 'linux',
+      protection: {
+         isEncryptionAvailable: () => true,
+         getSelectedStorageBackend: () => 'gnome_libsecret',
+         encryptString: (plainText) => Buffer.from(plainText),
+         decryptString: (encrypted) => encrypted.toString()
+      }
+   });
+   const targets = createTargetRegistry({
+      local: [
+         implementApi(mapsApi, maps, {
+            subscribe: maps.subscribe,
+            uploads: { importArchive: maps.importArchive },
+            downloads: { exportArchive: maps.exportArchive }
+         })
+      ],
+      remote: createRemoteReceiverClient({ store: createRemoteTargetStore({ settingsStore, secretStore }) })
+   });
+   const sync = createMapSyncService({ registry: targets, operations, stagingRoot: join(dataPath, 'map-sync') });
+   const request = { first: { targetId: localTargetId, installId: first.id }, second: { targetId: localTargetId, installId: second.id } };
+   const titles = async (installId: string) => (await maps.list({ installId })).maps.map((map) => map.title).toSorted();
+
+   expect(await sync.preview(request)).toEqual({ toFirst: 1, toSecond: 1, problem: null, runsOn: null });
+   const started = (await sync.start(request)).unwrap();
+   expect(await waitForOperation(operations, started.operation.id)).toMatchObject({ status: 'completed', result: { mapCount: 2, failed: 0 } });
+   expect(await titles(first.id)).toEqual(['Reality Check', 'Reality Check', 'Second Song']);
+   expect(await titles(second.id)).toEqual(['Reality Check', 'Second Song']);
+   expect(await sync.preview(request)).toEqual({ toFirst: 0, toSecond: 0, problem: null, runsOn: null });
+});
+
+test('a map deleted through one install leaves the list of another install sharing its folder', async () => {
+   const { dataPath, installRoot, registry, operations, log, register } = await createInstallTestbed();
+   const first = await register(await writeInstallFolder(join(installRoot, 'First')));
+   const second = await register(await writeInstallFolder(join(installRoot, 'Second')));
+   await writeMap(customLevelsPath(first.path), 'Keep');
+   await writeMap(customLevelsPath(first.path), 'Delete Me');
+   await symlink(customLevelsPath(first.path), customLevelsPath(second.path), 'dir');
+   const maps = createMapService({ registry, operations, dataPath, log });
+   onTestFinished(() => maps.dispose());
+
+   await maps.list({ installId: second.id });
+   const deleted = (await maps.list({ installId: first.id })).maps.find((map) => map.title === 'Delete Me');
+   if (!deleted) throw new Error('the map was not scanned');
+   const started = await maps.startDelete({ installId: first.id, mapIds: [deleted.id] });
+   if (!started.ok) throw new Error('the delete did not start');
+   expect(await waitForOperation(operations, started.value.id)).toMatchObject({ status: 'completed' });
+
+   expect((await maps.list({ installId: second.id })).maps.map((map) => map.title)).toEqual(['Keep']);
+});
+
+async function writeMap(mapsPath: string, title: string, folderName = title) {
+   const mapPath = join(mapsPath, folderName);
+   await mkdir(mapPath, { recursive: true });
+   await writeFile(join(mapPath, 'Info.dat'), mapInfo(title));
+   await writeFile(join(mapPath, 'Expert.dat'), difficulty);
+   await writeFile(join(mapPath, 'song.egg'), 'song');
+}
+
+const difficulty = '{"_notes":[]}';
+
+function mapInfo(title: string) {
+   return JSON.stringify({
+      _version: '2.0.0',
+      _songName: title,
+      _songAuthorName: 'Artist',
+      _levelAuthorName: 'Mapper',
+      _beatsPerMinute: 160,
+      _songFilename: 'song.egg',
+      _difficultyBeatmapSets: [
+         { _beatmapCharacteristicName: 'Standard', _difficultyBeatmaps: [{ _difficulty: 'Expert', _beatmapFilename: 'Expert.dat' }] }
+      ]
+   });
+}
+
+function mapArchive(title: string) {
+   const encoder = new TextEncoder();
+
+   return zipSync({ 'Info.dat': encoder.encode(mapInfo(title)), 'Expert.dat': encoder.encode(difficulty), 'song.egg': encoder.encode('song') });
 }
 
 function catalogRecord(hash: string) {
@@ -301,124 +176,6 @@ function catalogRecord(hash: string) {
          installed: false
       },
       downloadUrl: 'https://cdn.beatsaver.com/a1b2c3.zip',
-      listing: {
-         url: 'https://beatsaver.com/maps/2a1b',
-         description: ''
-      }
+      listing: { url: 'https://beatsaver.com/maps/2a1b', description: '' }
    };
-}
-
-async function createInstallFolder(parentPath: string, name: string) {
-   const installPath = join(parentPath, name);
-   await mkdir(join(installPath, 'Beat Saber_Data'), { recursive: true });
-   await writeFile(join(installPath, 'Beat Saber.exe'), 'stub', 'utf8');
-   await writeFile(join(installPath, 'Beat Saber_Data', 'globalgamemanagers'), 'public.app-category.games  1.37.0 ', 'latin1');
-
-   return installPath;
-}
-
-async function writeMapArchive(parentPath: string, fileName: string, title: string) {
-   const archivePath = join(parentPath, fileName);
-   await writeFile(archivePath, buildMapArchive(title));
-
-   return archivePath;
-}
-
-async function writeInstalledMap(installPath: string, folderName: string, title: string) {
-   const mapPath = join(customLevelsPath(installPath), folderName);
-   await mkdir(mapPath, { recursive: true });
-   await writeFile(join(mapPath, 'Info.dat'), rawMapInfo(title));
-   await writeFile(join(mapPath, 'Expert.dat'), difficultyData);
-   await writeFile(join(mapPath, 'song.egg'), 'song');
-}
-
-const difficultyData = '{"_notes":[]}';
-
-function buildMapArchive(title: string) {
-   return zipSync({ 'Info.dat': encode(rawMapInfo(title)), 'Expert.dat': encode(difficultyData), 'song.egg': encode('song') });
-}
-
-function mapArchiveHash(title: string) {
-   return createHash('sha1').update(rawMapInfo(title)).update(difficultyData).digest('hex');
-}
-
-const v4AudioData = '{"version":"4.0.0","bpmData":[]}';
-const v4DifficultyData = '{"version":"4.0.0","colorNotes":[]}';
-const v4LightshowData = '{"version":"4.0.0","basicEvents":[]}';
-
-function buildV4MapArchive() {
-   return zipSync({
-      'Info.dat': encode(rawV4MapInfo()),
-      'AudioData.dat': encode(v4AudioData),
-      'Easy.dat': encode(v4DifficultyData),
-      'Expert.dat': encode(v4DifficultyData),
-      'Lightshow.dat': encode(v4LightshowData),
-      'song.egg': encode('song')
-   });
-}
-
-function v4MapArchiveHash() {
-   return createHash('sha1')
-      .update(rawV4MapInfo())
-      .update(v4AudioData)
-      .update(v4DifficultyData)
-      .update(v4LightshowData)
-      .update(v4DifficultyData)
-      .update(v4LightshowData)
-      .digest('hex');
-}
-
-function rawV4MapInfo() {
-   return JSON.stringify({
-      version: '4.0.1',
-      song: { title: 'Reality Check', author: 'Artist' },
-      audio: { songFilename: 'song.egg', audioDataFilename: 'AudioData.dat', bpm: 160 },
-      difficultyBeatmaps: [
-         {
-            characteristic: 'Standard',
-            difficulty: 'Easy',
-            beatmapAuthors: { mappers: ['Mapper'] },
-            beatmapDataFilename: 'Easy.dat',
-            lightshowDataFilename: 'Lightshow.dat'
-         },
-         {
-            characteristic: 'Standard',
-            difficulty: 'Expert',
-            beatmapAuthors: { mappers: ['Mapper'] },
-            beatmapDataFilename: 'Expert.dat',
-            lightshowDataFilename: 'Lightshow.dat'
-         }
-      ]
-   });
-}
-
-function rawMapInfo(title: string, coverFileName?: string) {
-   interface RawMapInfo {
-      _version: string;
-      _songName: string;
-      _songAuthorName: string;
-      _levelAuthorName: string;
-      _beatsPerMinute: number;
-      _songFilename: string;
-      _coverImageFilename?: string;
-      _difficultyBeatmapSets: { _beatmapCharacteristicName: string; _difficultyBeatmaps: { _difficulty: string; _beatmapFilename: string }[] }[];
-   }
-
-   const info: RawMapInfo = {
-      _version: '2.0.0',
-      _songName: title,
-      _songAuthorName: 'Artist',
-      _levelAuthorName: 'Mapper',
-      _beatsPerMinute: 160,
-      _songFilename: 'song.egg',
-      _difficultyBeatmapSets: [
-         { _beatmapCharacteristicName: 'Standard', _difficultyBeatmaps: [{ _difficulty: 'Expert', _beatmapFilename: 'Expert.dat' }] }
-      ]
-   };
-   if (coverFileName) info._coverImageFilename = coverFileName;
-   return JSON.stringify(info);
-}
-
-function encode(value: string) {
-   return new TextEncoder().encode(value);
 }

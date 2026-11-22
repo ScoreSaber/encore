@@ -1,13 +1,12 @@
 import { Result } from 'better-result';
 
 import { causeCode } from '@/lib/errors';
-import { isPathInside, resolveFilesystemPath, readPathInfo, resolveManagedPath } from '@/lib/filesystem/path';
+import { isPathInside, resolveFilesystemPath, readPathInfo, resolveManagedPath, toSafeFileName } from '@/lib/filesystem/path';
 import {
    unavailableSupportLogExcerpt,
    type SupportAppLogGroup,
    type SupportLogExcerpt,
    type SupportLogFile,
-   type SupportLogGroup,
    type SupportInstallLogFile,
    type SupportInstallLogGroup,
    type SupportInstallLogReadRequest,
@@ -25,11 +24,18 @@ const maxScanDepth = 2;
 
 export type SupportLogService = ReturnType<typeof createSupportLogService>;
 
+export function textLogFileName(fileId: string) {
+   const name = toSafeFileName(fileId.split(/[/\\]/).at(-1) ?? '', 'encore');
+   return logFileExtensions.some((extension) => name.toLowerCase().endsWith(extension)) ? name : `${name}.log`;
+}
+
 export function createSupportLogService(options: {
    logsPath: string;
    homePath: string;
-   getInstall: (installId: string) => Promise<{ path: string } | null>;
-   getInstalls: () => Promise<{ id: string; name: string; path: string }[]>;
+   registry: {
+      get: (installId: string) => Promise<{ path: string } | null>;
+      list: () => Promise<{ installs: { id: string; name: string; path: string }[] }>;
+   };
 }) {
    async function listAppLogs(): Promise<SupportAppLogGroup> {
       const root = resolveFilesystemPath(options.logsPath);
@@ -46,7 +52,7 @@ export function createSupportLogService(options: {
    }
 
    async function listInstallLogs(): Promise<SupportInstallLogGroup> {
-      const installs = await options.getInstalls();
+      const { installs } = await options.registry.list();
       if (installs.length === 0) return { source: 'install', status: 'missing', rootPath: null, files: [] };
 
       const scanned = await Promise.all(
@@ -86,38 +92,28 @@ export function createSupportLogService(options: {
       };
    }
 
-   async function resolveLogPath(request: SupportLogReadRequest) {
-      const root = request.source === 'app' ? Result.ok<string, SupportLogGroup>(options.logsPath) : await resolveInstallLogRoot(request.installId);
-      if (Result.isError(root)) return Result.err<string, LogPathProblem>({ issue: 'not-found', detail: root.error.detail });
+   async function resolveLogPath(request: SupportLogReadRequest): Promise<Result<string, LogPathProblem>> {
+      let root = options.logsPath;
+      if (request.source === 'install') {
+         const install = await options.registry.get(request.installId);
+         if (!install) return Result.err({ issue: 'not-found', detail: 'install-not-found' });
 
-      const managed = await resolveManagedPath({ root: root.value, path: request.fileId });
-      if (Result.isError(managed)) return Result.err<string, LogPathProblem>({ issue: 'invalid-path', detail: managed.error.code });
+         root = join(resolveFilesystemPath(install.path), installLogFolder);
+      }
+
+      const managed = await resolveManagedPath({ root, path: request.fileId });
+      if (Result.isError(managed)) return Result.err({ issue: 'invalid-path', detail: managed.error.code });
 
       const info = await readPathInfo(managed.value.path);
       if (Result.isError(info)) {
-         return Result.err<string, LogPathProblem>({
+         return Result.err({
             issue: info.error.detail === 'ENOENT' ? 'not-found' : 'unreadable',
             detail: info.error.detail
          });
       }
-      if (info.value.kind !== 'file' || info.value.isLink) return Result.err<string, LogPathProblem>({ issue: 'invalid-path' });
+      if (info.value.kind !== 'file' || info.value.isLink) return Result.err({ issue: 'invalid-path' });
 
-      return Result.ok<string, LogPathProblem>(managed.value.path);
-   }
-
-   async function resolveInstallLogRoot(installId: string) {
-      const install = await options.getInstall(installId);
-      if (!install) {
-         return Result.err<string, SupportLogGroup>({
-            source: 'install',
-            status: 'missing',
-            rootPath: null,
-            files: [],
-            detail: 'install-not-found'
-         });
-      }
-
-      return Result.ok<string, SupportLogGroup>(join(resolveFilesystemPath(install.path), installLogFolder));
+      return Result.ok(managed.value.path);
    }
 
    return {
@@ -145,12 +141,12 @@ function unavailableAppLogGroup(rootPath: string, detail: string): SupportAppLog
    };
 }
 
-async function collectLogFiles(root: string, folder: string, depth: number) {
+async function collectLogFiles(root: string, folder: string, depth: number): Promise<Result<SupportLogFile[], string>> {
    const entries = await Result.tryPromise({
       try: () => readdir(folder, { withFileTypes: true }),
       catch: (cause) => causeCode(cause)
    });
-   if (Result.isError(entries)) return Result.err<SupportLogFile[], string>(entries.error);
+   if (Result.isError(entries)) return Result.err(entries.error);
 
    const files: SupportLogFile[] = [];
 
@@ -179,7 +175,7 @@ async function collectLogFiles(root: string, folder: string, depth: number) {
       });
    }
 
-   return Result.ok<SupportLogFile[], string>(files);
+   return Result.ok(files);
 }
 
 type LogPathProblem = { issue: 'invalid-path' | 'not-found' | 'unreadable'; detail?: string };

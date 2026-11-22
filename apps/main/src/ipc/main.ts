@@ -1,47 +1,10 @@
+import { Result } from 'better-result';
 import { BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
-import { z } from 'zod';
 
-import {
-   ipcInvalidRequestCode,
-   ipcTransportValueSchema,
-   type AnyIpcEventDefinition,
-   type IpcDescriptor,
-   type IpcEventArgs,
-   type IpcInvokeArgs,
-   type IpcRequestDefinition,
-   type IpcResponse,
-   type IpcTransportValue
-} from '@/ipc/core';
+import type { AnyIpcEventDefinition, IpcEventArgs, IpcTransportValue } from '@/ipc/core';
+import { createIpcRouter, type IpcModule } from '@/ipc/host';
 
 const ipcEventWindows = new Set<BrowserWindow>();
-
-type IpcMainHandler = (event: IpcMainInvokeEvent, ...args: IpcTransportValue[]) => IpcTransportValue | Promise<IpcTransportValue>;
-
-type IpcMainHandlers<Descriptor extends IpcDescriptor> = {
-   [Method in keyof Descriptor as Descriptor[Method] extends IpcRequestDefinition ? Method : never]: Descriptor[Method] extends IpcRequestDefinition
-      ? (
-           event: IpcMainInvokeEvent,
-           ...args: IpcInvokeArgs<Descriptor[Method]>
-        ) => IpcResponse<Descriptor[Method]> | Promise<IpcResponse<Descriptor[Method]>>
-      : never;
-};
-
-export type IpcMainModule = readonly { definition: IpcRequestDefinition; handler: IpcMainHandler }[];
-
-export function defineIpcHandlers<Descriptor extends IpcDescriptor>(descriptor: Descriptor, handlers: IpcMainHandlers<Descriptor>): IpcMainModule {
-   const parsedHandlers = z
-      .record(z.string(), z.function({ input: z.tuple([z.custom<IpcMainInvokeEvent>()], ipcTransportValueSchema) }))
-      .parse(handlers);
-   return Object.entries(parsedHandlers).map(([method, handler]) => {
-      const definition = descriptor[method];
-      if (!definition || definition.kind === 'event') throw new Error(`Unknown IPC handler: ${method}`);
-
-      return {
-         definition,
-         handler: async (event, ...args) => ipcTransportValueSchema.parse(await handler(event, ...args))
-      };
-   });
-}
 
 export function registerIpcEventWindow(window: BrowserWindow) {
    ipcEventWindows.add(window);
@@ -61,22 +24,12 @@ export function broadcastIpcEvent<Definition extends AnyIpcEventDefinition>(defi
    }
 }
 
-function guardRequest(definition: IpcRequestDefinition, handle: IpcMainHandler): IpcMainHandler {
-   const schema = definition.requestSchema;
-   if (!schema) return handle;
-
-   return (event, request) => {
-      const parsed = schema.safeParse(request);
-      if (!parsed.success) throw new Error(`${ipcInvalidRequestCode}: ${definition.channel}`);
-
-      return handle(event, ipcTransportValueSchema.parse(parsed.data));
-   };
-}
-
-export function registerIpcModules(modules: readonly IpcMainModule[]) {
-   for (const module of modules) {
-      for (const { definition, handler } of module) {
-         ipcMain.handle(definition.channel, guardRequest(definition, handler));
-      }
+export function registerIpcModules(modules: readonly IpcModule<IpcMainInvokeEvent>[]) {
+   const router = createIpcRouter(modules);
+   for (const channel of router.channels) {
+      ipcMain.handle(channel, async (event, ...args: IpcTransportValue[]) => {
+         const result = await router.invoke(channel, args, event);
+         return Result.isOk(result) ? { ok: true, value: result.value } : { ok: false, error: result.error };
+      });
    }
 }

@@ -1,9 +1,15 @@
-import { useQuery, type UndefinedInitialDataOptions } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type DataTag, type QueryKey, type UndefinedInitialDataOptions } from '@tanstack/react-query';
+import { ChevronDown } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { contentLinkDestinationKey, contentLinkDestinationName, findContentLinkDestination } from '@/components/content/content-link-destinations';
-import { useContentLinkDestinations } from '@/components/content/use-content-link';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import {
+   DropdownMenu,
+   DropdownMenuCheckboxItem,
+   DropdownMenuContent,
+   DropdownMenuSeparator,
+   DropdownMenuTrigger
+} from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 
 import type { IpcResult } from '@/ipc/core';
@@ -11,18 +17,15 @@ import { mapLinkStateQueryOptions } from '@/modules/maps/renderer/map-queries';
 import { modelLinkStateQueryOptions } from '@/modules/models/renderer/model-queries';
 import { playlistLinkStateQueryOptions } from '@/modules/playlists/renderer/playlist-queries';
 import { SettingsRow, SettingsSection } from '@/modules/settings/renderer/settings-layout';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
-import { shortcutStateQueryOptions } from '@/modules/shortcuts/renderer/shortcut-queries';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
+import { contentLinkDestinationName, findContentLinkDestination } from '@/modules/shared-content/renderer/content-link-destinations';
+import { useContentLinkDestinations } from '@/modules/shared-content/renderer/use-content-link';
+import { shortcutStateQueryOptions } from '@/modules/shortcuts/renderer/use-install-shortcuts';
 import { useTargets } from '@/modules/targets/renderer/use-targets';
-import { queryIpcData } from '@/renderer/ipc-result';
-import { useSnapshotMutation } from '@/renderer/query/use-snapshot-mutation';
-import type { IpcQueryKey } from '@/renderer/query/utils';
+import { unwrapIpc } from '@/renderer/ipc-result';
+import { type apiKey, useSnapshotMutation } from '@/renderer/query/api-query';
 
 type ProtocolState = { registered: boolean; canUnregister: boolean };
-
-type ProtocolQueryOptions<State> = UndefinedInitialDataOptions<State, Error, State, IpcQueryKey>;
-
-const askEveryTimeValue = 'ask-every-time';
 
 export function DeepLinkSection({ disabled }: { disabled: boolean }) {
    const t = useTranslations('settings.deepLinks');
@@ -33,26 +36,30 @@ export function DeepLinkSection({ disabled }: { disabled: boolean }) {
    const supportsDownloads = supportsMaps || supportsModels || supportsPlaylists;
 
    return (
-      <SettingsSection title={t('title')}>
-         <AppLinkRow disabled={disabled} />
-         <LaunchLinkHandlingRow disabled={disabled} />
-         {supportsMaps ? <MapLinkRow disabled={disabled} /> : null}
-         {supportsModels ? <ModelLinkRow disabled={disabled} /> : null}
-         {supportsPlaylists ? <PlaylistLinkRow disabled={disabled} /> : null}
-         {supportsDownloads ? <DownloadLinkDestinationRow disabled={disabled} /> : null}
-      </SettingsSection>
+      <>
+         <SettingsSection title={t('protocolsTitle')}>
+            <AppLinkRow disabled={disabled} />
+            {supportsMaps ? <MapLinkRow disabled={disabled} /> : null}
+            {supportsModels ? <ModelLinkRow disabled={disabled} /> : null}
+            {supportsPlaylists ? <PlaylistLinkRow disabled={disabled} /> : null}
+         </SettingsSection>
+
+         <SettingsSection title={t('handlingTitle')}>
+            <LaunchLinkHandlingRow disabled={disabled} />
+            {supportsDownloads ? <DownloadLinkDestinationRow disabled={disabled} /> : null}
+         </SettingsSection>
+      </>
    );
 }
 
 function AppLinkRow({ disabled }: { disabled: boolean }) {
    const t = useTranslations('settings.deepLinks');
-   const options = shortcutStateQueryOptions;
-   const shortcuts = useQuery(options);
+   const queryClient = useQueryClient();
+   const shortcuts = useQuery(shortcutStateQueryOptions);
    const state = shortcuts.data ?? null;
-   const setRegistered = useSnapshotMutation({
-      queryKey: options.queryKey,
-      run: (registered: boolean) => queryIpcData(() => window.encore.shortcuts.setProtocolRegistered({ registered })),
-      snapshot: (protocol) => (state ? { ...state, protocol } : undefined)
+   const setRegistered = useMutation({
+      mutationFn: async (registered: boolean) => unwrapIpc(await window.encore.shortcuts.setProtocolRegistered({ registered })),
+      onSettled: () => queryClient.invalidateQueries({ queryKey: shortcutStateQueryOptions.queryKey })
    });
 
    return (
@@ -74,14 +81,19 @@ function LaunchLinkHandlingRow({ disabled }: { disabled: boolean }) {
    const settings = useSettings();
 
    return (
-      <SettingsRow label={t('launchHandling.title')} description={t('launchHandling.description')} htmlFor="settings-launch-links-without-asking">
-         <Switch
-            id="settings-launch-links-without-asking"
-            checked={settings.snapshot?.app.linkHandling.launchWithoutAsking ?? false}
-            disabled={disabled}
-            onCheckedChange={(launchWithoutAsking) => void settings.updateApp({ linkHandling: { launchWithoutAsking } })}
-         />
-      </SettingsRow>
+      <SettingsRow
+         title={t('launchHandling.title')}
+         description={t('launchHandling.description')}
+         htmlFor="settings-launch-links-without-asking"
+         control={
+            <Switch
+               id="settings-launch-links-without-asking"
+               checked={settings.snapshot?.app.linkHandling.launchWithoutAsking ?? false}
+               disabled={disabled}
+               onCheckedChange={(launchWithoutAsking) => void settings.updateApp({ linkHandling: { launchWithoutAsking } })}
+            />
+         }
+      />
    );
 }
 
@@ -103,53 +115,81 @@ function DownloadLinkDestinationRow({ disabled }: { disabled: boolean }) {
          target.capabilities.includes('manage-playlists'),
       ['maps', 'playlists', 'avatars', 'notes', 'platforms', 'sabers']
    );
-   const destination = settings.snapshot?.app.linkHandling.downloadInstall ?? null;
-   const selectedDestination = destination ? findContentLinkDestination(destinations, destination.targetId, destination.installId) : null;
-   const destinationKey = selectedDestination?.key ?? (destination ? contentLinkDestinationKey(destination.targetId, destination.installId) : null);
-   const destinationAvailable = selectedDestination !== null;
+   const saved = settings.snapshot?.app.linkHandling.downloadInstalls ?? [];
+   const resolvedSaved = saved.map((install) => ({
+      install,
+      destination: findContentLinkDestination(destinations, install.targetId, install.installId)
+   }));
+   const foundByKey = new Map<string, (typeof destinations)[number]>();
+   for (const entry of resolvedSaved) {
+      if (entry.destination) foundByKey.set(entry.destination.key, entry.destination);
+   }
+   const found = [...foundByKey.values()];
+   const unavailableSaved = resolvedSaved.filter((entry) => entry.destination === null).map((entry) => entry.install);
+   const selectedKeys = new Set(found.map((destination) => destination.key));
+   const name = (destination: (typeof destinations)[number]) =>
+      `${destination.targetName} · ${contentLinkDestinationName(destination, sharedRoots('sharedContentName'))}`;
+   const save = (next: typeof destinations, preserveUnavailable = true) =>
+      void settings.updateApp({
+         linkHandling: {
+            downloadInstalls: [
+               ...next.map((destination) => ({ targetId: destination.targetId, installId: destination.installId })),
+               ...(preserveUnavailable ? unavailableSaved : [])
+            ]
+         }
+      });
 
    return (
       <SettingsRow
-         label={t('downloadDestination.title')}
+         title={t('downloadDestination.title')}
          description={
-            destinationKey && !destinationAvailable && loadStatus === 'ready'
+            unavailableSaved.length > 0 && loadStatus === 'ready'
                ? t('downloadDestination.unavailableDescription')
                : t('downloadDestination.description')
          }
          htmlFor="settings-download-link-destination"
-      >
-         <Select
-            value={destinationKey ?? askEveryTimeValue}
-            disabled={disabled || loadStatus === 'loading'}
-            onValueChange={(key) => {
-               const destination = destinations.find((candidate) => candidate.key === key);
-               void settings.updateApp({
-                  linkHandling: {
-                     downloadInstall: destination ? { targetId: destination.targetId, installId: destination.installId } : null
-                  }
-               });
-            }}
-         >
-            <SelectTrigger id="settings-download-link-destination" className="w-full min-w-44 @md/field-group:w-64">
-               <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-               <SelectGroup>
-                  <SelectItem value={askEveryTimeValue}>{t('downloadDestination.askEveryTime')}</SelectItem>
-                  {destinationKey && !destinationAvailable ? (
-                     <SelectItem value={destinationKey} disabled>
-                        {t('downloadDestination.unavailable')}
-                     </SelectItem>
-                  ) : null}
+         control={
+            <DropdownMenu>
+               <DropdownMenuTrigger asChild>
+                  <Button
+                     id="settings-download-link-destination"
+                     type="button"
+                     variant="outline"
+                     size="sm"
+                     disabled={disabled || loadStatus === 'loading'}
+                     className="w-full justify-between font-normal sm:w-64"
+                  >
+                     <span className="min-w-0 truncate">
+                        {found.length === 0
+                           ? t('downloadDestination.askEveryTime')
+                           : found.length === 1 && found[0]
+                             ? name(found[0])
+                             : t('downloadDestination.count', { count: found.length })}
+                     </span>
+                     <ChevronDown className="text-muted-foreground" />
+                  </Button>
+               </DropdownMenuTrigger>
+               <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuCheckboxItem checked={saved.length === 0} onCheckedChange={() => save([], false)}>
+                     {t('downloadDestination.askEveryTime')}
+                  </DropdownMenuCheckboxItem>
+                  <DropdownMenuSeparator />
                   {destinations.map((destination) => (
-                     <SelectItem key={destination.key} value={destination.key}>
-                        {destination.targetName} — {contentLinkDestinationName(destination, sharedRoots('sharedContentName'))}
-                     </SelectItem>
+                     <DropdownMenuCheckboxItem
+                        key={destination.key}
+                        checked={selectedKeys.has(destination.key)}
+                        onSelect={(event) => event.preventDefault()}
+                        onCheckedChange={(checked) =>
+                           save(checked ? [...found, destination] : found.filter((candidate) => candidate.key !== destination.key))
+                        }
+                     >
+                        <span className="min-w-0 truncate">{name(destination)}</span>
+                     </DropdownMenuCheckboxItem>
                   ))}
-               </SelectGroup>
-            </SelectContent>
-         </Select>
-      </SettingsRow>
+               </DropdownMenuContent>
+            </DropdownMenu>
+         }
+      />
    );
 }
 
@@ -184,14 +224,11 @@ function PlaylistLinkRow({ disabled }: { disabled: boolean }) {
 }
 
 function useLinkProtocol<State extends ProtocolState>(
-   options: ProtocolQueryOptions<State>,
+   options: UndefinedInitialDataOptions<State, Error, State, ReturnType<typeof apiKey>> & { queryKey: DataTag<QueryKey, State, Error> },
    register: (registered: boolean) => Promise<IpcResult<State>>
 ) {
    const query = useQuery(options);
-   const setRegistered = useSnapshotMutation({
-      queryKey: options.queryKey,
-      run: (registered: boolean) => queryIpcData(() => register(registered))
-   });
+   const setRegistered = useSnapshotMutation(options.queryKey, async (registered: boolean) => unwrapIpc(await register(registered)));
 
    return {
       state: query.data ?? null,
@@ -225,8 +262,7 @@ function ProtocolRow({
 
    return (
       <SettingsRow
-         className="min-h-9 py-1.5 first:pt-1.5 last:pb-1.5"
-         label={
+         title={
             schemes.length > 0
                ? t('linkLabel', {
                     name: label,
@@ -236,8 +272,9 @@ function ProtocolRow({
          }
          htmlFor={id}
          description={failed ? t('unavailable') : permanent ? t('registeredPermanent') : undefined}
-      >
-         <Switch id={id} checked={state?.registered ?? false} disabled={disabled || !state || busy || permanent} onCheckedChange={onChange} />
-      </SettingsRow>
+         control={
+            <Switch id={id} checked={state?.registered ?? false} disabled={disabled || !state || busy || permanent} onCheckedChange={onChange} />
+         }
+      />
    );
 }

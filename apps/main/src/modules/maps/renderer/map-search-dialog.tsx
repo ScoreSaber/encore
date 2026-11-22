@@ -1,25 +1,15 @@
-import { Download, ExternalLink, Search } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { CopyPathContextMenu } from '@/components/copy-path-context-menu';
-import { EmptyPanel, ErrorPanel, LoadingPanel } from '@/components/state/state-panel';
+import { CatalogSearchDialog, useCatalogSearch } from '@/components/collection/catalog-search';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { RemoteImage } from '@/components/ui/remote-image';
 
 import type { TargetMapCollectionRequest } from '@/modules/maps/api';
-import type { BeatSaverMapSummary, MapSearchIssue } from '@/modules/maps/contract';
-import { useMapSearch } from '@/modules/maps/renderer/use-map-search';
+import type { BeatSaverMapSummary } from '@/modules/maps/contract';
 import { supportLinkUrls } from '@/modules/support/contract';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<MapSearchIssue, 'maps.search.issues'> = {
-   'fetch-failed': 'fetchFailed',
-   'invalid-response': 'invalidResponse',
-   unsupported: 'unsupported'
-};
+import { unwrapTarget } from '@/renderer/ipc-result';
+import { installKey } from '@/renderer/query/api-query';
 
 export function MapSearchDialog({
    request,
@@ -31,83 +21,31 @@ export function MapSearchDialog({
    onDownload: (key: string) => void;
 }) {
    const t = useTranslations('maps.search');
-   const common = useTranslations('common');
-   const search = useMapSearch(request);
-   const { state } = search;
+   const search = useCatalogSearch(installKey('maps', request, 'search'), async (query, page) => {
+      const result = unwrapTarget(await window.encore.maps.search({ ...request, query, page }));
+      return result.status === 'ok' ? { status: 'ok', query: result.query, page: result.page, items: result.maps, hasMore: result.hasMore } : result;
+   });
 
    return (
-      <Dialog open onOpenChange={onOpenChange}>
-         <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-               <div className="flex items-baseline gap-3">
-                  <DialogTitle>{t('title')}</DialogTitle>
-                  <CopyPathContextMenu pathType="url" value={supportLinkUrls.beatsaver}>
-                     <Button
-                        type="button"
-                        variant="link"
-                        className="text-muted-foreground h-auto p-0 text-xs font-normal"
-                        onClick={() => void window.encore.support.openLink({ id: 'beatsaver' })}
-                     >
-                        {t('browse')}
-                        <ExternalLink className="size-3" />
-                     </Button>
-                  </CopyPathContextMenu>
-               </div>
-               <DialogDescription>{t('description')}</DialogDescription>
-            </DialogHeader>
-
-            <form
-               onSubmit={(event) => {
-                  event.preventDefault();
-                  search.submit();
-               }}
-            >
-               <div className="flex gap-2">
-                  <Input
-                     value={search.query}
-                     placeholder={t('placeholder')}
-                     aria-label={t('placeholder')}
-                     onChange={(event) => search.setQuery(event.target.value)}
-                  />
-                  <Button type="submit" disabled={state.status === 'searching'}>
-                     <Search data-icon="inline-start" />
-                     {t('submit')}
-                  </Button>
-               </div>
-            </form>
-
-            <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
-               {state.status === 'searching' ? <LoadingPanel /> : null}
-
-               {state.status === 'failed' ? (
-                  <ErrorPanel message={t(`issues.${issueKeys[state.issue]}`)} detail={state.detail} onRetry={search.submit} />
-               ) : null}
-
-               {state.status === 'ready' && state.maps.length === 0 ? <EmptyPanel description={t('empty')} /> : null}
-
-               {state.status === 'ready'
-                  ? state.maps.map((map) => <SearchResultRow key={map.key} map={map} onDownload={() => onDownload(map.key)} />)
-                  : null}
-            </div>
-
-            <DialogFooter>
-               {state.status === 'ready' ? (
-                  <ButtonGroup className="mr-auto" aria-label={`${t('previous')} / ${t('next')}`}>
-                     <Button type="button" variant="outline" size="sm" disabled={state.page === 0} onClick={() => search.goToPage(state.page - 1)}>
-                        {t('previous')}
-                     </Button>
-                     <Button type="button" variant="outline" size="sm" disabled={!state.hasMore} onClick={() => search.goToPage(state.page + 1)}>
-                        {t('next')}
-                     </Button>
-                  </ButtonGroup>
-               ) : null}
-
-               <Button type="button" size="sm" onClick={() => onOpenChange(false)}>
-                  {common('close')}
-               </Button>
-            </DialogFooter>
-         </DialogContent>
-      </Dialog>
+      <CatalogSearchDialog
+         search={search}
+         labels={{
+            title: t('title'),
+            description: t('description'),
+            browse: t('browse'),
+            placeholder: t('placeholder'),
+            submit: t('submit'),
+            empty: t('empty'),
+            previous: t('previous'),
+            next: t('next')
+         }}
+         browse={{ url: supportLinkUrls.beatsaver, open: () => void window.encore.support.openLink({ id: 'beatsaver' }) }}
+         issue={(issue) => t(`issues.${issue}`)}
+         itemKey={(map) => map.key}
+         onOpenChange={onOpenChange}
+      >
+         {(map) => <SearchResultRow map={map} onDownload={() => onDownload(map.key)} />}
+      </CatalogSearchDialog>
    );
 }
 

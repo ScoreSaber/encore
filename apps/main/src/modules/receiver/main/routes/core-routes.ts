@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
 
-import { readRequestAddress, writeError } from '@/modules/receiver/main/receiver-http';
+import { writeError } from '@/modules/receiver/main/receiver-http';
 import {
    readReceiverRequest,
    receiverRequestRoute,
@@ -36,7 +36,7 @@ export const coreRoutes: Route[] = [
          const input = await readReceiverRequest(request, receiverOperations.pairComplete);
          if (Result.isError(input)) return writeError(response, input.error);
 
-         const completed = await context.pairing.complete({ ...input.value, address: readRequestAddress(request) });
+         const completed = await context.pairing.complete({ ...input.value, address: request.socket.remoteAddress ?? 'unknown' });
          if (Result.isError(completed)) return writeError(response, completed.error);
 
          writeReceiverResponse(response, receiverOperations.pairComplete, {
@@ -47,9 +47,9 @@ export const coreRoutes: Route[] = [
                pairedAt: completed.value.device.pairedAt,
                lastSeenAt: completed.value.device.lastSeenAt
             },
-            target: context.getTarget()
+            ...context.getTargets()
          });
       }
    },
-   receiverRoute(receiverOperations.capabilities, (context) => ({ target: context.getTarget() }))
+   receiverRoute(receiverOperations.capabilities, (context) => context.getTargets())
 ];

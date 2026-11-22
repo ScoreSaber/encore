@@ -5,6 +5,7 @@ import encoreLogoUrl from "../../../../assets/logo.svg?url";
 
 import { BeatSaberBackground } from "@/components/beat-saber-background";
 import { DownloadButton } from "@/components/download-button";
+import { GitHubIcon } from "@/components/github-icon";
 import { HomeNavigation } from "@/components/home/navigation";
 import { HomeFooter, HomeSections } from "@/components/home/sections";
 
@@ -93,9 +94,7 @@ export default function Home() {
                       target="_blank"
                       rel="noreferrer"
                     >
-                      <svg className="size-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M12 .7A11.5 11.5 0 0 0 8.4 23c.6.1.8-.3.8-.6v-2.2c-3.4.7-4.1-1.4-4.1-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.6.1-3.1 0 0 1-.3 3.2 1.2a11 11 0 0 1 5.8 0C16.8 3.7 18 4 18 4c.6 1.5.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.8 5.4-5.5 5.7.4.4.8 1.1.8 2.2v4.3c0 .4.2.7.8.6A11.5 11.5 0 0 0 12 .7Z" />
-                      </svg>
+                      <GitHubIcon className="size-4" />
                       Open source
                     </a>
                     <a

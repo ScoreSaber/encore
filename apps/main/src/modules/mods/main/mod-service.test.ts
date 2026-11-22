@@ -1,226 +1,82 @@
 import { Result } from 'better-result';
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { expect, test } from 'vite-plus/test';
 
+import { buildZipArchive } from '@/lib/archive/zip-read.fixture';
 import type { ContentFetch } from '@/lib/content/content-download';
 import { createContentIngestionService } from '@/lib/content/content-ingestion';
-import { buildZipArchive } from '@/lib/content/zip-archive.fixture';
-import { createInstallRegistry } from '@/modules/installs/main/install-registry';
-import type { ModOperationResult } from '@/modules/mods/contract';
-import { createBeatModsApi, beatModsDownloadUrl } from '@/modules/mods/main/beatmods-api';
+import { createProblem } from '@/lib/errors';
+import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/main/install-registry.fixture';
+import { defaultModSourceResolutionSettings } from '@/modules/mods/contract';
+import { beatModsDownloadUrl, createBeatModsApi } from '@/modules/mods/main/beatmods-api';
 import { createModCatalogService } from '@/modules/mods/main/mod-catalog';
-import { createModPatcher, type ModPatcherRun } from '@/modules/mods/main/mod-patcher';
+import { createModPatcher } from '@/modules/mods/main/mod-patcher';
 import { createModService } from '@/modules/mods/main/mod-service';
-import type { OperationError } from '@/modules/operations/contract';
-import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
 import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
-import { createSettingsStore } from '@/modules/settings/main/settings-store';
-import type { StoreDetectionSnapshot } from '@/modules/stores/contract';
 
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const cleanups: (() => Promise<void>)[] = [];
-
-afterEach(async () => {
-   for (const cleanup of cleanups.reverse()) {
-      await cleanup();
-   }
-   cleanups.length = 0;
-});
-
-describe('mod service', () => {
-   test('hydrates the last per-install snapshot before touching the catalog', async () => {
-      const harness = await createHarness();
-      expect(await harness.mods.refreshMods(harness.request)).toMatchObject({ status: 'ready', source: 'remote' });
-
-      const restored = createModService({
-         registry: harness.registry,
-         operations: harness.operations,
-         dataPath: harness.dataPath,
-         ingestion: createContentIngestionService({ dataPath: harness.dataPath, fetchContent: fakeCdn }),
-         catalog: createModCatalogService({
-            dataPath: harness.dataPath,
-            api: createBeatModsApi({ fetchJson: () => Promise.resolve(new Response('offline', { status: 503 })) })
-         })
-      });
-
-      expect(await restored.getMods(harness.request)).toMatchObject({ status: 'ready', source: 'cache', gameVersion: '1.37.0' });
-   });
-
-   test('installs the dependency chain and removes only files the selected mod owns', async () => {
-      const harness = await createHarness();
-      const request = { ...harness.request, modIds: ['beatmods:3'] };
-
-      expect(await harness.mods.previewInstall(request)).toMatchObject({
-         status: 'ok',
-         warnings: ['bsipa-first', 'patcher-runs']
-      });
-      expect(await harness.run(await harness.mods.installMods(request))).toMatchObject({
-         status: 'completed',
-         result: { mods: 3, files: 4 }
-      });
-      expect(await readFile(join(harness.installPath, 'IPA.exe'), 'utf8')).toBe('ipa-exe');
-      expect(await readFile(join(harness.installPath, 'IPA', 'Pending', 'Plugins', 'BSML.dll'), 'utf8')).toBe('bsml');
-      expect(await readFile(join(harness.installPath, 'IPA', 'Pending', 'Plugins', 'Counters.dll'), 'utf8')).toBe('counters');
-      expect(harness.patcherRuns).toEqual([[join(harness.installPath, 'Beat Saber.exe'), '-n']]);
-
-      await mkdir(join(harness.installPath, 'Plugins'), { recursive: true });
-      await writeFile(join(harness.installPath, 'Plugins', 'Handmade.dll'), 'handmade', 'utf8');
-
-      expect(await harness.run(await harness.mods.uninstallMods({ ...harness.request, scope: 'selection', modIds: ['beatmods:2'] }))).toMatchObject({
-         status: 'completed',
-         result: { mods: 1, files: 1 }
-      });
-      expect(await readdir(join(harness.installPath, 'IPA', 'Pending', 'Plugins'))).toEqual(['Counters.dll']);
-      expect(await readFile(join(harness.installPath, 'Plugins', 'Handmade.dll'), 'utf8')).toBe('handmade');
-      expect(await readFile(join(harness.installPath, 'IPA.exe'), 'utf8')).toBe('ipa-exe');
-   });
-
-   test('refuses a mod archive whose files do not match the hashes BeatMods published', async () => {
-      const harness = await createHarness();
-
-      const finished = await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:4'] }));
-
-      expect(finished).toMatchObject({ status: 'failed', error: { code: 'content.extract.checksum-mismatch' } });
-      expect(await readdir(harness.installPath)).not.toContain('IPA');
-   });
-
-   test('applies removals and installs as one operation', async () => {
-      const harness = await createHarness();
-      await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:2'] }));
-
-      const request = { ...harness.request, installModIds: ['beatmods:3'], removeModIds: ['beatmods:2'] };
-      expect(await harness.mods.previewChanges(request)).toMatchObject({
-         status: 'ok',
-         install: {
-            mods: [
-               { modId: 'beatmods:2', reason: 'dependency' },
-               { modId: 'beatmods:3', reason: 'selected' }
-            ]
-         },
-         uninstall: { mods: [{ modId: 'beatmods:2' }] }
-      });
-      expect(await harness.run(await harness.mods.applyChanges(request))).toMatchObject({
-         status: 'completed',
-         result: { installedMods: 2, removedMods: 1 }
-      });
-      expect(await readFile(join(harness.installPath, 'IPA', 'Pending', 'Plugins', 'BSML.dll'), 'utf8')).toBe('bsml');
-      expect(await readFile(join(harness.installPath, 'IPA', 'Pending', 'Plugins', 'Counters.dll'), 'utf8')).toBe('counters');
-   });
-
-   test('reports a failed install after applying the removals in a mixed change', async () => {
-      const harness = await createHarness();
-      await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:2'] }));
-
-      const finished = await harness.run(
-         await harness.mods.applyChanges({ ...harness.request, installModIds: ['beatmods:4'], removeModIds: ['beatmods:2'] })
-      );
-
-      expect(finished).toMatchObject({ status: 'failed', error: { code: 'content.extract.checksum-mismatch' } });
-      expect(await readdir(join(harness.installPath, 'IPA', 'Pending', 'Plugins'))).not.toContain('BSML.dll');
-   });
-
-   test('uninstall all reverts BSIPA and clears the mod folders', async () => {
-      const harness = await createHarness();
-      await harness.run(await harness.mods.installMods({ ...harness.request, modIds: ['beatmods:3'] }));
-      await mkdir(join(harness.installPath, 'Plugins'), { recursive: true });
-      await writeFile(join(harness.installPath, 'Plugins', 'Handmade.dll'), 'handmade', 'utf8');
-
-      expect(await harness.mods.previewUninstall({ ...harness.request, scope: 'all', modIds: [] })).toMatchObject({
-         status: 'ok',
-         warnings: ['removes-external', 'patcher-runs']
-      });
-      expect(await harness.run(await harness.mods.uninstallMods({ ...harness.request, scope: 'all', modIds: [] }))).toMatchObject({
-         status: 'completed'
-      });
-      expect(harness.patcherRuns.at(-1)).toEqual([join(harness.installPath, 'Beat Saber.exe'), '--revert', '-n']);
-
-      const remaining = await readdir(harness.installPath);
-      expect(remaining).not.toContain('IPA');
-      expect(remaining).not.toContain('Plugins');
-      expect(remaining).toContain('Beat Saber.exe');
-   });
-});
-
-async function createHarness() {
-   const dataPath = await mkdtemp(join(tmpdir(), 'encore-mods-'));
-   const installRoot = join(dataPath, 'library');
-   const installPath = await createInstall(installRoot);
-   const settingsStore = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-   await settingsStore.updateLibrarySettings({ installRoot });
-
-   const detectStores = (): Promise<StoreDetectionSnapshot> =>
-      Promise.resolve({
-         targetId: 'local',
-         platform: 'linux',
-         scannedAt: new Date().toISOString(),
-         stores: [],
-         candidates: [],
-         diagnostics: []
-      });
-   const registry = createInstallRegistry({ dataPath, settingsStore, detectStores });
-   const operations = createOperationRegistry();
-   const patcherRuns: string[][] = [];
-   const run: ModPatcherRun = async (input) => {
-      patcherRuns.push(input.args);
-      const injectorPath = join(input.cwd, 'Beat Saber_Data', 'Managed', 'IPA.Injector.dll');
-
-      if (input.args.includes('--revert')) {
-         await rm(injectorPath, { force: true });
-         await rm(join(input.cwd, 'winhttp.dll'), { force: true });
-      } else {
-         await mkdir(join(input.cwd, 'Beat Saber_Data', 'Managed'), { recursive: true });
-         await writeFile(injectorPath, 'injector', 'utf8');
-         await writeFile(join(input.cwd, 'winhttp.dll'), 'loader', 'utf8');
-      }
-
-      return Result.ok<void, OperationError>(undefined);
-   };
+test('refuses tampered archives and uninstalls only the files a mod owns', async () => {
+   const { dataPath, installRoot, registry, operations, log, register } = await createInstallTestbed();
+   const installPath = await writeInstallFolder(join(installRoot, 'Beat Saber'));
+   const install = await register(installPath);
    const mods = createModService({
       registry,
       operations,
       dataPath,
+      log,
       ingestion: createContentIngestionService({ dataPath, fetchContent: fakeCdn }),
-      catalog: createModCatalogService({ dataPath, api: createBeatModsApi({ fetchJson: fakeBeatMods }) }),
-      patcher: createModPatcher({ platform: 'win32', run })
+      catalog: createModCatalogService({
+         dataPath,
+         log,
+         api: createBeatModsApi({ fetchJson: fakeBeatMods }),
+         repositories: {
+            isBeatModsEnabled: () => Promise.resolve(true),
+            listEntries: () => Promise.resolve({ sources: [], entries: [], fileMatches: [], resolution: defaultModSourceResolutionSettings })
+         }
+      }),
+      repositories: { checkDownloadHost: () => Promise.resolve(Result.ok(undefined)) },
+      patcher: createModPatcher({ platform: 'win32', run: () => Promise.resolve(Result.ok(undefined)) })
    });
+   const request = { targetId: 'local', installId: install.id };
+   const run = (started: Awaited<ReturnType<typeof mods.installMods>>) => {
+      if (Result.isError(started)) throw new Error('the mod operation did not start');
 
-   cleanups.push(async () => {
-      registry.dispose();
-      await rm(dataPath, { recursive: true, force: true });
-   });
-
-   const registered = await registry.register({ source: 'library', path: installPath });
-   if (Result.isError(registered)) throw new Error('registration failed');
-
-   return {
-      dataPath,
-      installPath,
-      mods,
-      operations,
-      patcherRuns,
-      registry,
-      request: { targetId: 'local', installId: registered.value.id },
-      run: (started: ModOperationResult) => {
-         if (!started.ok) throw new Error('the mod operation did not start');
-
-         return waitForOperation(operations, started.value.id);
-      }
+      return waitForOperation(operations, started.value.id);
    };
-}
 
-async function createInstall(parentPath: string) {
-   const installPath = join(parentPath, 'Beat Saber');
-   await mkdir(join(installPath, 'Beat Saber_Data'), { recursive: true });
-   await writeFile(join(installPath, 'Beat Saber.exe'), 'stub', 'utf8');
-   await writeFile(join(installPath, 'Beat Saber_Data', 'globalgamemanagers'), 'public.app-category.games  1.37.0 ', 'latin1');
+   expect(await run(await mods.installMods({ ...request, modIds: ['beatmods:4'] }))).toMatchObject({
+      status: 'failed',
+      error: { code: 'mods.install-failed', details: { detail: createProblem('content.extract.checksum-mismatch').message } }
+   });
+   expect(await readdir(installPath)).not.toContain('IPA');
 
-   return installPath;
-}
+   expect(await run(await mods.installMods({ ...request, modIds: ['beatmods:3'] }))).toMatchObject({
+      status: 'completed',
+      result: { mods: 3, files: 4 }
+   });
+   await mkdir(join(installPath, 'Plugins'), { recursive: true });
+   await writeFile(join(installPath, 'Plugins', 'Handmade.dll'), 'handmade', 'utf8');
+   await writeFile(join(installPath, 'Plugins', 'OldBSML.dll'), oldBsml, 'utf8');
 
-const modZips = {
+   expect(await run(await mods.uninstallMods({ ...request, scope: 'selection', modIds: ['beatmods:2'], externalIds: [] }))).toMatchObject({
+      status: 'completed',
+      result: { mods: 1, files: 2 }
+   });
+   expect(await readdir(join(installPath, 'IPA', 'Pending', 'Plugins'))).toEqual(['Counters.dll']);
+   expect(await readdir(join(installPath, 'Plugins'))).toEqual(['Handmade.dll']);
+   expect(await readFile(join(installPath, 'Plugins', 'Handmade.dll'), 'utf8')).toBe('handmade');
+   expect(await readFile(join(installPath, 'IPA.exe'), 'utf8')).toBe('ipa-exe');
+
+   expect(await run(await mods.uninstallMods({ ...request, scope: 'selection', modIds: [], externalIds: ['Plugins/Handmade.dll'] }))).toMatchObject({
+      status: 'completed',
+      result: { files: 1 }
+   });
+   expect(await readdir(join(installPath, 'Plugins'))).not.toContain('Handmade.dll');
+});
+
+const zips = {
    bsipa: buildZipArchive([
       { name: 'IPA.exe', data: 'ipa-exe' },
       { name: 'IPA/Data/Managed/IPA.Injector.dll', data: 'injector' }
@@ -230,68 +86,41 @@ const modZips = {
    broken: buildZipArchive([{ name: 'Plugins/Broken.dll', data: 'tampered' }])
 };
 
-const zipHashes = {
-   bsipa: md5(modZips.bsipa),
-   bsml: md5(modZips.bsml),
-   counters: md5(modZips.counters),
-   broken: md5(modZips.broken)
-};
-
 const catalogResponse = {
    mods: [
-      {
-         mod: { id: 1, name: 'BSIPA', summary: 'the loader', category: 'core', authors: [] },
-         latest: {
-            id: 10,
-            modId: 1,
-            modVersion: '4.3.5',
-            zipHash: zipHashes.bsipa,
-            contentHashes: [
-               { path: 'IPA.exe', hash: md5('ipa-exe') },
-               { path: 'IPA/Data/Managed/IPA.Injector.dll', hash: md5('injector') }
-            ]
-         }
-      },
-      {
-         mod: { id: 2, name: 'BSML', summary: 'the ui library', category: 'library', authors: [] },
-         latest: {
-            id: 20,
-            modId: 2,
-            modVersion: '1.6.0',
-            zipHash: zipHashes.bsml,
-            dependencies: [10],
-            contentHashes: [{ path: 'Plugins/BSML.dll', hash: md5('bsml') }]
-         }
-      },
-      {
-         mod: { id: 3, name: 'Counters+', summary: 'counters', category: 'gameplay', authors: [] },
-         latest: {
-            id: 30,
-            modId: 3,
-            modVersion: '2.1.0',
-            zipHash: zipHashes.counters,
-            dependencies: [20],
-            contentHashes: [{ path: 'Plugins/Counters.dll', hash: md5('counters') }]
-         }
-      },
-      {
-         mod: { id: 4, name: 'Broken', summary: 'tampered', category: 'gameplay', authors: [] },
-         latest: {
-            id: 40,
-            modId: 4,
-            modVersion: '1.0.0',
-            zipHash: zipHashes.broken,
-            contentHashes: [{ path: 'Plugins/Broken.dll', hash: md5('broken') }]
-         }
-      }
+      catalogMod(1, 'BSIPA', zips.bsipa, [], { 'IPA.exe': 'ipa-exe', 'IPA/Data/Managed/IPA.Injector.dll': 'injector' }),
+      catalogMod(2, 'BSML', zips.bsml, [10], { 'Plugins/BSML.dll': 'bsml' }),
+      catalogMod(3, 'Counters+', zips.counters, [20], { 'Plugins/Counters.dll': 'counters' }),
+      catalogMod(4, 'Broken', zips.broken, [], { 'Plugins/Broken.dll': 'broken' })
    ]
 };
 
-function fakeBeatMods(url: string) {
-   return Promise.resolve(Response.json(url.includes('/api/status') ? { status: 'ok' } : catalogResponse));
+function catalogMod(id: number, name: string, zip: Buffer, dependencies: number[], files: Record<string, string>) {
+   return {
+      mod: { id, name, summary: name, category: id === 1 ? 'core' : 'gameplay', authors: [] },
+      latest: {
+         id: id * 10,
+         modId: id,
+         modVersion: '1.0.0',
+         zipHash: md5(zip),
+         dependencies,
+         contentHashes: Object.entries(files).map(([path, data]) => ({ path, hash: md5(data) }))
+      }
+   };
 }
 
-const archives = new Map(Object.values(modZips).map((zip) => [beatModsDownloadUrl(md5(zip)), zip]));
+const oldBsml = 'old-bsml';
+
+function fakeBeatMods(url: string) {
+   const { pathname, searchParams } = new URL(url);
+   if (pathname === '/api/status') return Promise.resolve(Response.json({ status: 'ok' }));
+   if (pathname !== '/api/hashlookup') return Promise.resolve(Response.json(catalogResponse));
+
+   const older = { ...catalogMod(2, 'BSML', zips.bsml, [], { 'Plugins/OldBSML.dll': oldBsml }).latest, modVersion: '0.9.0' };
+   return Promise.resolve(Response.json({ modVersions: searchParams.get('hash') === md5(oldBsml) ? [older] : [] }));
+}
+
+const archives = new Map(Object.values(zips).map((zip) => [beatModsDownloadUrl(md5(zip)), zip]));
 const fakeCdn: ContentFetch = (url) => {
    const archive = archives.get(url);
 

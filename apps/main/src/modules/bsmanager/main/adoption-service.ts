@@ -1,13 +1,11 @@
 import { Result } from 'better-result';
 
-import type { IpcFailureResult } from '@/ipc/core';
+import { createProblem } from '@/lib/errors';
 import { isPathInside, isSamePath, resolveFilesystemPath, pathExistsSafely, readPathInfo } from '@/lib/filesystem/path';
 import {
    invalidBSManagerPlan,
    type BSManagerAdoptInput,
-   type BSManagerAdoptResult,
    type BSManagerCleanupInput,
-   type BSManagerCleanupResult,
    type BSManagerDetection,
    type BSManagerFolderLink,
    type BSManagerIssue,
@@ -34,21 +32,20 @@ import { findLinkedInstallFolders } from '@/modules/bsmanager/main/linked-folder
 import type { BSManagerSharedContentConverter } from '@/modules/bsmanager/main/shared-content-converter';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import { customInstallName, stripMechanicalSuffix } from '@/modules/installs/main/naming';
-import type { LibrarySettingsPatch } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import {
    configuredSharedFolderDefinitions,
    isCustomSharedFolderId,
+   relativeFolderPathKey,
    relativeFolderPathSchema,
    sharedFolderDefinitions,
    sharedFolderRelativePath,
    type CustomSharedFolder,
    type SharedFolderDefinition
 } from '@/modules/shared-content/contract';
-import { customSharedFolderId } from '@/modules/shared-content/main/custom-folder-id';
 import { readFolderLink } from '@/modules/shared-content/main/folder-link';
+import { customSharedFolderId } from '@/modules/shared-content/main/shared-library';
 import { defaultSharedContentRootPath, installFolderPath, sharedFolderPath } from '@/modules/shared-content/main/shared-paths';
-import { localTargetId } from '@/modules/targets/contract';
 
 import { readdir } from 'node:fs/promises';
 import { basename, join, relative, sep } from 'node:path';
@@ -62,14 +59,12 @@ type AdoptionServiceOptions = {
 
 type DescribedBSManagerVersion = Omit<BSManagerVersion, 'folders'> & { exists: boolean };
 
-export type BSManagerAdoptionService = ReturnType<typeof createBSManagerAdoptionService>;
-
 export function createBSManagerAdoptionService(options: AdoptionServiceOptions) {
    async function detect(): Promise<BSManagerDetection> {
       const resolved = await resolveRoot();
 
       if (!resolved.rootPath) {
-         return { targetId: localTargetId, status: 'missing', rootPath: null, sharedContentPath: null, searchedPaths: resolved.searchedPaths };
+         return { status: 'missing', rootPath: null, sharedContentPath: null, searchedPaths: resolved.searchedPaths };
       }
 
       const settings = await options.settingsStore.getSnapshot();
@@ -79,7 +74,6 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
          [activeSharedPath, ...settings.library.sharedRoots].find((path) => isSamePath(path, detectedSharedPath)) ?? detectedSharedPath;
 
       return {
-         targetId: localTargetId,
          status: 'detected',
          rootPath: resolved.rootPath,
          sharedContentPath,
@@ -89,7 +83,7 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
 
    async function plan(): Promise<BSManagerPlan> {
       const resolved = await resolveRoot();
-      if (!resolved.rootPath) return invalidBSManagerPlan(localTargetId, '', 'not-found', resolved.searchedPaths.join(', '));
+      if (!resolved.rootPath) return invalidBSManagerPlan('', 'not-found', resolved.searchedPaths.join(', '));
 
       const rootPath = resolved.rootPath;
       const versionsPath = bsmanagerVersionsPath(rootPath);
@@ -103,11 +97,10 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       const described = await describeVersions(versionsPath, sharedContentPath, config['custom-versions'], settings.library.customFolders);
       const versions = described.versions;
 
-      if (versions.length === 0) return invalidBSManagerPlan(localTargetId, rootPath, 'nothing-to-adopt');
+      if (versions.length === 0) return invalidBSManagerPlan(rootPath, 'nothing-to-adopt');
 
       return {
          status: 'ok',
-         targetId: localTargetId,
          rootPath,
          versionsPath,
          sharedContentPath,
@@ -119,7 +112,7 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       };
    }
 
-   async function adopt(request: BSManagerAdoptInput): Promise<BSManagerAdoptResult> {
+   async function adopt(request: BSManagerAdoptInput) {
       const planned = await plan();
       if (planned.status === 'invalid') return failure(planned.issue, planned.detail);
 
@@ -142,55 +135,43 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       }
 
       const settings = await options.settingsStore.getSnapshot();
-      const selectedCustomFolderIds = new Set(
-         selected.flatMap((version) =>
-            version.folders
-               .filter((folder) => isCustomSharedFolderId(folder.id) && folder.state !== 'absent' && folder.state !== 'unlinked')
-               .map((folder) => folder.id)
-         )
-      );
-      const customFolders = mergeCustomFolders(
-         settings.library.customFolders,
-         planned.customFolders.filter((folder) => selectedCustomFolderIds.has(folder.id))
-      );
-      const libraryPatch: LibrarySettingsPatch = { customFolders };
+      const linksNewFolders =
+         withLinkedCustomFolders(settings.library.customFolders, planned.customFolders, selected).length !== settings.library.customFolders.length;
+      const previousRootExists = request.adoptSharedRoot && !planned.sharedRootAdopted && (await pathExistsSafely(planned.currentSharedRootPath));
 
-      if (request.adoptSharedRoot) {
-         const knownRoots = settings.library.sharedRoots.filter((root) => !isSamePath(root, planned.sharedContentPath));
-         // the previous root stays known when it exists on disk, so links into it stay healthy
-         const keepPrevious =
-            !planned.sharedRootAdopted &&
-            !knownRoots.some((root) => isSamePath(root, planned.currentSharedRootPath)) &&
-            (await pathExistsSafely(planned.currentSharedRootPath));
-         libraryPatch.sharedRoot = planned.sharedContentPath;
-         libraryPatch.sharedRoots = keepPrevious ? [...knownRoots, planned.currentSharedRootPath] : knownRoots;
-         libraryPatch.useSymlinks = planned.useSymlinks;
-      }
+      if (request.adoptSharedRoot || linksNewFolders) {
+         const written = await options.settingsStore.updateLibrarySettingsWith((library) => {
+            const customFolders = withLinkedCustomFolders(library.customFolders, planned.customFolders, selected);
+            if (!request.adoptSharedRoot) return { customFolders };
 
-      if (request.adoptSharedRoot || customFolders.length !== settings.library.customFolders.length) {
-         const written = await options.settingsStore.updateLibrarySettings(libraryPatch);
+            const knownRoots = library.sharedRoots.filter((root) => !isSamePath(root, planned.sharedContentPath));
+            const keepPrevious = previousRootExists && !knownRoots.some((root) => isSamePath(root, planned.currentSharedRootPath));
+            return {
+               customFolders,
+               sharedRoot: planned.sharedContentPath,
+               sharedRoots: keepPrevious ? [...knownRoots, planned.currentSharedRootPath] : knownRoots,
+               useSymlinks: planned.useSymlinks
+            };
+         });
          if (!written.ok) return failure('register-failed', written.error.message);
       }
 
-      return {
-         ok: true,
-         value: {
-            rootPath: planned.rootPath,
-            sharedRootPath: request.adoptSharedRoot ? planned.sharedContentPath : planned.currentSharedRootPath,
-            adopted,
-            skipped: planned.versions.length - adopted
-         }
-      };
+      return Result.ok({
+         rootPath: planned.rootPath,
+         sharedRootPath: request.adoptSharedRoot ? planned.sharedContentPath : planned.currentSharedRootPath,
+         adopted,
+         skipped: planned.versions.length - adopted
+      });
    }
 
-   async function cleanup(request: BSManagerCleanupInput): Promise<BSManagerCleanupResult> {
+   async function cleanup(request: BSManagerCleanupInput) {
       const planned = await plan();
       if (planned.status === 'invalid') return failure(planned.issue, planned.detail);
       if (!isSamePath(request.rootPath, planned.rootPath)) return failure('not-bsmanager');
 
       const versions = planned.versions.filter((version) => version.status !== 'missing');
       const started = options.converter.start(planned, versions);
-      return Result.isError(started) ? failure(started.error) : { ok: true, value: started.value };
+      return Result.isError(started) ? failure(started.error) : Result.ok(started.value);
    }
 
    async function migrateAdoptedSetup() {
@@ -215,21 +196,10 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
          config['custom-versions'],
          settings.library.customFolders
       );
-      const adoptedCustomFolderIds = new Set(
-         described.versions
-            .filter((version) => version.status === 'adopted')
-            .flatMap((version) =>
-               version.folders
-                  .filter((folder) => isCustomSharedFolderId(folder.id) && folder.state !== 'absent' && folder.state !== 'unlinked')
-                  .map((folder) => folder.id)
-            )
-      );
-      const customFolders = mergeCustomFolders(
-         settings.library.customFolders,
-         described.customFolders.filter((folder) => adoptedCustomFolderIds.has(folder.id))
-      );
-      if (customFolders.length !== settings.library.customFolders.length) {
-         return options.settingsStore.updateLibrarySettings({ customFolders });
+      const adopted = described.versions.filter((version) => version.status === 'adopted');
+      const linkFolders = (current: CustomSharedFolder[]) => withLinkedCustomFolders(current, described.customFolders, adopted);
+      if (linkFolders(settings.library.customFolders).length !== settings.library.customFolders.length) {
+         return options.settingsStore.updateLibrarySettingsWith((library) => ({ customFolders: linkFolders(library.customFolders) }));
       }
    }
 
@@ -256,8 +226,6 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
          const install = registered.installs.find((candidate) => isSamePath(candidate.path, path)) ?? null;
          const exists = await pathExistsSafely(path);
          const store = bsmanagerStoreKind(match, exists ? await readBSManagerVersionStore(path) : null);
-
-         if (install && !install.store) await options.registry.associateStore(install.id, store);
 
          described.push({
             id: name,
@@ -329,15 +297,16 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
 
 async function discoverCustomFolders(versions: DescribedBSManagerVersion[], sharedContentPath: string, configured: CustomSharedFolder[]) {
    const customFolders = [...configured];
-   const builtInPaths = new Set(sharedFolderDefinitions.map((definition) => relativePathKey(sharedFolderRelativePath(definition))));
+   const builtInPaths = new Set(sharedFolderDefinitions.map((definition) => relativeFolderPathKey(sharedFolderRelativePath(definition))));
 
    for (const version of versions) {
       if (!version.exists) continue;
 
       const links = await findLinkedInstallFolders(version.path);
       for (const link of links) {
-         if (builtInPaths.has(relativePathKey(link.installRelativePath))) continue;
-         if (customFolders.some((folder) => relativePathKey(folder.installRelativePath) === relativePathKey(link.installRelativePath))) continue;
+         if (builtInPaths.has(relativeFolderPathKey(link.installRelativePath))) continue;
+         if (customFolders.some((folder) => relativeFolderPathKey(folder.installRelativePath) === relativeFolderPathKey(link.installRelativePath)))
+            continue;
 
          const targetRelativePath = isPathInside(sharedContentPath, link.linkTargetPath)
             ? relative(sharedContentPath, link.linkTargetPath).split(sep).join('/')
@@ -356,34 +325,26 @@ async function discoverCustomFolders(versions: DescribedBSManagerVersion[], shar
    return customFolders;
 }
 
-function mergeCustomFolders(current: CustomSharedFolder[], incoming: CustomSharedFolder[]) {
+function withLinkedCustomFolders(current: CustomSharedFolder[], discovered: CustomSharedFolder[], versions: BSManagerVersion[]) {
+   const linkedIds = new Set(
+      versions.flatMap((version) =>
+         version.folders
+            .filter((folder) => isCustomSharedFolderId(folder.id) && folder.state !== 'absent' && folder.state !== 'unlinked')
+            .map((folder) => folder.id)
+      )
+   );
    const merged = [...current];
 
-   for (const folder of incoming) {
-      if (merged.some((candidate) => relativePathKey(candidate.installRelativePath) === relativePathKey(folder.installRelativePath))) continue;
+   for (const folder of discovered) {
+      if (!linkedIds.has(folder.id)) continue;
+      if (merged.some((candidate) => relativeFolderPathKey(candidate.installRelativePath) === relativeFolderPathKey(folder.installRelativePath)))
+         continue;
       merged.push(folder);
    }
 
    return merged;
 }
 
-function relativePathKey(path: string) {
-   return path.replaceAll('\\', '/').toLowerCase();
+function failure(issue: BSManagerIssue, detail?: string) {
+   return Result.err(createProblem(`bsmanager.${issue}`, { detail }));
 }
-
-function failure(issue: BSManagerIssue, detail?: string): IpcFailureResult {
-   const error: IpcFailureResult['error'] = { code: `bsmanager.${issue}`, message: issueMessages[issue] };
-   if (detail) error.details = { detail };
-   return { ok: false, error };
-}
-
-const issueMessages = {
-   'inspect-failed': 'the BSManager folder could not be read',
-   'not-bsmanager': 'that folder does not look like a BSManager folder',
-   'not-found': 'no BSManager folder was found',
-   'nothing-selected': 'nothing was selected to adopt',
-   'nothing-to-clean': 'there are no BSManager folder links to clean up',
-   'nothing-to-adopt': 'this BSManager folder holds no versions',
-   'register-failed': 'the install registry could not be saved',
-   'unsupported-target': 'this target cannot adopt a BSManager setup'
-};

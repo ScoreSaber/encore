@@ -13,7 +13,7 @@ export type ContentLimits = {
    ratioFloorBytes: number;
 };
 
-export const defaultContentLimits: ContentLimits = {
+const defaultContentLimits: ContentLimits = {
    maxDownloadBytes: 512 * 1024 * 1024,
    maxRedirects: 4,
    requestTimeoutMs: 30_000,

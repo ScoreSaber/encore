@@ -1,7 +1,9 @@
+import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { readJsonFileOrDefault, writeJsonFileAtomic } from '@/lib/filesystem/json';
-import { modelTypeSchema, type ModelHash, type ModelSaberModelSummary } from '@/modules/models/contract';
+import { readJsonFile, writeJsonFileAtomic } from '@/lib/filesystem/json';
+import { createSerialQueue } from '@/lib/state/machine';
+import { modelTypeSchema, type ModelHash, type CatalogModelSummary } from '@/modules/models/contract';
 
 import { join } from 'node:path';
 
@@ -24,42 +26,52 @@ const indexSchema = z.object({
 });
 
 type ModelIndexEntry = z.infer<typeof entrySchema>;
-
-export type ModelIndex = ReturnType<typeof createModelIndex>;
+type LoadState = { status: 'unloaded' } | { status: 'loading'; promise: Promise<void> } | { status: 'loaded' };
 
 export function createModelIndex(options: { dataPath: string }) {
    const indexPath = join(options.dataPath, indexFileName);
    const entries = new Map<ModelHash, ModelIndexEntry>();
-   let loaded: Promise<void> | null = null;
-   let dirty = false;
+   const writeQueue = createSerialQueue();
+   let loadState: LoadState = { status: 'unloaded' };
+   let dirtyVersion = 0;
+   let flushedVersion = 0;
 
    async function load() {
-      loaded ??= (async () => {
-         const read = await readJsonFileOrDefault(indexPath, indexSchema, {
+      if (loadState.status === 'loaded') return;
+      if (loadState.status === 'loading') {
+         await loadState.promise;
+         return;
+      }
+
+      const promise = (async () => {
+         const read = await readJsonFile(indexPath, indexSchema, {
             defaultValue: { version: 1, models: {} }
          });
-
-         for (const [hash, entry] of Object.entries(read.models)) {
-            entries.set(hash, entry);
+         if (Result.isError(read)) {
+            loadState = read.error.code === 'filesystem.json.read-failed' ? { status: 'unloaded' } : { status: 'loaded' };
+            return;
          }
-      })();
 
-      await loaded;
+         for (const [hash, entry] of Object.entries(read.value.models)) {
+            if (!entries.has(hash)) entries.set(hash, entry);
+         }
+         loadState = { status: 'loaded' };
+      })();
+      loadState = { status: 'loading', promise };
+
+      await promise;
    }
 
    async function describe(hash: ModelHash) {
       await load();
 
-      return entries.get(hash.toLowerCase()) ?? null;
+      return entries.get(hash) ?? null;
    }
 
-   async function remember(summary: ModelSaberModelSummary) {
+   async function remember(summary: CatalogModelSummary) {
       await load();
 
-      const hash = summary.hash.toLowerCase();
-      if (!hash) return;
-
-      entries.set(hash, {
+      entries.set(summary.hash, {
          id: summary.id,
          type: summary.type,
          name: summary.name,
@@ -68,7 +80,7 @@ export function createModelIndex(options: { dataPath: string }) {
          tags: summary.tags,
          publishedAt: summary.publishedAt
       });
-      dirty = true;
+      dirtyVersion += 1;
 
       while (entries.size > maxEntries) {
          const oldest = entries.keys().next();
@@ -78,12 +90,14 @@ export function createModelIndex(options: { dataPath: string }) {
    }
 
    async function flush() {
-      if (!dirty) return;
-      dirty = false;
+      await writeQueue.run(async () => {
+         const targetVersion = dirtyVersion;
+         if (targetVersion === flushedVersion) return;
 
-      await writeJsonFileAtomic(indexPath, { version: 1, models: Object.fromEntries(entries) }, indexSchema, {
-         root: options.dataPath,
-         scope: 'settings'
+         const written = await writeJsonFileAtomic(indexPath, { version: 1, models: Object.fromEntries(entries) }, indexSchema, {
+            root: options.dataPath
+         });
+         if (Result.isOk(written)) flushedVersion = Math.max(flushedVersion, targetVersion);
       });
    }
 

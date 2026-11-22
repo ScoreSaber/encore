@@ -1,0 +1,19 @@
+{
+   "name": "@encore/daemon",
+   "version": "0.1.15",
+   "private": true,
+   "type": "module",
+   "scripts": {
+      "build": "node build.ts && tsc --noEmit",
+      "start": "node dist/cli.cjs"
+   },
+   "dependencies": {
+      "better-result": "2.8.2",
+      "zod": "4.4.3"
+   },
+   "devDependencies": {
+      "@types/node": "24.12.2",
+      "esbuild": "0.28.2",
+      "typescript": "5.9.3"
+   }
+}

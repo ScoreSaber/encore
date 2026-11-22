@@ -1,51 +1,31 @@
 import { Result } from 'better-result';
 
-import { createFilesystemProblem, isSamePath, resolveFilesystemPath, type FilesystemProblem } from '@/lib/filesystem/path';
+import { createProblem } from '@/lib/errors';
+import { isSamePath, resolveFilesystemPath } from '@/lib/filesystem/path';
 import type { InstallRootIssue, InstallRootValidation } from '@/modules/installs/contract';
+import { beatSaberDataDirectoryName } from '@/modules/installs/main/beat-saber-files';
 
 import { constants } from 'node:fs';
 import { access, lstat, readdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join, posix, win32 } from 'node:path';
 
-export const defaultLibraryDirectoryName = 'library';
-export const beatSaberDataDirectoryName = 'Beat Saber_Data';
-
-export type InstallRootScan = {
-   root: string;
-   directories: string[];
-   problem?: FilesystemProblem;
-};
+const defaultLibraryDirectoryName = 'library';
 
 export function createDefaultInstallRoot(options: { platform: NodeJS.Platform; userDataPath: string }) {
    const path = options.platform === 'win32' ? win32 : posix;
    return path.join(options.userDataPath, defaultLibraryDirectoryName);
 }
 
-export async function scanInstallRootDirectories(installRoot: string): Promise<InstallRootScan> {
+export async function countInstallDirectories(installRoot: string) {
    const root = resolveFilesystemPath(installRoot);
    const entries = await Result.tryPromise({
       try: () => readdir(root, { withFileTypes: true }),
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to read the install root', root, cause)
+      catch: () => null
    });
+   if (Result.isError(entries)) return 0;
 
-   if (Result.isError(entries)) {
-      if (entries.error.detail === 'ENOENT') return { root, directories: [] };
-
-      return { root, directories: [], problem: entries.error };
-   }
-
-   return {
-      root,
-      directories: entries.value
-         .filter((entry) => entry.isDirectory())
-         .map((entry) => join(root, entry.name))
-         .sort()
-   };
-}
-
-export async function countInstallDirectories(installRoot: string) {
-   const scan = await scanInstallRootDirectories(installRoot);
-   const flags = await Promise.all(scan.directories.map((directory) => looksLikeInstall(directory)));
+   const directories = entries.value.filter((entry) => entry.isDirectory()).map((entry) => join(root, entry.name));
+   const flags = await Promise.all(directories.map(looksLikeInstall));
 
    return flags.filter(Boolean).length;
 }
@@ -60,7 +40,7 @@ export async function validateInstallRoot(options: { path: string; currentRoot: 
 
    const stats = await Result.tryPromise({
       try: () => lstat(path),
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect the selected install root', path, cause)
+      catch: (cause) => createProblem('filesystem.path.inspect-failed', { path, cause })
    });
 
    if (Result.isError(stats)) {
@@ -83,19 +63,13 @@ export async function validateInstallRoot(options: { path: string; currentRoot: 
 
 async function looksLikeInstall(installPath: string) {
    const markPath = join(installPath, beatSaberDataDirectoryName);
-   const stats = await Result.tryPromise({
-      try: () => lstat(markPath),
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to inspect an install marker', markPath, cause)
-   });
+   const stats = await Result.tryPromise({ try: () => lstat(markPath), catch: () => null });
 
    return Result.isOk(stats);
 }
 
 async function isWritableDirectory(directoryPath: string) {
-   const allowed = await Result.tryPromise({
-      try: () => access(directoryPath, constants.W_OK | constants.X_OK),
-      catch: (cause) => createFilesystemProblem('filesystem.path.inspect-failed', 'failed to check directory permissions', directoryPath, cause)
-   });
+   const allowed = await Result.tryPromise({ try: () => access(directoryPath, constants.W_OK | constants.X_OK), catch: () => null });
 
    return Result.isOk(allowed);
 }

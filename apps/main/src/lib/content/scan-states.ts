@@ -1,29 +1,47 @@
-import { readRecent } from '@/lib/content/content-cache';
-import type { ContentScanCache } from '@/lib/content/content-cache';
+import { Result } from 'better-result';
+import { z } from 'zod';
+
+import { createPersistentCache, readRecent, type CacheLog } from '@/lib/content/content-cache';
+import { createContentEvents } from '@/lib/events';
 import type { InstallId } from '@/modules/installs/contract';
 
-export type ContentScanStatus = 'missing' | 'ready' | 'scanning' | 'unsupported';
+type ContentScanStatus = 'missing' | 'ready' | 'scanning' | 'unsupported';
+
+type ScanProgress = { scanned: number; total: number };
 
 const maxCachedInstallStates = 12;
 const scanRefreshAfterMs = 60 * 1000;
 
-export type ContentScanState<Snapshot, CacheEntry, Extra> = {
+type ScanMode = 'idle' | 'foreground' | 'background' | 'superseded';
+
+type ContentScanState<Snapshot, CacheEntry, Extra> = {
    installPath: string;
    snapshot: Snapshot;
    cache: Map<string, CacheEntry>;
    pending: Promise<Snapshot> | null;
    extra: Extra;
    refreshedAt: number;
-   background: boolean;
+   mode: ScanMode;
 };
 
 type ScanStatesInput<Snapshot, CacheEntry, Extra> = {
+   dataPath: string;
+   log: CacheLog;
+   cacheName: string;
+   snapshotSchema: z.ZodType<Snapshot>;
+   cacheEntrySchema: z.ZodType<CacheEntry>;
+   extraSchema: z.ZodType<Extra>;
+   emptyExtra: Extra;
    getInstallPath: (installId: InstallId) => Promise<string | null>;
    emptySnapshot: (installId: InstallId, status: ContentScanStatus) => Snapshot;
-   emptyExtra: () => Extra;
-   runScan: (input: { installId: InstallId; installPath: string; state: ContentScanState<Snapshot, CacheEntry, Extra> }) => Promise<Snapshot>;
-   publish: (snapshot: Snapshot) => void;
-   cache: ContentScanCache<Snapshot, CacheEntry, Extra>;
+   runScan: (request: ScanRequest<Snapshot, CacheEntry, Extra>) => Promise<Snapshot>;
+};
+
+export type ScanRequest<Snapshot, CacheEntry, Extra> = {
+   installId: InstallId;
+   installPath: string;
+   state: ContentScanState<Snapshot, CacheEntry, Extra>;
+   onProgress: (progress: ScanProgress) => void;
 };
 
 type InitializingScan<Snapshot> = {
@@ -32,15 +50,22 @@ type InitializingScan<Snapshot> = {
    token: symbol;
 };
 
-export function createScanStates<Snapshot extends { status: ContentScanStatus }, CacheEntry, Extra>(
-   input: ScanStatesInput<Snapshot, CacheEntry, Extra>
-) {
+export function createScanStates<
+   Snapshot extends { installId: InstallId; status: ContentScanStatus; progress: ScanProgress | null },
+   CacheEntry,
+   Extra
+>(input: ScanStatesInput<Snapshot, CacheEntry, Extra>) {
    const states = new Map<InstallId, ContentScanState<Snapshot, CacheEntry, Extra>>();
    const initializing = new Map<InstallId, InitializingScan<Snapshot>>();
+   const events = createContentEvents<Snapshot>();
+   const cache = createScanCache(input);
+   let disposed = false;
 
-   async function list(installId: InstallId) {
+   async function listInstall(installId: InstallId) {
+      if (disposed) return input.emptySnapshot(installId, 'missing');
+
       const installPath = await input.getInstallPath(installId);
-      if (!installPath) return missing(installId);
+      if (disposed || !installPath) return disposed ? input.emptySnapshot(installId, 'missing') : missing(installId);
 
       const state = readRecent(states, installId);
       if (state) {
@@ -64,33 +89,43 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
       return started;
    }
 
-   async function rescan(installId: InstallId) {
-      const installPath = await input.getInstallPath(installId);
-      if (!installPath) return missing(installId);
+   async function rescan(request: { installId: InstallId }) {
+      if (disposed) return input.emptySnapshot(request.installId, 'missing');
+
+      const { installId } = request;
+      const initialPath = await input.getInstallPath(installId);
+      if (disposed) return input.emptySnapshot(installId, 'missing');
+      if (!initialPath) return missing(installId);
 
       const pending = initializing.get(installId);
-      if (pending?.installPath === installPath) await pending.promise;
+      if (pending?.installPath === initialPath) await pending.promise;
       else if (pending) initializing.delete(installId);
 
-      const existing = readRecent(states, installId);
-      if (existing?.installPath === installPath && existing.pending) return existing.pending;
+      const running = readRecent(states, installId);
+      if (running?.installPath === initialPath && running.pending) await running.pending;
+      if (disposed) return input.emptySnapshot(installId, 'missing');
 
-      return scanResolved(installId, installPath, existing ?? null, false);
+      const currentPath = await input.getInstallPath(installId);
+      if (disposed) return input.emptySnapshot(installId, 'missing');
+      if (!currentPath) return missing(installId);
+
+      return scanResolved(installId, currentPath, readRecent(states, installId) ?? null, false);
    }
 
    async function initialize(installId: InstallId, installPath: string, token: symbol): Promise<Snapshot> {
-      const persisted = await input.cache.load(installId, installPath);
-      if (initializing.get(installId)?.token !== token) return list(installId);
+      const persisted = await cache.load(installPath);
+      if (disposed) return input.emptySnapshot(installId, 'missing');
+      if (initializing.get(installId)?.token !== token) return listInstall(installId);
       if (!persisted) return scanResolved(installId, installPath, null, false);
 
       const state: ContentScanState<Snapshot, CacheEntry, Extra> = {
          installPath,
-         snapshot: persisted.snapshot,
+         snapshot: { ...persisted.snapshot, installId },
          cache: persisted.cache,
          pending: null,
          extra: persisted.extra,
          refreshedAt: 0,
-         background: true
+         mode: 'idle'
       };
       states.delete(installId);
       states.set(installId, state);
@@ -105,42 +140,67 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
       existing: ContentScanState<Snapshot, CacheEntry, Extra> | null,
       background: boolean
    ): Promise<Snapshot> {
-      const reusable = existing?.installPath === installPath ? existing : null;
-      if (reusable?.pending) return reusable.pending;
-      if (existing && !reusable) existing.background = true;
+      if (disposed) return input.emptySnapshot(installId, 'missing');
 
+      const reusable = existing?.installPath === installPath ? existing : null;
+      if (reusable?.pending) {
+         if (!background && reusable.mode === 'background') {
+            reusable.mode = 'foreground';
+            reusable.snapshot = { ...reusable.snapshot, status: 'scanning' };
+            events.publish(reusable.snapshot);
+         }
+         return reusable.pending;
+      }
+      if (existing && !reusable) existing.mode = 'superseded';
+
+      const previousSnapshot = reusable?.snapshot ?? input.emptySnapshot(installId, 'scanning');
       const state: ContentScanState<Snapshot, CacheEntry, Extra> = {
          installPath,
-         snapshot:
-            background && reusable
-               ? reusable.snapshot
-               : { ...(reusable?.snapshot ?? input.emptySnapshot(installId, 'scanning')), status: 'scanning' },
+         snapshot: background && reusable ? reusable.snapshot : { ...previousSnapshot, status: 'scanning' },
          cache: reusable?.cache ?? new Map<string, CacheEntry>(),
          pending: null,
-         extra: reusable?.extra ?? input.emptyExtra(),
+         extra: reusable?.extra ?? input.emptyExtra,
          refreshedAt: reusable?.refreshedAt ?? 0,
-         background
+         mode: background ? 'background' : 'foreground'
       };
       states.delete(installId);
       states.set(installId, state);
-      if (!background) input.publish(state.snapshot);
+      if (state.mode === 'foreground') events.publish(state.snapshot);
 
-      state.pending = input.runScan({ installId, installPath: state.installPath, state }).then(async (snapshot) => {
-         if (states.get(installId) !== state) return snapshot;
+      const onProgress = (progress: ScanProgress) => {
+         if (disposed || state.mode !== 'foreground' || states.get(installId) !== state) return;
 
-         state.snapshot = snapshot;
+         state.snapshot = { ...state.snapshot, status: 'scanning', progress };
+         events.publish(state.snapshot);
+      };
+      const pending = Result.tryPromise({
+         try: () => input.runScan({ installId, installPath: state.installPath, state, onProgress }),
+         catch: (cause) => cause
+      }).then(async (ran) => {
+         if (disposed || states.get(installId) !== state || state.mode === 'superseded') {
+            return Result.isOk(ran) ? ran.value : previousSnapshot;
+         }
+
+         if (Result.isError(ran)) {
+            state.snapshot = previousSnapshot;
+            if (state.mode === 'foreground') events.publish(previousSnapshot);
+            return previousSnapshot;
+         }
+
+         state.snapshot = ran.value;
          state.refreshedAt = Date.now();
-         input.publish(snapshot);
-         await input.cache.save(installId, state.installPath, state);
+         events.publish(ran.value);
+         await cache.save(state.installPath, state);
 
-         return snapshot;
+         return ran.value;
       });
+      state.pending = pending;
 
       try {
-         return await state.pending;
+         return await pending;
       } finally {
-         state.pending = null;
-         state.background = false;
+         if (state.pending === pending) state.pending = null;
+         if (state.mode !== 'superseded') state.mode = 'idle';
          pruneStates();
       }
    }
@@ -148,11 +208,10 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
    function missing(installId: InstallId) {
       const snapshot = input.emptySnapshot(installId, 'missing');
       const state = states.get(installId);
-      if (state) state.background = true;
+      if (state) state.mode = 'superseded';
       states.delete(installId);
       initializing.delete(installId);
-      void input.cache.remove(installId);
-      input.publish(snapshot);
+      events.publish(snapshot);
       return snapshot;
    }
 
@@ -168,15 +227,58 @@ export function createScanStates<Snapshot extends { status: ContentScanStatus },
    }
 
    function dispose() {
+      disposed = true;
+      for (const state of states.values()) state.mode = 'superseded';
+      events.dispose();
       states.clear();
       initializing.clear();
    }
 
-   return { list, rescan, get, dispose };
+   return {
+      list: ({ installId }: { installId: InstallId }) => listInstall(installId),
+      rescan,
+      get,
+      publish: events.publish,
+      subscribe: events.subscribe,
+      dispose
+   };
 }
 
 export function pruneScanCache<Value>(cache: Map<string, Value>, seen: Set<string>) {
    for (const key of cache.keys()) {
       if (!seen.has(key)) cache.delete(key);
    }
+}
+
+function createScanCache<Snapshot, CacheEntry, Extra>(options: {
+   dataPath: string;
+   log: CacheLog;
+   cacheName: string;
+   snapshotSchema: z.ZodType<Snapshot>;
+   cacheEntrySchema: z.ZodType<CacheEntry>;
+   extraSchema: z.ZodType<Extra>;
+}) {
+   const persistent = createPersistentCache({
+      dataPath: options.dataPath,
+      log: options.log,
+      name: options.cacheName,
+      valueSchema: z.object({
+         snapshot: options.snapshotSchema,
+         cache: z.array(z.tuple([z.string(), options.cacheEntrySchema])),
+         extra: options.extraSchema
+      })
+   });
+
+   async function load(installPath: string) {
+      const stored = await persistent.get(installPath);
+      if (!stored) return null;
+
+      return { snapshot: stored.snapshot, cache: new Map(stored.cache), extra: stored.extra };
+   }
+
+   function save(installPath: string, state: { snapshot: Snapshot; cache: Map<string, CacheEntry>; extra: Extra }) {
+      return persistent.set(installPath, { snapshot: state.snapshot, cache: [...state.cache.entries()], extra: state.extra });
+   }
+
+   return { load, save };
 }

@@ -1,58 +1,38 @@
 import { Result } from 'better-result';
 
-import type { IpcError, IpcFailureResult } from '@/ipc/core';
+import { createProblem } from '@/lib/errors';
 import { deletePathWithProgress } from '@/lib/filesystem/operations';
-import { isSamePath, type FilesystemProblem } from '@/lib/filesystem/path';
+import { isSamePath } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
+import { translate } from '@/lib/messages';
 import {
    installColorSchema,
    installNameSchema,
-   invalidInstallAction,
    type InstallActionIssue,
+   type InstallActionProblem,
    type InstallDeletePreview,
    type InstallForgetPreview,
-   type InstallForgetResult,
-   type InstallOperationResult,
-   type InstallRegistryResult,
-   type InstallUpdateRequest,
-   type InstallUpdateResult
+   type InstallUpdateRequest
 } from '@/modules/installs/contract';
-import { inspectInstallFolder, installFolderIssueMessages } from '@/modules/installs/main/install-folder';
+import { inspectInstallFolder } from '@/modules/installs/main/beat-saber-files';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import type { InstallRecordPatch } from '@/modules/installs/main/install-store';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
+import type { SettingsStore } from '@/modules/settings/main/settings-store';
+import { isRootInsideInstall, sharedRootPaths } from '@/modules/shared-content/main/shared-library';
 
 import { dirname } from 'node:path';
-
-type InstallUpdateIssue = InstallActionIssue | 'already-registered' | 'invalid-path';
-
-const actionIssueMessages = {
-   'already-registered': 'the selected folder is already registered with Encore',
-   'inspect-failed': 'the install folder could not be inspected',
-   'invalid-path': 'the selected folder is not a complete Beat Saber install',
-   'invalid-color': 'the colour is not a hex colour Encore can store',
-   'invalid-name': 'the name has to be between 1 and 60 characters',
-   'not-found': 'the install is not in the registry anymore',
-   'store-detected': 'Steam and Oculus installs stay in the list while the store still has them',
-   'store-owned': 'Steam and Oculus own these files, remove the install from the store instead',
-   'unsupported-target': 'this target cannot manage installs'
-};
 
 type InstallManagementOptions = {
    registry: InstallRegistry;
    operations: OperationRegistry;
+   settingsStore: SettingsStore;
 };
 
 type ReadyDeletePreview = Extract<InstallDeletePreview, { status: 'ok' }>;
 
-export type InstallManagementService = ReturnType<typeof createInstallManagementService>;
-
 export function createInstallManagementService(options: InstallManagementOptions) {
-   const list = options.registry.list;
-   const getDetail = ({ installId }: { installId: string }) => options.registry.get(installId);
-   const rescan = options.registry.rescan;
-
-   async function update(request: Omit<InstallUpdateRequest, 'targetId'>): Promise<InstallUpdateResult> {
+   async function update(request: Omit<InstallUpdateRequest, 'targetId'>) {
       const install = await options.registry.get(request.installId);
       if (!install) return failure(request.installId, 'not-found');
 
@@ -69,7 +49,7 @@ export function createInstallManagementService(options: InstallManagementOptions
       if (path !== undefined) {
          const inspected = await inspectInstallFolder(path);
          if (inspected.status === 'invalid') {
-            return failure(request.installId, 'invalid-path', inspected.detail, installFolderIssueMessages[inspected.issue]);
+            return Result.err(createProblem(`installs.import.${inspected.issue}`, { installId: request.installId, detail: inspected.detail }));
          }
 
          const installs = await options.registry.list();
@@ -86,28 +66,27 @@ export function createInstallManagementService(options: InstallManagementOptions
       if (path !== undefined) patch.path = path;
 
       const updated = await options.registry.update(request.installId, patch);
-      if (Result.isError(updated)) return { ok: false, error: toIpcError(updated.error) };
+      if (Result.isError(updated)) return Result.err(updated.error);
 
-      return updated.value ? { ok: true, value: updated.value } : failure(request.installId, 'not-found');
+      return updated.value ? Result.ok(updated.value) : failure(request.installId, 'not-found');
    }
 
-   async function setPinned({ installId, pinned }: { installId: string; pinned: boolean }): Promise<InstallRegistryResult> {
+   async function setPinned({ installId, pinned }: { installId: string; pinned: boolean }) {
       const updated = await options.registry.update(installId, { pinned });
-      if (Result.isError(updated)) return { ok: false, error: toIpcError(updated.error) };
+      if (Result.isError(updated)) return Result.err(updated.error);
       if (!updated.value) return failure(installId, 'not-found');
 
-      return { ok: true, value: await options.registry.list() };
-   }
-
-   async function reorder({ installIds }: { installIds: string[] }): Promise<InstallRegistryResult> {
-      const reordered = await options.registry.reorder(installIds);
-      return Result.isError(reordered) ? { ok: false, error: toIpcError(reordered.error) } : { ok: true, value: reordered.value };
+      return Result.ok(await options.registry.list());
    }
 
    async function previewDelete({ installId }: { installId: string }): Promise<InstallDeletePreview> {
       const install = await options.registry.get(installId);
       if (!install) return invalid(installId, 'not-found');
       if (install.source === 'store') return invalid(installId, 'store-owned');
+
+      const roots = sharedRootPaths((await options.settingsStore.getSnapshot()).library);
+      const holdsRoot = await Promise.all(roots.map((root) => isRootInsideInstall(root, install.path)));
+      if (holdsRoot.includes(true)) return invalid(installId, 'holds-shared-library');
 
       const size = await getDirectorySize(install.path);
       if (Result.isError(size) && size.error.detail !== 'ENOENT') return invalid(installId, 'inspect-failed', size.error.detail);
@@ -123,23 +102,22 @@ export function createInstallManagementService(options: InstallManagementOptions
       };
    }
 
-   async function deleteInstall({ installId }: { installId: string }): Promise<InstallOperationResult> {
+   async function deleteInstall({ installId }: { installId: string }) {
       const previewed = await previewDelete({ installId });
       if (previewed.status === 'invalid') return failure(installId, previewed.issue, previewed.detail);
 
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'delete',
-         title: `Delete ${previewed.name}`,
-         message: previewed.path,
-         progress: { phase: 'preparing', current: 0, total: previewed.sizeBytes, percent: 0, unit: 'bytes' },
-         metadata: { path: previewed.path },
-         cancel: () => controller.abort()
-      });
+      const operation = options.operations.start(
+         {
+            kind: 'delete',
+            title: translate('installs.manage.delete.operation', { name: previewed.name }),
+            message: previewed.path,
+            progress: { phase: 'preparing', current: 0, total: previewed.sizeBytes, percent: 0, unit: 'bytes' },
+            metadata: { path: previewed.path }
+         },
+         (operationId, signal) => runDelete(operationId, previewed, signal)
+      );
 
-      void runDelete(operation.id, previewed, controller.signal);
-
-      return { ok: true, value: operation };
+      return Result.ok(operation);
    }
 
    async function previewForget({ installId }: { installId: string }): Promise<InstallForgetPreview> {
@@ -156,22 +134,20 @@ export function createInstallManagementService(options: InstallManagementOptions
       };
    }
 
-   async function forget({ installId }: { installId: string }): Promise<InstallForgetResult> {
+   async function forget({ installId }: { installId: string }) {
       const previewed = await previewForget({ installId });
       if (previewed.status === 'invalid') return failure(installId, previewed.issue, previewed.detail);
 
       const forgotten = await options.registry.forget(installId);
-      if (Result.isError(forgotten)) return { ok: false, error: toIpcError(forgotten.error) };
+      if (Result.isError(forgotten)) return Result.err(forgotten.error);
 
-      return { ok: true, value: { installId, name: previewed.name, path: previewed.path } };
+      return Result.ok({ installId, name: previewed.name, path: previewed.path });
    }
 
    async function runDelete(operationId: string, previewed: ReadyDeletePreview, signal: AbortSignal) {
       const deleted = await deletePathWithProgress({
          targetPath: previewed.path,
          root: dirname(previewed.path),
-         scope: 'install',
-         operationId,
          onProgress: (progress) => options.operations.update(operationId, { progress }),
          signal,
          allowMissing: true
@@ -180,11 +156,11 @@ export function createInstallManagementService(options: InstallManagementOptions
       // cancellation can leave a partial delete, so rescan before deciding whether to forget it
       if (Result.isError(deleted)) {
          await options.registry.rescan();
-         return failOperation(operationId, deleted.error);
+         return options.operations.fail(operationId, deleted.error);
       }
 
       const forgotten = await options.registry.forget(previewed.installId);
-      if (Result.isError(forgotten)) return failOperation(operationId, forgotten.error);
+      if (Result.isError(forgotten)) return options.operations.fail(operationId, forgotten.error);
 
       options.operations.complete(operationId, {
          installId: previewed.installId,
@@ -195,36 +171,26 @@ export function createInstallManagementService(options: InstallManagementOptions
       });
    }
 
-   function failOperation(operationId: string, problem: FilesystemProblem) {
-      options.operations.fail(operationId, {
-         code: problem.code,
-         message: problem.message,
-         details: { path: problem.path, detail: problem.detail }
-      });
-   }
-
    function invalid(installId: string, issue: InstallActionIssue, detail?: string) {
-      return invalidInstallAction({ installId }, issue, detail);
+      const problem: InstallActionProblem = { status: 'invalid', installId, issue };
+      if (detail) problem.detail = detail;
+      return problem;
    }
 
-   function failure(installId: string, issue: InstallUpdateIssue, detail?: string, message = actionIssueMessages[issue]): IpcFailureResult {
-      return {
-         ok: false,
-         error: {
-            code: `installs.manage.${issue}`,
-            message,
-            details: { installId, detail }
-         }
-      };
+   function failure(installId: string, issue: InstallActionIssue | 'already-registered', detail?: string) {
+      return Result.err(createProblem(`installs.manage.${issue}`, { installId, detail }));
    }
 
-   return { list, getDetail, rescan, update, setPinned, reorder, previewDelete, delete: deleteInstall, previewForget, forget };
-}
-
-function toIpcError(problem: FilesystemProblem): IpcError {
    return {
-      code: problem.code,
-      message: problem.message,
-      details: { path: problem.path, detail: problem.detail }
+      list: options.registry.list,
+      getDetail: ({ installId }: { installId: string }) => options.registry.get(installId),
+      rescan: options.registry.rescan,
+      update,
+      setPinned,
+      reorder: ({ installIds }: { installIds: string[] }) => options.registry.reorder(installIds),
+      previewDelete,
+      delete: deleteInstall,
+      previewForget,
+      forget
    };
 }

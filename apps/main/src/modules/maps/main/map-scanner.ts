@@ -1,11 +1,11 @@
 import { Result } from 'better-result';
 
+import { createProblem } from '@/lib/errors';
 import { scanInBatches } from '@/lib/filesystem/scan';
 import type { LocalMapSummary, MapProblem } from '@/modules/maps/contract';
 import { computeMapHash } from '@/modules/maps/main/map-hash';
-import { parseMapInfo, type MapInfo } from '@/modules/maps/main/map-info';
+import { parseMapInfo } from '@/modules/maps/main/map-info';
 import { customLevelsPath, infoFileNamePattern } from '@/modules/maps/main/map-paths';
-import { createMapProblem } from '@/modules/maps/main/map-problem';
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -15,16 +15,15 @@ export type MapScanCacheEntry = {
    map: LocalMapSummary;
 };
 
-export type MapScanCache = Map<string, MapScanCacheEntry>;
+type MapScanCache = Map<string, MapScanCacheEntry>;
 
-export type MapScanOptions = {
+type MapScanOptions = {
    installPath: string;
    cache?: MapScanCache;
-   signal?: AbortSignal;
    onProgress?: (progress: { scanned: number; total: number }) => void;
 };
 
-export type MapScanResult = {
+type MapScanResult = {
    status: 'missing' | 'ready';
    mapsPath: string;
    maps: LocalMapSummary[];
@@ -35,7 +34,7 @@ export async function scanCustomLevels(options: MapScanOptions): Promise<MapScan
    const mapsPath = customLevelsPath(options.installPath);
    const entries = await Result.tryPromise({
       try: () => readdir(mapsPath, { withFileTypes: true }),
-      catch: (cause) => createMapProblem('maps.root.unreadable', 'the custom levels folder could not be read', { cause })
+      catch: (cause) => createProblem('maps.root.unreadable', { cause })
    });
 
    if (Result.isError(entries)) {
@@ -57,10 +56,10 @@ export async function scanCustomLevels(options: MapScanOptions): Promise<MapScan
 
 async function scanMapFolder(mapsPath: string, folderName: string, cache?: MapScanCache): Promise<LocalMapSummary> {
    const mapPath = join(mapsPath, folderName);
-   const listing = await readMapFolder(mapPath);
+   const listing = await readMapFolder(mapPath, folderName);
 
    if (Result.isError(listing)) {
-      return emptyMap(mapPath, folderName, createMapProblem('maps.folder.unreadable', 'this map folder could not be read', { folderName }));
+      return emptyMap(mapPath, folderName, listing.error);
    }
 
    const { fileNames, sizeBytes, updatedAt } = listing.value;
@@ -88,17 +87,12 @@ type ReadMapInput = {
 async function readMap(input: ReadMapInput): Promise<LocalMapSummary> {
    const infoFileName = input.fileNames.find((name) => infoFileNamePattern.test(name));
    if (!infoFileName) {
-      return emptyMap(
-         input.mapPath,
-         input.folderName,
-         createMapProblem('maps.info.missing', 'this folder has no Info.dat', { folderName: input.folderName }),
-         input
-      );
+      return emptyMap(input.mapPath, input.folderName, createProblem('maps.info.missing', { folderName: input.folderName }), input);
    }
 
    const raw = await Result.tryPromise({
       try: () => readFile(join(input.mapPath, infoFileName), 'utf8'),
-      catch: (cause) => createMapProblem('maps.folder.unreadable', 'the map description could not be read', { folderName: input.folderName, cause })
+      catch: (cause) => createProblem('maps.info.unreadable', { folderName: input.folderName, cause })
    });
    if (Result.isError(raw)) return emptyMap(input.mapPath, input.folderName, raw.error, input);
 
@@ -106,36 +100,28 @@ async function readMap(input: ReadMapInput): Promise<LocalMapSummary> {
    if (Result.isError(info)) return emptyMap(input.mapPath, input.folderName, info.error, input);
 
    const hash = await computeMapHash({ mapPath: input.mapPath, folderName: input.folderName, rawInfo: raw.value, info: info.value });
-
-   const map: LocalMapSummary = {
-      ...describeMap(input, info.value),
-      hash: Result.isOk(hash) ? hash.value : null
-   };
-   if (Result.isError(hash)) map.problem = hash.error;
-   return map;
-}
-
-function describeMap(input: ReadMapInput, info: MapInfo): LocalMapSummary {
-   const coverName = info.coverFileName?.toLowerCase();
+   const coverName = info.value.coverFileName?.toLowerCase();
    const coverFileName = coverName ? (input.fileNames.find((name) => name.toLowerCase() === coverName) ?? null) : null;
 
-   return {
+   const map: LocalMapSummary = {
       id: input.folderName,
       folderName: input.folderName,
       path: input.mapPath,
-      hash: null,
-      title: info.title || input.folderName,
-      subTitle: info.subTitle,
-      artist: info.artist,
-      mappers: info.mappers,
-      bpm: info.bpm,
-      durationSeconds: info.durationSeconds,
-      difficulties: info.difficulties.map((difficulty) => ({ characteristic: difficulty.characteristic, difficulty: difficulty.difficulty })),
+      hash: Result.isOk(hash) ? hash.value : null,
+      title: info.value.title || input.folderName,
+      subTitle: info.value.subTitle,
+      artist: info.value.artist,
+      mappers: info.value.mappers,
+      bpm: info.value.bpm,
+      durationSeconds: info.value.durationSeconds,
+      difficulties: info.value.difficulties.map((difficulty) => ({ characteristic: difficulty.characteristic, difficulty: difficulty.difficulty })),
       coverFileName,
       sizeBytes: input.sizeBytes,
       updatedAt: input.updatedAt,
       isDuplicate: false
    };
+   if (Result.isError(hash)) map.problem = hash.error;
+   return map;
 }
 
 function emptyMap(mapPath: string, folderName: string, problem: MapProblem, input?: ReadMapInput): LocalMapSummary {
@@ -159,7 +145,7 @@ function emptyMap(mapPath: string, folderName: string, problem: MapProblem, inpu
    };
 }
 
-async function readMapFolder(mapPath: string) {
+async function readMapFolder(mapPath: string, folderName: string) {
    return Result.tryPromise({
       try: async () => {
          const entries = await readdir(mapPath, { withFileTypes: true });
@@ -168,7 +154,7 @@ async function readMapFolder(mapPath: string) {
          let sizeBytes = 0;
          let updatedAtMs = 0;
          for (const name of fileNames) {
-            const entry = await Result.tryPromise({ try: () => stat(join(mapPath, name)), catch: () => null });
+            const entry = await Result.tryPromise(() => stat(join(mapPath, name)));
             if (Result.isError(entry)) continue;
 
             sizeBytes += entry.value.size;
@@ -177,7 +163,7 @@ async function readMapFolder(mapPath: string) {
 
          return { fileNames, sizeBytes, updatedAt: new Date(updatedAtMs).toISOString() };
       },
-      catch: (cause) => createMapProblem('maps.folder.unreadable', 'this map folder could not be read', { cause })
+      catch: (cause) => createProblem('maps.folder.unreadable', { folderName, cause })
    });
 }
 

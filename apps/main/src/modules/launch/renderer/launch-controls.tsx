@@ -1,19 +1,8 @@
-import {
-   AlertTriangle,
-   Bug,
-   ChevronRight,
-   Glasses,
-   Loader2,
-   MemoryStick,
-   Monitor,
-   Play,
-   ScrollText,
-   ShieldCheck,
-   SkipForward,
-   SquarePen
-} from 'lucide-react';
+import { Bug, ChevronRight, Loader2, MemoryStick, Monitor, Play, ScrollText, ShieldCheck, SkipForward, SquarePen } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
+import { RiftIcon } from '@/components/headset-icons';
+import { WarningLine } from '@/components/state/state-panel';
 import { PathText } from '@/components/text/path-text';
 import { Button } from '@/components/ui/button';
 import { CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -21,71 +10,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { cn } from '@/components/utils';
 
-import {
-   formatLaunchArgs,
-   launchFlagsFor,
-   type LaunchFlag,
-   type LaunchIssue,
-   type LaunchWarning,
-   type ReadyLaunchPreview
-} from '@/modules/launch/contract';
+import { formatLaunchArgs, launchFlagsFor, type ReadyLaunchPreview } from '@/modules/launch/contract';
 import { ProtonFolderField } from '@/modules/launch/renderer/proton-folder-field';
 import type { InstallLaunch } from '@/modules/launch/renderer/use-install-launch';
-import type { MessageKey, MessageKeyMap } from '@/renderer/i18n/keys';
 
-const issueKeys: MessageKeyMap<LaunchIssue, 'launch.issues'> = {
-   'executable-missing': 'executableMissing',
-   'inspect-failed': 'inspectFailed',
-   'invalid-options': 'invalidOptions',
-   'not-found': 'notFound',
-   'proton-not-found': 'protonNotFound',
-   'proton-not-set': 'protonNotSet',
-   'store-client-missing': 'storeClientMissing',
-   'unsupported-platform': 'unsupportedPlatform',
-   'unsupported-target': 'unsupportedTarget'
-};
-
-const warningKeys: MessageKeyMap<LaunchWarning, 'launch.warnings'> = {
-   'admin-prompt': 'adminPrompt',
-   'admin-unsupported': 'adminUnsupported',
-   'oculus-client-starts': 'oculusClientStarts',
-   'proton-logs': 'protonLogs',
-   'steam-client-starts': 'steamClientStarts',
-   'steam-skipped': 'steamSkipped'
-};
-
-type LaunchFlagCopyEntry = { label: MessageKey<'launch'>; description: MessageKey<'launch'> };
-
-type LaunchFlagCopy = {
-   'oculus-mode': LaunchFlagCopyEntry;
-   fpfc: LaunchFlagCopyEntry;
-   debug: LaunchFlagCopyEntry;
-   editor: LaunchFlagCopyEntry;
-   'skip-steam': LaunchFlagCopyEntry;
-   'proton-logs': LaunchFlagCopyEntry;
-};
-
-const flagKeys: LaunchFlagCopy = {
-   'oculus-mode': { label: 'flags.oculusMode.label', description: 'flags.oculusMode.description' },
-   fpfc: { label: 'flags.fpfc.label', description: 'flags.fpfc.description' },
-   debug: { label: 'flags.debug.label', description: 'flags.debug.description' },
-   'skip-steam': { label: 'flags.skipSteam.label', description: 'flags.skipSteam.description' },
-   editor: { label: 'flags.editor.label', description: 'flags.editor.description' },
-   'proton-logs': { label: 'flags.protonLogs.label', description: 'flags.protonLogs.description' }
-};
-
-const flagIcons = {
-   'oculus-mode': Glasses,
+const optionIcons = {
+   'oculus-mode': RiftIcon,
    fpfc: Monitor,
    debug: Bug,
    'skip-steam': SkipForward,
    editor: SquarePen,
-   'proton-logs': ScrollText
+   'proton-logs': ScrollText,
+   'run-as-admin': ShieldCheck,
+   'close-encore': MemoryStick
 };
 
-const launchOptionOrder: (LaunchFlag | 'run-as-admin' | 'close-encore')[] = [
+const launchOptionOrder: (keyof typeof optionIcons)[] = [
    'editor',
    'oculus-mode',
    'skip-steam',
@@ -96,19 +37,21 @@ const launchOptionOrder: (LaunchFlag | 'run-as-admin' | 'close-encore')[] = [
    'proton-logs'
 ];
 
-function isStarting(launch: InstallLaunch) {
-   return launch.state.status === 'starting' || launch.state.status === 'running';
-}
-
 export function LaunchAction({ launch }: { launch: InstallLaunch }) {
    const t = useTranslations('launch');
    const common = useTranslations('common');
-   const starting = isStarting(launch);
+   if (launch.platform === 'quest' && launch.gameRunning) {
+      return (
+         <Button type="button" variant="outline" size="lg" disabled={launch.stopping} onClick={launch.stop}>
+            {launch.stopping ? t('stopping') : t('stop')}
+         </Button>
+      );
+   }
 
    return (
       <div className="flex shrink-0 items-center gap-2">
-         {starting ? (
-            <Button type="button" variant="outline" size="sm" disabled={launch.state.status === 'starting'} onClick={launch.cancel}>
+         {launch.launching ? (
+            <Button type="button" variant="outline" size="sm" disabled={launch.starting} onClick={launch.cancel}>
                {common('cancel')}
             </Button>
          ) : null}
@@ -117,18 +60,18 @@ export function LaunchAction({ launch }: { launch: InstallLaunch }) {
             type="button"
             size="lg"
             className="shadow-primary/20 hover:shadow-primary/30 min-w-52 cursor-pointer gap-2.5 font-semibold shadow-lg"
-            disabled={launch.state.status !== 'ready' || launch.gameRunning}
-            onClick={() => void launch.launch()}
+            disabled={!launch.canLaunch}
+            onClick={launch.launch}
          >
-            {starting ? <Loader2 className="animate-spin" /> : <Play />}
-            {starting ? t('result.starting') : t('start')}
+            {launch.launching ? <Loader2 /> : <Play />}
+            {launch.launching ? t('result.starting') : t('start')}
          </Button>
       </div>
    );
 }
 
 export function LaunchProgress({ launch }: { launch: InstallLaunch }) {
-   if (!isStarting(launch)) return null;
+   if (!launch.launching) return null;
 
    const percent = Math.min(Math.max(launch.operation?.progress?.percent ?? 0, 0), 100);
 
@@ -140,51 +83,35 @@ export function LaunchProgress({ launch }: { launch: InstallLaunch }) {
 }
 
 export function LaunchOptions({ launch }: { launch: InstallLaunch }) {
-   const disabled = isStarting(launch) || !launch.optionsReady;
-   const supportedFlags = launchFlagsFor(launch.platform);
+   const disabled = launch.launching || !launch.ready;
+   const supportedFlags = launchFlagsFor(launch.platform, launch.steamFrame);
    const options = launchOptionOrder.filter((option) => {
-      if (option === 'run-as-admin') return launch.platform !== 'linux';
-      if (option === 'close-encore') return launch.platform !== 'other';
+      if (option === 'run-as-admin') return launch.platform === 'windows';
+      if (option === 'close-encore') return launch.platform === 'windows' || launch.platform === 'linux';
       return supportedFlags.includes(option);
    });
 
-   return (
-      <>
-         {options.map((option) =>
-            option === 'run-as-admin' ? (
-               <LaunchOption
-                  key={option}
-                  icon={ShieldCheck}
-                  labelKey="runAsAdmin.label"
-                  descriptionKey="runAsAdmin.description"
-                  pressed={launch.runAsAdmin}
-                  disabled={disabled}
-                  onPressedChange={launch.setRunAsAdmin}
-               />
-            ) : option === 'close-encore' ? (
-               <LaunchOption
-                  key={option}
-                  icon={MemoryStick}
-                  labelKey="closeEncore.label"
-                  descriptionKey="closeEncore.description"
-                  pressed={launch.closeEncore}
-                  disabled={disabled}
-                  onPressedChange={launch.setCloseEncore}
-               />
-            ) : (
-               <LaunchOption
-                  key={option}
-                  icon={flagIcons[option]}
-                  labelKey={flagKeys[option].label}
-                  descriptionKey={flagKeys[option].description}
-                  pressed={launch.flags.includes(option)}
-                  disabled={disabled}
-                  onPressedChange={(enabled) => launch.toggleFlag(option, enabled)}
-               />
-            )
-         )}
-      </>
-   );
+   return options.map((option) => (
+      <LaunchOption
+         key={option}
+         option={option}
+         pressed={
+            option === 'run-as-admin'
+               ? launch.options.runAsAdmin
+               : option === 'close-encore'
+                 ? launch.options.closeEncore
+                 : launch.options.flags.includes(option)
+         }
+         disabled={disabled}
+         onPressedChange={(pressed) =>
+            option === 'run-as-admin'
+               ? launch.setRunAsAdmin(pressed)
+               : option === 'close-encore'
+                 ? launch.setCloseEncore(pressed)
+                 : launch.toggleFlag(option, pressed)
+         }
+      />
+   ));
 }
 
 export function LaunchAdvancedTrigger() {
@@ -192,7 +119,7 @@ export function LaunchAdvancedTrigger() {
 
    return (
       <CollapsibleTrigger asChild>
-         <Button type="button" variant="ghost" size="sm" className="text-muted-foreground group gap-1 px-2">
+         <Button type="button" variant="menu" size="sm" className="group">
             <ChevronRight className="transition-transform group-data-[state=open]:rotate-90" />
             {t('advanced')}
          </Button>
@@ -202,12 +129,11 @@ export function LaunchAdvancedTrigger() {
 
 export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
    const t = useTranslations('launch');
-   const preview =
-      launch.state.status === 'ready' || launch.state.status === 'starting' || launch.state.status === 'running' ? launch.state.preview : null;
-   const disabled = isStarting(launch) || !launch.optionsReady;
+   const disabled = launch.launching || !launch.ready;
 
    return (
       <CollapsibleContent className="flex flex-col gap-3 pb-1">
+         <LaunchProton launch={launch} when="ready" />
          <div className="flex flex-col gap-1.5">
             <Label htmlFor="launch-environment" className="text-xs">
                {t('environment.label')}
@@ -236,78 +162,66 @@ export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
             />
          </div>
 
-         {preview ? <LaunchCommand preview={preview} /> : null}
+         {launch.preview ? <LaunchCommand preview={launch.preview} /> : null}
       </CollapsibleContent>
    );
 }
 
-export function LaunchProton({ launch }: { launch: InstallLaunch }) {
+export function LaunchProton({ launch, when }: { launch: InstallLaunch; when: 'missing' | 'ready' }) {
    if (launch.platform !== 'linux' || !launch.localTarget) return null;
 
-   return <ProtonFolderField disabled={isStarting(launch)} onChange={launch.recheck} />;
+   return <ProtonFolderField className="px-0 sm:px-0" when={when} disabled={launch.launching} onChange={launch.recheck} />;
 }
 
 export function LaunchNotices({ launch }: { launch: InstallLaunch }) {
    const t = useTranslations('launch');
-   const { state, failure, optionsFailure } = launch;
-   const problem =
-      state.status === 'unavailable'
-         ? {
-              text: t(`issues.${issueKeys[state.preview.issue]}`),
-              detail: state.preview.detail
-           }
-         : state.status === 'failed'
-           ? { text: t('issues.inspectFailed'), detail: state.error.message }
-           : failure
-             ? { text: t('result.failed'), detail: failure }
-             : optionsFailure
-               ? { text: t('issues.settingsWriteFailed'), detail: optionsFailure }
-               : null;
-   const warnings = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.preview.warnings : [];
+   const problems = useTranslations('problems.launch');
+   const { previewFailure, failure, optionsFailure } = launch;
+   const unavailable = launch.unavailable?.issue === 'proton-not-set' && launch.localTarget ? null : launch.unavailable;
+   const problem = unavailable
+      ? { text: problems(unavailable.issue), detail: unavailable.detail }
+      : previewFailure
+        ? { text: problems('inspect-failed'), detail: previewFailure }
+        : failure
+          ? { text: t('result.failed'), detail: failure }
+          : optionsFailure
+            ? { text: t('optionsFailed'), detail: optionsFailure }
+            : null;
+   const warnings = launch.preview?.warnings ?? [];
 
    if (!problem && warnings.length === 0) return null;
 
    return (
       <ul className="flex flex-col gap-1 pb-0.5 text-xs">
          {problem ? (
-            <Notice tone="bad">
+            <WarningLine as="li" tone="destructive" iconClassName="mt-0.5 size-3.5">
                {problem.text}
                {problem.detail ? <span className="text-muted-foreground"> {problem.detail}</span> : null}
-            </Notice>
+            </WarningLine>
          ) : null}
 
          {warnings.map((warning) => (
-            <Notice key={warning}>{t(`warnings.${warningKeys[warning]}`)}</Notice>
+            <WarningLine key={warning} as="li" tone="warning" iconClassName="mt-0.5 size-3.5">
+               {t(`warnings.${warning}`)}
+            </WarningLine>
          ))}
       </ul>
    );
 }
 
-function Notice({ tone, children }: { tone?: 'bad'; children: React.ReactNode }) {
-   return (
-      <li className={cn('flex gap-2', tone === 'bad' ? 'text-destructive' : 'text-muted-foreground')}>
-         <AlertTriangle className={cn('mt-0.5 size-3.5 shrink-0', tone === 'bad' ? undefined : 'text-status-warning')} />
-         <span className="min-w-0 break-words">{children}</span>
-      </li>
-   );
-}
-
 function LaunchOption({
-   icon: Icon,
-   labelKey,
-   descriptionKey,
+   option,
    pressed,
    disabled,
    onPressedChange
 }: {
-   icon: typeof Play;
-   labelKey: MessageKey<'launch'>;
-   descriptionKey: MessageKey<'launch'>;
+   option: keyof typeof optionIcons;
    pressed: boolean;
    disabled: boolean;
    onPressedChange: (pressed: boolean) => void;
 }) {
    const t = useTranslations('launch');
+   const Icon = optionIcons[option];
 
    return (
       <Tooltip>
@@ -322,11 +236,11 @@ function LaunchOption({
                   className="data-[state=on]:border-primary data-[state=on]:bg-primary/15 data-[state=on]:text-primary h-7 gap-1.5 px-2 text-xs [&_svg]:size-3.5"
                >
                   <Icon />
-                  {t(labelKey)}
+                  {t(`flags.${option}.label`)}
                </Toggle>
             </span>
          </TooltipTrigger>
-         <TooltipContent className="max-w-64">{t(descriptionKey)}</TooltipContent>
+         <TooltipContent className="max-w-64">{t(`flags.${option}.description`)}</TooltipContent>
       </Tooltip>
    );
 }

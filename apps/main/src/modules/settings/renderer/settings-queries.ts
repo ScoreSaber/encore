@@ -1,15 +1,14 @@
 import { queryOptions } from '@tanstack/react-query';
 
-import { settingsIpc } from '@/modules/settings/ipc';
-import { ipcQueryKey } from '@/renderer/query/utils';
+import { apiKey } from '@/renderer/query/api-query';
 
 export const settingsSnapshotQueryOptions = queryOptions({
-   queryKey: ipcQueryKey(settingsIpc.getSnapshot),
+   queryKey: apiKey('settings', 'getSnapshot'),
    queryFn: () => window.encore.settings.getSnapshot(),
    staleTime: Infinity
 });
 
 export const protonStateQueryOptions = queryOptions({
-   queryKey: ipcQueryKey(settingsIpc.getProtonState),
+   queryKey: apiKey('settings', 'getProtonState'),
    queryFn: () => window.encore.settings.getProtonState()
 });

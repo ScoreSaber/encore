@@ -1,12 +1,14 @@
 import { Result } from 'better-result';
 
-import type { IpcFailureResult } from '@/ipc/core';
 import { abortableSleep } from '@/lib/async';
+import { createProblem, type Problem } from '@/lib/errors';
 import { pathExists } from '@/lib/filesystem/path';
+import { translate } from '@/lib/messages';
+import { createLatestGuard } from '@/lib/state/machine';
 import type { InstallDetail } from '@/modules/installs/contract';
+import { beatSaberExecutablePath } from '@/modules/installs/main/beat-saber-files';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
-   beatSaberExecutableName,
    createDefaultLaunchOptions,
    launchOptionsSchema,
    launchFlags,
@@ -16,34 +18,21 @@ import {
    type LaunchIssue,
    type LaunchOptions,
    type LaunchOptionsRequest,
-   type LaunchOptionsResult,
    type LaunchPreview,
    type LaunchRequestBody,
-   type LaunchResult,
    type LaunchState,
    type LaunchWarning,
    type ProtonLaunchPlan,
    type ReadyLaunchPreview
 } from '@/modules/launch/contract';
 import { buildLaunchArgs, buildLaunchEnv, buildProtonCommand } from '@/modules/launch/main/launch-options';
-import { createLaunchRuntime, type LaunchRuntime, type SpawnedGameProcess } from '@/modules/launch/main/launch-runtime';
+import type { LaunchRuntime, RunningProcess } from '@/modules/launch/main/launch-runtime';
+import type { OperationSnapshot } from '@/modules/operations/contract';
 import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 import type { SettingsSnapshot } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 
 import { join } from 'node:path';
-
-const launchIssueMessages = {
-   'executable-missing': 'the Beat Saber executable is not in the install folder',
-   'inspect-failed': 'the install folder could not be inspected',
-   'invalid-options': 'the launch options are not something Encore can pass to Beat Saber',
-   'not-found': 'the install is not in the registry anymore',
-   'proton-not-found': 'the Proton folder in settings does not contain a usable Proton build',
-   'proton-not-set': 'no Proton folder is set, so Encore cannot start a Windows build on Linux',
-   'store-client-missing': 'the store client this install needs is not installed on that machine',
-   'unsupported-platform': 'Encore can only launch Beat Saber on Windows and Linux for now',
-   'unsupported-target': 'this target cannot launch installs'
-};
 
 type ProtonResolution = { status: 'ok'; plan: ProtonLaunchPlan } | { status: 'unavailable'; issue: LaunchIssue; detail?: string };
 
@@ -51,18 +40,19 @@ type LaunchServiceOptions = {
    settingsStore: SettingsStore;
    registry: InstallRegistry;
    operations: OperationRegistry;
-   runtime?: LaunchRuntime;
+   runtime: LaunchRuntime;
    storeClientDelayMs?: number;
 };
 
-export type LaunchService = ReturnType<typeof createLaunchService>;
+type GameLifecycle = { status: 'idle' } | { status: 'launching' } | { status: 'running'; process: RunningProcess };
 
 export function createLaunchService(options: LaunchServiceOptions) {
-   const runtime = options.runtime ?? createLaunchRuntime();
+   const runtime = options.runtime;
    const storeClientDelayMs = options.storeClientDelayMs ?? 5_000;
    const platform = launchPlatformFor(runtime.platform);
    const listeners = new Set<(state: LaunchState) => void>();
-   let gameProcess: SpawnedGameProcess | null = null;
+   const publishGuard = createLatestGuard();
+   let lifecycle: GameLifecycle = { status: 'idle' };
 
    async function getState(): Promise<LaunchState> {
       const settings = await options.settingsStore.getSnapshot();
@@ -70,7 +60,8 @@ export function createLaunchService(options: LaunchServiceOptions) {
       return {
          platform,
          supported: platform !== 'other',
-         gameRunning: gameProcess !== null,
+         gameRunning: lifecycle.status === 'running',
+         steamFrame: runtime.steamFrame,
          lastLaunch: settings.library.lastLaunch
       };
    }
@@ -83,57 +74,56 @@ export function createLaunchService(options: LaunchServiceOptions) {
    }
 
    async function publishState() {
+      const token = publishGuard.next();
       const state = await getState();
+      if (!publishGuard.isCurrent(token)) return;
       for (const listener of listeners) listener(state);
    }
 
    async function getOptions({ installId }: LaunchOptionsRequest): Promise<LaunchOptions> {
       const settings = await options.settingsStore.getSnapshot();
-      const saved = settings.library.launchOptions[installId];
-      const legacy = settings.library.lastLaunch?.installId === installId ? settings.library.lastLaunch.options : null;
-
-      return supportedLaunchOptions(saved ?? legacy ?? createDefaultLaunchOptions());
+      return supportedLaunchOptions(settings.library.launchOptions[installId] ?? createDefaultLaunchOptions());
    }
 
-   async function updateOptions(request: LaunchRequestBody): Promise<LaunchOptionsResult> {
+   async function updateOptions(request: LaunchRequestBody) {
       const launchOptions = supportedLaunchOptions(request.options);
       const written = await options.settingsStore.updateLibrarySettings({ launchOptions: { [request.installId]: launchOptions } });
-      if (!written.ok) return written;
-
-      return { ok: true, value: written.value.library.launchOptions[request.installId] ?? launchOptions };
+      return written.ok ? Result.ok(written.value.library.launchOptions[request.installId] ?? launchOptions) : Result.err(written.error);
    }
 
    async function preview(request: LaunchRequestBody): Promise<LaunchPreview> {
-      if (platform === 'other') return invalid(request.installId, 'unsupported-platform');
+      if (platform === 'other') return unavailableLaunchPreview(request, 'unsupported-platform');
 
       const parsed = launchOptionsSchema.safeParse(request.options);
-      if (!parsed.success) return invalid(request.installId, 'invalid-options');
+      if (!parsed.success) return unavailableLaunchPreview(request, 'invalid-options');
 
       const launchOptions = supportedLaunchOptions(parsed.data);
       const install = await options.registry.get(request.installId);
-      if (!install) return invalid(request.installId, 'not-found');
+      if (!install) return unavailableLaunchPreview(request, 'not-found');
 
-      const executablePath = install.executablePath ?? join(install.path, beatSaberExecutableName);
+      const executablePath = beatSaberExecutablePath(install.path);
       const exists = await pathExists(executablePath);
-      if (Result.isError(exists)) return invalid(request.installId, 'inspect-failed', exists.error.detail);
-      if (!exists.value) return invalid(request.installId, 'executable-missing', executablePath);
+      if (Result.isError(exists)) return unavailableLaunchPreview(request, 'inspect-failed', exists.error.detail);
+      if (!exists.value) return unavailableLaunchPreview(request, 'executable-missing', executablePath);
 
       const warnings: LaunchWarning[] = [];
       let proton: ProtonLaunchPlan | null = null;
+      let startClient: 'steam' | 'oculus' | null = null;
 
       if (platform === 'linux') {
          const settings = await options.settingsStore.getSnapshot();
          const resolved = await resolveProton(settings, install, launchOptions);
-         if (resolved.status === 'unavailable') return invalid(request.installId, resolved.issue, resolved.detail);
+         if (resolved.status === 'unavailable') return unavailableLaunchPreview(request, resolved.issue, resolved.detail);
 
          proton = resolved.plan;
          if (proton.logPath) warnings.push('proton-logs');
          if (launchOptions.runAsAdmin) warnings.push('admin-unsupported');
       } else {
          const storeWarning = await checkStoreClient(install, launchOptions);
-         if (storeWarning.status === 'unavailable') return invalid(request.installId, storeWarning.issue, storeWarning.detail);
+         if (storeWarning.status === 'unavailable') return unavailableLaunchPreview(request, storeWarning.issue, storeWarning.detail);
 
          warnings.push(...storeWarning.warnings);
+         startClient = storeWarning.startClient;
          if (launchOptions.runAsAdmin) warnings.push('admin-prompt');
       }
 
@@ -148,6 +138,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
          args: buildLaunchArgs({ flags: launchOptions.flags, args: launchOptions.args, isStoreInstall: install.source === 'store' }),
          options: launchOptions,
          proton,
+         startClient,
          warnings
       };
    }
@@ -155,37 +146,46 @@ export function createLaunchService(options: LaunchServiceOptions) {
    async function checkStoreClient(
       install: InstallDetail,
       launchOptions: LaunchOptions
-   ): Promise<{ status: 'ok'; warnings: LaunchWarning[] } | { status: 'unavailable'; issue: LaunchIssue; detail?: string }> {
+   ): Promise<
+      | { status: 'ok'; warnings: LaunchWarning[]; startClient: 'steam' | 'oculus' | null }
+      | { status: 'unavailable'; issue: LaunchIssue; detail?: string }
+   > {
       if (install.store === 'oculus') {
          const oculus = await runtime.readOculusClient();
          if (oculus.status === 'missing') return { status: 'unavailable', issue: 'store-client-missing', detail: 'oculus' };
 
-         return { status: 'ok', warnings: ['oculus-client-starts'] };
+         return { status: 'ok', warnings: [], startClient: 'oculus' };
       }
 
-      if (launchOptions.flags.includes('skip-steam')) return { status: 'ok', warnings: ['steam-skipped'] };
+      if (launchOptions.flags.includes('skip-steam')) return { status: 'ok', warnings: ['steam-skipped'], startClient: null };
 
       const steam = await runtime.readSteamClient();
       if (steam.status === 'missing' || steam.status === 'unsupported-platform') {
          return install.store === 'steam'
             ? { status: 'unavailable', issue: 'store-client-missing', detail: 'steam' }
-            : { status: 'ok', warnings: [] };
+            : { status: 'ok', warnings: [], startClient: null };
       }
 
-      return { status: 'ok', warnings: steam.status === 'signed-out' ? ['steam-client-starts'] : [] };
+      return { status: 'ok', warnings: [], startClient: steam.status === 'signed-out' ? 'steam' : null };
    }
 
    async function resolveProton(settings: SettingsSnapshot, install: InstallDetail, launchOptions: LaunchOptions): Promise<ProtonResolution> {
       if (install.store === 'oculus') return { status: 'unavailable', issue: 'store-client-missing', detail: 'oculus' };
 
-      const protonPath = settings.library.protonPath;
+      const resolved = await protonPlan(settings);
+      if (resolved.status === 'unavailable') return resolved;
+      return { status: 'ok', plan: { ...resolved.plan, logPath: launchOptions.flags.includes('proton-logs') ? join(install.path, 'Logs') : null } };
+   }
+
+   async function protonPlan(settings: SettingsSnapshot): Promise<ProtonResolution> {
+      const host = await runtime.readLinuxHost();
+      if (!host.steamClientPath) return { status: 'unavailable', issue: 'store-client-missing', detail: 'steam' };
+
+      const protonPath = settings.library.protonPath ?? (await runtime.findProton(host.steamClientPath));
       if (!protonPath) return { status: 'unavailable', issue: 'proton-not-set' };
 
       const validation = await runtime.validateProtonFolder(protonPath);
       if (validation.status === 'invalid') return { status: 'unavailable', issue: 'proton-not-found', detail: validation.path };
-
-      const host = await runtime.readLinuxHost();
-      if (!host.steamClientPath) return { status: 'unavailable', issue: 'store-client-missing', detail: 'steam' };
 
       return {
          status: 'ok',
@@ -195,33 +195,54 @@ export function createLaunchService(options: LaunchServiceOptions) {
             steamClientPath: host.steamClientPath,
             steamRunWrapper: host.nixOs,
             flatpakHost: host.flatpak,
-            logPath: launchOptions.flags.includes('proton-logs') ? join(install.path, 'Logs') : null
+            steamFrame: host.steamFrame,
+            logPath: null
          }
       };
    }
 
-   async function start(request: LaunchRequestBody): Promise<LaunchResult> {
+   async function protonFor(): Promise<Result<ProtonLaunchPlan, Problem>> {
+      const resolved = await protonPlan(await options.settingsStore.getSnapshot());
+      if (resolved.status === 'unavailable') return Result.err(createProblem(`launch.${resolved.issue}`, { detail: resolved.detail }));
+
+      const prepared = await runtime.prepareProtonCompatData(resolved.plan.compatDataPath);
+      return prepared.map(() => resolved.plan);
+   }
+
+   async function start(request: LaunchRequestBody): Promise<Result<OperationSnapshot, Problem>> {
       const previewed = await preview(request);
-      if (previewed.status === 'unavailable') return failure(previewed.installId, previewed.issue, previewed.detail);
+      if (previewed.status === 'unavailable') {
+         return Result.err(createProblem(`launch.${previewed.issue}`, { installId: previewed.installId, detail: previewed.detail }));
+      }
 
-      const controller = new AbortController();
-      const operation = options.operations.create({
-         kind: 'launch-preparation',
-         title: `Launch ${previewed.name}`,
-         message: previewed.executablePath,
-         progress: { phase: 'preparing', percent: 0 },
-         metadata: { installId: previewed.installId, args: previewed.args },
-         cancel: () => controller.abort()
-      });
+      if (lifecycle.status !== 'idle') {
+         return Result.err(createProblem('launch.start-failed', { installId: previewed.installId }));
+      }
 
-      void runLaunch(operation.id, previewed, controller.signal);
+      lifecycle = { status: 'launching' };
+      const operation = options.operations.start(
+         {
+            kind: 'launch-preparation',
+            title: translate('launch.operation', { name: previewed.name }),
+            message: previewed.executablePath,
+            progress: { phase: 'preparing', percent: 0 },
+            metadata: { installId: previewed.installId, args: previewed.args }
+         },
+         (operationId, signal) =>
+            runLaunch(operationId, previewed, signal).finally(() => {
+               if (lifecycle.status === 'launching') lifecycle = { status: 'idle' };
+            })
+      );
 
-      return { ok: true, value: operation };
+      return Result.ok(operation);
    }
 
    async function runLaunch(operationId: string, previewed: ReadyLaunchPreview, signal: AbortSignal) {
-      if (previewed.warnings.includes('steam-client-starts')) {
-         options.operations.update(operationId, { message: 'Starting Steam', progress: { phase: 'store-client', percent: 25 } });
+      if (previewed.startClient === 'steam') {
+         options.operations.update(operationId, {
+            message: translate('launch.progress.startingSteam'),
+            progress: { phase: 'store-client', percent: 25 }
+         });
 
          const started = await runtime.startSteamClient();
          if (Result.isError(started)) return options.operations.fail(operationId, started.error);
@@ -229,8 +250,11 @@ export function createLaunchService(options: LaunchServiceOptions) {
          await abortableSleep(storeClientDelayMs, signal);
       }
 
-      if (previewed.warnings.includes('oculus-client-starts')) {
-         options.operations.update(operationId, { message: 'Starting the Oculus client', progress: { phase: 'store-client', percent: 25 } });
+      if (previewed.startClient === 'oculus') {
+         options.operations.update(operationId, {
+            message: translate('launch.progress.startingOculus'),
+            progress: { phase: 'store-client', percent: 25 }
+         });
 
          const started = await runtime.startOculusClient();
          if (Result.isError(started)) return options.operations.fail(operationId, started.error);
@@ -267,6 +291,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
 
       const watchdog = previewed.options.closeEncore ? await runtime.prepareWatchdog() : null;
       if (watchdog && Result.isError(watchdog)) return options.operations.fail(operationId, watchdog.error);
+      if (signal.aborted) return;
 
       const spawned = await runtime.spawn({
          ...command,
@@ -278,11 +303,11 @@ export function createLaunchService(options: LaunchServiceOptions) {
       if (Result.isError(spawned)) return options.operations.fail(operationId, spawned.error);
 
       const game = spawned.value;
-      gameProcess = game;
+      lifecycle = { status: 'running', process: game };
       void game.exited.then(() => {
-         if (gameProcess !== game) return;
+         if (lifecycle.status !== 'running' || lifecycle.process !== game) return;
 
-         gameProcess = null;
+         lifecycle = { status: 'idle' };
          void publishState();
       });
 
@@ -291,9 +316,10 @@ export function createLaunchService(options: LaunchServiceOptions) {
       });
       await publishState();
 
-      if (watchdog && Result.isOk(watchdog)) {
+      if (watchdog && Result.isOk(watchdog) && !signal.aborted) {
          const started = await runtime.spawnWatchdog(watchdog.value);
          if (Result.isError(started)) return options.operations.fail(operationId, started.error);
+         guardWatchdog(started.value);
       }
 
       options.operations.complete(operationId, {
@@ -305,23 +331,17 @@ export function createLaunchService(options: LaunchServiceOptions) {
       });
    }
 
-   function invalid(installId: string, issue: LaunchIssue, detail?: string) {
-      return unavailableLaunchPreview({ installId }, issue, detail);
-   }
-
-   function failure(installId: string, issue: LaunchIssue, detail?: string): IpcFailureResult {
-      return {
-         ok: false,
-         error: {
-            code: `launch.${issue}`,
-            message: launchIssueMessages[issue],
-            details: { installId, detail }
-         }
+   function guardWatchdog(watchdog: RunningProcess) {
+      const stopIfBlocked = () => {
+         if (options.operations.uncancelable().length > 0) watchdog.stop();
       };
+      const unsubscribe = options.operations.subscribeTargets(stopIfBlocked);
+      void watchdog.exited.then(unsubscribe);
+      stopIfBlocked();
    }
 
    function supportedLaunchOptions(launchOptions: LaunchOptions): LaunchOptions {
-      const supportedFlags = launchFlagsFor(platform);
+      const supportedFlags = launchFlagsFor(platform, runtime.steamFrame);
 
       return {
          ...launchOptions,
@@ -329,5 +349,5 @@ export function createLaunchService(options: LaunchServiceOptions) {
       };
    }
 
-   return { getState, getOptions, updateOptions, preview, start, subscribe };
+   return { getState, getOptions, updateOptions, preview, start, subscribe, protonFor };
 }

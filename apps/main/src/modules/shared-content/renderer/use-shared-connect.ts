@@ -1,9 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 
-import type { IpcError } from '@/ipc/core';
+import { createProblem } from '@/lib/errors';
 import type { InstallId } from '@/modules/installs/contract';
-import type { OperationId } from '@/modules/operations/contract';
-import { useOperations } from '@/modules/operations/renderer/use-operations';
+import { useOperationFlow } from '@/modules/operations/renderer/use-operation-flow';
 import type {
    ReadySharedConnectPreview,
    SharedConnectAction,
@@ -12,115 +11,78 @@ import type {
    SharedContentsMode
 } from '@/modules/shared-content/contract';
 import type { TargetId } from '@/modules/targets/contract';
-import { inlineTargetIpcResult } from '@/renderer/ipc-result';
+import { unwrapTarget } from '@/renderer/ipc-result';
 
 type ConnectTarget = { installId: InstallId; installName: string; action: SharedConnectAction; rootPath: string };
-
-type SharedConnectState =
-   | { status: 'idle' }
-   | ({ status: 'previewing' } & ConnectTarget)
-   | ({ status: 'invalid'; problem: SharedConnectProblem } & ConnectTarget)
-   | ({ status: 'ready' | 'starting'; preview: ReadySharedConnectPreview } & ConnectTarget)
-   | ({ status: 'running'; operationId: OperationId; preview: ReadySharedConnectPreview } & ConnectTarget)
-   | ({ status: 'failed'; error: IpcError } & ConnectTarget);
+type SharedConnectReady = { kind: SharedConnectAction; target: ConnectTarget; preview: ReadySharedConnectPreview };
 
 export type SharedConnect = ReturnType<typeof useSharedConnect>;
 
 export function useSharedConnect(targetId: TargetId) {
    const sharedContent = window.encore.sharedContent;
-   const { operations, cancelOperation } = useOperations(targetId);
-   const [state, setState] = useState<SharedConnectState>({ status: 'idle' });
+   const flow = useOperationFlow<SharedConnectReady, SharedConnectProblem>(targetId);
+   const { preview, start, state } = flow;
 
-   const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
+   const load = useCallback(
+      (next: ConnectTarget, choices: Pick<SharedConnectRequest, 'contents' | 'includeRisky'> = {}, pending?: SharedConnectReady) =>
+         preview(
+            next.action,
+            async () => {
+               const previewed = unwrapTarget(
+                  await sharedContent.previewConnect({
+                     targetId,
+                     installId: next.installId,
+                     action: next.action,
+                     rootPath: next.rootPath,
+                     ...choices
+                  })
+               );
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: next.action, target: next, preview: previewed }
+                  : { status: 'invalid', kind: next.action, problem: previewed };
+            },
+            createProblem('shared-content.connect-preview-failed'),
+            pending
+         ),
+      [preview, sharedContent, targetId]
+   );
 
-   const preview = useCallback(
-      async (target: ConnectTarget, options?: { contents?: SharedContentsMode; includeRisky?: boolean }, current?: ReadySharedConnectPreview) => {
-         if (current) {
-            const nextPreview: ReadySharedConnectPreview = { ...current };
-            if (options?.contents) nextPreview.contents = options.contents;
-            if (options?.includeRisky !== undefined) nextPreview.includeRisky = options.includeRisky;
-            setState({ status: 'ready', preview: nextPreview, ...target });
-         } else {
-            setState({ status: 'previewing', ...target });
-         }
+   const open = useCallback((next: ConnectTarget) => void load(next), [load]);
 
-         const request: SharedConnectRequest & { targetId: TargetId } = {
-            targetId,
-            installId: target.installId,
-            action: target.action,
-            rootPath: target.rootPath
-         };
-         if (options?.contents) request.contents = options.contents;
-         if (options?.includeRisky !== undefined) request.includeRisky = options.includeRisky;
-         const response = await sharedContent.previewConnect(request).catch(() => null);
-         if (!response || response.status !== 'ok') {
-            setState({ status: 'failed', error: { code: 'shared-content.preview-failed', message: 'the install could not be read' }, ...target });
-            return;
-         }
+   const choose = useCallback(
+      (change: { contents?: SharedContentsMode; includeRisky?: boolean }) => {
+         if (state.status !== 'ready' && state.status !== 'repreviewing') return;
 
-         const previewed = response.value;
-         setState(
-            previewed.status === 'ok' ? { status: 'ready', preview: previewed, ...target } : { status: 'invalid', problem: previewed, ...target }
+         const choices = { contents: state.preview.contents, includeRisky: state.preview.includeRisky, ...change };
+         void load(state.target, choices, { kind: state.kind, target: state.target, preview: { ...state.preview, ...choices } });
+      },
+      [load, state]
+   );
+
+   const confirm = useCallback(
+      (ready: SharedConnectReady) => {
+         void start(
+            ready,
+            () =>
+               sharedContent.startConnect({
+                  targetId,
+                  installId: ready.target.installId,
+                  action: ready.kind,
+                  rootPath: ready.preview.rootPath,
+                  contents: ready.preview.contents,
+                  includeRisky: ready.preview.includeRisky
+               }),
+            createProblem('shared-content.start-failed')
          );
       },
-      [sharedContent, targetId]
+      [sharedContent, start, targetId]
    );
 
-   const open = useCallback((target: ConnectTarget) => void preview(target), [preview]);
-
-   const setContents = useCallback(
-      (contents: SharedContentsMode) => {
-         if (state.status !== 'ready') return;
-
-         const { installId, installName, action, rootPath } = state;
-         void preview({ installId, installName, action, rootPath }, { contents, includeRisky: state.preview.includeRisky }, state.preview);
-      },
-      [preview, state]
-   );
-
-   const setIncludeRisky = useCallback(
-      (includeRisky: boolean) => {
-         if (state.status !== 'ready') return;
-
-         const { installId, installName, action, rootPath } = state;
-         void preview({ installId, installName, action, rootPath }, { contents: state.preview.contents, includeRisky }, state.preview);
-      },
-      [preview, state]
-   );
-
-   const confirm = useCallback(async () => {
-      if (state.status !== 'ready') return;
-
-      const pending = state.preview;
-      setState({ ...state, status: 'starting', preview: pending });
-
-      const started = await inlineTargetIpcResult(
-         () =>
-            sharedContent.startConnect({
-               targetId,
-               installId: state.installId,
-               action: state.action,
-               rootPath: pending.rootPath,
-               contents: pending.contents,
-               includeRisky: pending.includeRisky
-            }),
-         { code: 'shared-content.connect-failed', message: 'the change could not be started' }
-      );
-
-      setState(
-         started.ok
-            ? { ...state, status: 'running', operationId: started.value.id, preview: pending }
-            : { ...state, status: 'failed', error: started.error }
-      );
-   }, [sharedContent, state, targetId]);
-
-   const cancel = useCallback(() => {
-      if (state.status !== 'running') return;
-
-      void cancelOperation(state.operationId);
-   }, [cancelOperation, state]);
-
-   const dismiss = useCallback(() => setState({ status: 'idle' }), []);
-
-   return { state, operation, open, setContents, setIncludeRisky, confirm, cancel, dismiss };
+   return {
+      flow,
+      open,
+      setContents: (contents: SharedContentsMode) => choose({ contents }),
+      setIncludeRisky: (includeRisky: boolean) => choose({ includeRisky }),
+      confirm
+   };
 }

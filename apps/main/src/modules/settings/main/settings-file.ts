@@ -1,21 +1,7 @@
 import { z } from 'zod';
 
-import { launchOptionsSchema, launchRecordSchema } from '@/modules/launch/contract';
-import { modRepositoryRecordSchema, modSourceResolutionSettingsSchema } from '@/modules/mods/contract';
-import {
-   accentColorSchema,
-   appSettingsSchema,
-   downloadInstallSettingsSchema,
-   librarySettingsSchema,
-   modGroupSettingsSchema,
-   pairedDeviceSchema,
-   remoteTargetRecordSchema,
-   themeSchema,
-   type AppSettings,
-   type LibrarySettings
-} from '@/modules/settings/contract';
-import { customSharedFolderSchema } from '@/modules/shared-content/contract';
-import { localeSchema } from '@/renderer/i18n/config';
+import { scoreSaberModSourceId } from '@/modules/mods/contract';
+import { appSettingsSchema, librarySettingsSchema, type AppSettings, type LibrarySettings } from '@/modules/settings/contract';
 
 export const storedSettingsFileSchema = z.object({
    app: appSettingsSchema,
@@ -24,57 +10,93 @@ export const storedSettingsFileSchema = z.object({
 
 export type StoredSettingsFile = z.infer<typeof storedSettingsFileSchema>;
 
-export function createRecoverableStoredSettingsFileSchema(defaults: { app: AppSettings; library: LibrarySettings }) {
-   const receiver = z
-      .object({
-         enabled: z.boolean().catch(defaults.app.receiver.enabled),
-         interfaceName: z.string().nullable().catch(defaults.app.receiver.interfaceName),
-         pairedDevices: z.array(pairedDeviceSchema).catch(defaults.app.receiver.pairedDevices),
-         remoteTargets: z.array(remoteTargetRecordSchema).catch(defaults.app.receiver.remoteTargets)
-      })
-      .catch(defaults.app.receiver);
-   const selection = z
-      .object({
-         targetId: z.string().trim().min(1).catch(defaults.app.selection.targetId),
-         installIds: z.record(z.string().trim().min(1), z.string().trim().min(1)).catch(defaults.app.selection.installIds)
-      })
-      .catch(defaults.app.selection);
-   const linkHandling = z
-      .object({
-         launchWithoutAsking: z.boolean().catch(defaults.app.linkHandling.launchWithoutAsking),
-         downloadInstall: downloadInstallSettingsSchema.catch(defaults.app.linkHandling.downloadInstall)
-      })
-      .catch(defaults.app.linkHandling);
-   const app = z
-      .object({
-         theme: themeSchema.catch(defaults.app.theme),
-         accentColor: accentColorSchema.catch(defaults.app.accentColor),
-         locale: localeSchema.catch(defaults.app.locale),
-         selection,
-         receiver,
-         modRepositories: z.array(modRepositoryRecordSchema).catch(defaults.app.modRepositories),
-         officialModSourceEnabled: z.boolean().catch(defaults.app.officialModSourceEnabled),
-         scoreSaberModSourceEnabled: z.boolean().catch(defaults.app.scoreSaberModSourceEnabled),
-         modSourceResolution: modSourceResolutionSettingsSchema.catch(defaults.app.modSourceResolution),
-         alphaWarningAccepted: z.boolean().catch(defaults.app.alphaWarningAccepted),
-         bsmanagerPromptDismissed: z.boolean().catch(defaults.app.bsmanagerPromptDismissed),
-         telemetryEnabled: z.boolean().catch(defaults.app.telemetryEnabled),
-         modGroups: modGroupSettingsSchema.catch(defaults.app.modGroups),
-         linkHandling
-      })
-      .catch(defaults.app);
-   const library = z
-      .object({
-         installRoot: z.string().trim().min(1).catch(defaults.library.installRoot),
-         sharedRoot: z.union([z.string().trim().min(1), z.null()]).catch(defaults.library.sharedRoot),
-         sharedRoots: z.array(z.string().trim().min(1)).catch(defaults.library.sharedRoots),
-         customFolders: z.array(customSharedFolderSchema).catch(defaults.library.customFolders),
-         protonPath: z.union([z.string().trim().min(1), z.null()]).catch(defaults.library.protonPath),
-         useSymlinks: z.boolean().catch(defaults.library.useSymlinks),
-         launchOptions: z.record(z.string().min(1), launchOptionsSchema).catch(defaults.library.launchOptions),
-         lastLaunch: launchRecordSchema.nullable().catch(defaults.library.lastLaunch)
-      })
-      .catch(defaults.library);
+type SettingsJson = z.infer<ReturnType<typeof z.json>>;
+type SettingsRead = { settings: StoredSettingsFile; invalidFields: string[] };
 
-   return z.object({ app, library }).catch(defaults);
+const jsonObjectSchema = z.record(z.string(), z.json());
+
+const fieldwiseSections = new Set(['app', 'library', 'app.selection', 'app.receiver', 'app.linkHandling']);
+
+export function readStoredSettings(json: SettingsJson, defaults: StoredSettingsFile): SettingsRead {
+   const fallback = z.json().safeParse(defaults);
+   if (!fallback.success) return { settings: defaults, invalidFields: ['settings'] };
+
+   let candidate = fillMissing(upgradeJson(json), fallback.data, '');
+   const parsed = storedSettingsFileSchema.safeParse(candidate);
+   if (parsed.success) return { settings: upgradeSettings(parsed.data), invalidFields: [] };
+
+   const invalidFields = new Set<string>();
+   for (const issue of parsed.error.issues) {
+      const field = fieldSegments(issue.path);
+      invalidFields.add(field.join('.') || 'settings');
+      candidate = replaceField(candidate, fallback.data, field);
+   }
+
+   const recovered = storedSettingsFileSchema.safeParse(candidate);
+   return recovered.success
+      ? { settings: upgradeSettings(recovered.data), invalidFields: [...invalidFields] }
+      : { settings: defaults, invalidFields: ['settings'] };
+}
+
+function upgradeJson(json: SettingsJson): SettingsJson {
+   const file = jsonObjectSchema.safeParse(json);
+   const app = jsonObjectSchema.safeParse(file.data?.app);
+   const linkHandling = jsonObjectSchema.safeParse(app.data?.linkHandling);
+   if (!file.success || !app.success || !linkHandling.success) return json;
+
+   const { downloadInstall, ...rest } = linkHandling.data;
+   if (downloadInstall === undefined || rest.downloadInstalls !== undefined) return json;
+   return { ...file.data, app: { ...app.data, linkHandling: { ...rest, downloadInstalls: downloadInstall === null ? [] : [downloadInstall] } } };
+}
+
+function fillMissing(value: SettingsJson, fallback: SettingsJson, path: string): SettingsJson {
+   const current = jsonObjectSchema.safeParse(value);
+   const defaults = jsonObjectSchema.safeParse(fallback);
+   if (!current.success || !defaults.success) return value;
+
+   const filled = { ...current.data };
+   for (const [key, defaultValue] of Object.entries(defaults.data)) {
+      const fieldPath = path ? `${path}.${key}` : key;
+      const existing = filled[key];
+      if (existing === undefined) filled[key] = defaultValue;
+      else if (fieldwiseSections.has(fieldPath)) filled[key] = fillMissing(existing, defaultValue, fieldPath);
+   }
+
+   return filled;
+}
+
+function fieldSegments(issuePath: PropertyKey[]) {
+   const segments: string[] = [];
+   for (const key of issuePath) {
+      segments.push(String(key));
+      if (!fieldwiseSections.has(segments.join('.'))) break;
+   }
+
+   return segments;
+}
+
+function replaceField(value: SettingsJson, fallback: SettingsJson, segments: string[]): SettingsJson {
+   const [key, ...rest] = segments;
+   const current = jsonObjectSchema.safeParse(value);
+   const defaults = jsonObjectSchema.safeParse(fallback);
+   if (key === undefined || !current.success || !defaults.success) return fallback;
+
+   return { ...current.data, [key]: replaceField(current.data[key] ?? null, defaults.data[key] ?? null, rest) };
+}
+
+function upgradeSettings(settings: StoredSettingsFile): StoredSettingsFile {
+   return { app: upgradeAppSettings(settings.app), library: upgradeLibrarySettings(settings.library) };
+}
+
+function upgradeAppSettings(app: AppSettings): AppSettings {
+   const modRepositories = app.modRepositories.filter((record) => record.id.trim().toLowerCase() !== scoreSaberModSourceId);
+
+   return modRepositories.length === app.modRepositories.length ? app : { ...app, modRepositories };
+}
+
+function upgradeLibrarySettings(library: LibrarySettings): LibrarySettings {
+   const lastLaunch = library.lastLaunch;
+   if (!lastLaunch || library.launchOptions[lastLaunch.installId]) return library;
+
+   return { ...library, launchOptions: { ...library.launchOptions, [lastLaunch.installId]: lastLaunch.options } };
 }

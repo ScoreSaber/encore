@@ -1,6 +1,7 @@
 import { Result } from 'better-result';
 
-import { resolveManagedPath } from '@/lib/filesystem/path';
+import { deletePathWithProgress } from '@/lib/filesystem/operations';
+import { resolveManagedPath, type FilesystemProblem } from '@/lib/filesystem/path';
 
 import { mkdir } from 'node:fs/promises';
 
@@ -37,4 +38,30 @@ export async function ensureContentFolder(folderPath: string) {
    });
 
    return Result.isError(created) ? null : folderPath;
+}
+
+type ManagedDeleteTarget = { path: string; root: string; label: string };
+
+export async function deleteManagedEntries(
+   targets: readonly ManagedDeleteTarget[],
+   input: { signal: AbortSignal; onProgress?: (progress: { bytes: number; label: string }) => void }
+) {
+   let bytes = 0;
+   let files = 0;
+
+   for (const target of targets) {
+      const deleted = await deletePathWithProgress({
+         targetPath: target.path,
+         root: target.root,
+         allowMissing: true,
+         signal: input.signal,
+         onProgress: (progress) => input.onProgress?.({ bytes: bytes + (progress.current ?? 0), label: target.label })
+      });
+      if (Result.isError(deleted)) return Result.err<{ bytes: number; files: number }, FilesystemProblem>(deleted.error);
+
+      bytes += deleted.value.bytes;
+      files += deleted.value.files;
+   }
+
+   return Result.ok<{ bytes: number; files: number }, FilesystemProblem>({ bytes, files });
 }

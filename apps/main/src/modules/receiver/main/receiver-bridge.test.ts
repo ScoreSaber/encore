@@ -1,317 +1,241 @@
 import { Result } from 'better-result';
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { afterEach, expect, test } from 'vite-plus/test';
 
-import { defineApiHandlers } from '@/lib/api';
-import type { ContentFetch } from '@/lib/content/content-download';
-import { createContentIngestionService } from '@/lib/content/content-ingestion';
-import { buildZipArchive } from '@/lib/content/zip-archive.fixture';
-import { createSecretStore, type SecretProtection } from '@/lib/security/secret-store';
-import { createInstallRegistry } from '@/modules/installs/main/install-registry';
-import { modsApi } from '@/modules/mods/api';
-import type { ModUninstallRequest } from '@/modules/mods/contract';
-import { beatModsDownloadUrl, createBeatModsApi } from '@/modules/mods/main/beatmods-api';
-import { createModCatalogService } from '@/modules/mods/main/mod-catalog';
-import { createModService } from '@/modules/mods/main/mod-service';
-import { createModUploadService } from '@/modules/mods/main/mod-upload';
-import { createModRepositoryService } from '@/modules/mods/main/repo-service';
+import { getDownload, implementApi, implementTargetApi, type TargetSnapshot } from '@/lib/api';
+import { createProblem } from '@/lib/errors';
+import { createSecretStore } from '@/lib/security/secret-store';
+import { mapsApi, mapSyncApi } from '@/modules/maps/api';
 import { operationsApi } from '@/modules/operations/api';
-import type { OperationSnapshot } from '@/modules/operations/contract';
 import { createOperationRegistry } from '@/modules/operations/main/operation-registry';
 import { waitFor } from '@/modules/operations/main/operation-waiting.fixture';
+import { questApi } from '@/modules/quest/api';
+import { questInstallId, type QuestState } from '@/modules/quest/contract';
 import { createReceiverIdentityStore } from '@/modules/receiver/main/receiver-identity';
 import { createReceiverServer } from '@/modules/receiver/main/receiver-server';
-import { createRemoteReceiverClient, type RemoteReceiverClient } from '@/modules/receiver/main/remote-receiver-client';
+import { createRemoteReceiverClient } from '@/modules/receiver/main/remote-receiver-client';
 import { createRemoteTargetStore } from '@/modules/receiver/main/remote-receiver-store';
-import { probeReceiverIdentity, requestReceiverJson, type ReceiverEndpoint } from '@/modules/receiver/main/remote-receiver-transport';
+import { probeReceiverIdentity, requestReceiverJson } from '@/modules/receiver/main/remote-receiver-transport';
 import { createRemoteTargetId } from '@/modules/receiver/main/remote/remote-session';
 import {
    receiverPairCompleteResponseSchema,
    receiverPairStartResponseSchema,
+   receiverProcedureEnvelopeSchema,
+   receiverProcedurePath,
    receiverProtocolVersion,
    receiverProtocolVersionHeader
 } from '@/modules/receiver/protocol';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
-import { createTargetRegistry } from '@/modules/targets/main/target-registry';
+import { localTargetId, type Target, type TargetEvent } from '@/modules/targets/contract';
 
-import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { request as httpsRequest } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
 
 type Harness = Awaited<ReturnType<typeof createHarness>>;
 
 const cleanups: (() => Promise<void>)[] = [];
 
 afterEach(async () => {
-   for (const cleanup of cleanups.reverse()) {
-      await cleanup();
-   }
+   for (const cleanup of cleanups.reverse()) await cleanup();
    cleanups.length = 0;
 });
 
-describe('receiver bridge', () => {
-   test('keeps discovery public and gates protected routes by protocol and auth', async () => {
-      const harness = await createHarness();
+test('serves paired devices over RPC and SSE and drops them once revoked', async () => {
+   const harness = await createHarness();
+   const unauthenticated = await rawGet(harness.port, '/capabilities', { [receiverProtocolVersionHeader]: String(receiverProtocolVersion) });
+   expect(unauthenticated.status).toBe(401);
 
-      const discovery = await rawGet(harness.port, '/health', {});
-      const missingProtocol = await rawGet(harness.port, '/capabilities', {});
-      const unsupportedProtocol = await rawGet(harness.port, '/capabilities', {
-         [receiverProtocolVersionHeader]: '1'
-      });
-      const missingToken = await rawGet(harness.port, '/capabilities', {
-         [receiverProtocolVersionHeader]: String(receiverProtocolVersion)
-      });
+   const paired = await pair(harness);
+   const streamed: string[] = [];
+   paired.client.subscribeSnapshots(operationsApi.namespace, (event) => streamed.push(operationsApi.snapshot.parse(event.snapshot).id));
+   const operation = harness.operations.create({ kind: 'download', title: 'remote work' });
 
-      expect(discovery.status).toBe(200);
-      expect(JSON.parse(discovery.body)).toMatchObject({
-         status: 'ready',
-         supportedProtocolVersions: [receiverProtocolVersion]
-      });
-      expect([missingProtocol.status, unsupportedProtocol.status]).toEqual([426, 426]);
-      expect(JSON.parse(unsupportedProtocol.body)).toMatchObject({
-         error: { code: 'receiver.protocol.unsupported' }
-      });
-      expect(missingToken.status).toBe(401);
-      expect(JSON.parse(missingToken.body)).toMatchObject({
-         error: { code: 'receiver.auth.required' }
-      });
+   expect(await paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', 'run-operations', {})).toMatchObject({
+      status: 'ok',
+      value: [{ id: operation.id }]
+   });
+   await waitFor(() => streamed.includes(operation.id), 'operation snapshot streamed');
+
+   const device = (await harness.settingsStore.getSnapshot()).app.receiver.pairedDevices[0];
+   if (!device) throw new Error('receiver device was not paired');
+   expect((await harness.server.revokeDevice(device.id)).isOk()).toBe(true);
+
+   expect(await paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', 'run-operations', {})).toMatchObject({
+      status: 'unavailable'
+   });
+   expect(paired.client.listTargets().find((target) => target.id === paired.targetId)).toMatchObject({ status: 'unpaired', capabilities: [] });
+   expect(await paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', 'run-operations', {})).toMatchObject({
+      status: 'unsupported'
+   });
+});
+
+test('fails closed when the pinned identity no longer matches', async () => {
+   const harness = await createHarness();
+   const paired = await pair(harness);
+   paired.client.dispose();
+   const record = (await harness.remoteStore.listRecords())[0];
+   if (!record) throw new Error('remote receiver record was not stored');
+   const other = await createHarness();
+
+   await harness.remoteStore.saveRecord({ ...record, port: other.port });
+   const pinned = createRemoteReceiverClient({ store: harness.remoteStore });
+   cleanups.push(async () => pinned.dispose());
+   await pinned.restore();
+
+   await waitFor(
+      () => pinned.listTargets().some((target) => target.id === paired.targetId && target.status === 'incompatible'),
+      'pinned identity mismatch detected'
+   );
+});
+
+test('relays only the targets attached to the receiver', async () => {
+   const harness = await createHarness();
+   const headset: Target = { id: 'quest:1WMHH', kind: 'quest', name: 'Quest 3', status: 'ready', capabilities: ['patch-game', 'manage-maps'] };
+   harness.attach([headset]);
+   const paired = await pair(harness);
+   const relayedId = `${paired.targetId}/${headset.id}`;
+   const snapshots: string[] = [];
+   paired.client.subscribeSnapshots(questApi.namespace, (event) => snapshots.push(event.targetId));
+
+   expect(paired.client.listTargets()).toContainEqual(expect.objectContaining({ id: relayedId, kind: 'quest', via: 'zhu' }));
+   expect(await paired.client.callTarget(relayedId, questApi.namespace, 'getState', 'patch-game', {})).toMatchObject({
+      status: 'ok',
+      value: { modded: true }
+   });
+   expect(await paired.client.callTarget(paired.targetId, questApi.namespace, 'getState', 'patch-game', {})).toMatchObject({
+      status: 'unsupported'
    });
 
-   test('installs and uninstalls mods on the paired receiver and streams the progress back', async () => {
-      const harness = await createHarness();
-      const paired = await pair(harness);
-      const registry = createRegistry(paired.client);
-      const install = await createModdableInstall(harness);
-      const request = {
-         targetId: paired.targetId,
-         installId: install.installId,
-         modIds: ['beatmods:2']
-      };
-      const progress: string[] = [];
-      paired.client.subscribeSnapshots(operationsApi, (event) => {
-         if (event.snapshot.progress) progress.push(event.snapshot.id);
-      });
+   const archive = join(harness.dataPath, 'map.zip');
+   const downloaded = await paired.client.downloadTarget(
+      relayedId,
+      mapsApi.namespace,
+      'exportArchive',
+      getDownload(mapsApi, 'exportArchive'),
+      { installId: questInstallId, mapId: 'a1b2' },
+      archive
+   );
+   expect(downloaded).toMatchObject({ status: 'ok', value: { sizeBytes: 'map a1b2 from quest:1WMHH'.length } });
+   expect(await readFile(archive, 'utf8')).toBe('map a1b2 from quest:1WMHH');
 
-      const preview = await registry.callTarget(harness.modApi, 'previewInstall', paired.targetId, {
-         installId: request.installId,
-         modIds: request.modIds
-      });
-      expect(preview).toMatchObject({
-         status: 'ok',
-         value: { status: 'ok', downloadHosts: ['beatmods.com'] }
-      });
+   harness.emitQuestState({ targetId: headset.id, snapshot: { modded: false, savedPlayerData: true, companionInstalled: false } });
+   await waitFor(() => snapshots.includes(relayedId), 'relayed snapshot streamed');
 
-      const startedCall = await registry.callTarget(harness.modApi, 'installMods', paired.targetId, {
-         installId: request.installId,
-         modIds: request.modIds
-      });
-      expect(startedCall.status).toBe('ok');
-      if (startedCall.status !== 'ok') return;
-      const started = startedCall.value;
-      expect(started.ok).toBe(true);
-      if (!started.ok) return;
-
-      expect(await waitForRemoteOperation(paired.client, started.value.id)).toMatchObject({ status: 'completed' });
-      expect(await readdir(join(install.installPath, 'IPA', 'Pending', 'Plugins'))).toEqual(['BSML.dll']);
-      expect(progress).toContain(started.value.id);
-
-      const removal: ModUninstallRequest = { ...request, scope: 'selection' };
-      const removalPreview = await registry.callTarget(harness.modApi, 'previewUninstall', paired.targetId, {
-         installId: removal.installId,
-         modIds: removal.modIds,
-         scope: removal.scope
-      });
-      expect(removalPreview).toMatchObject({
-         status: 'ok',
-         value: { status: 'ok', fileCount: 1 }
-      });
-
-      const removedCall = await registry.callTarget(harness.modApi, 'uninstallMods', paired.targetId, {
-         installId: removal.installId,
-         modIds: removal.modIds,
-         scope: removal.scope
-      });
-      expect(removedCall.status).toBe('ok');
-      if (removedCall.status !== 'ok') return;
-      const removed = removedCall.value;
-      expect(removed.ok).toBe(true);
-      if (!removed.ok) return;
-
-      expect(await waitForRemoteOperation(paired.client, removed.value.id)).toMatchObject({ status: 'completed' });
-      expect(await readdir(join(install.installPath, 'IPA', 'Pending', 'Plugins'))).toEqual([]);
+   const forged = await requestReceiverJson({
+      endpoint: paired.endpoint,
+      path: receiverProcedurePath(questApi.namespace, 'getState'),
+      method: 'POST',
+      token: paired.token,
+      targetId: 'quest:emulator-5554',
+      body: {},
+      schema: receiverProcedureEnvelopeSchema
    });
+   expect(Result.isError(forged) && forged.error.code).toBe('receiver.target.not-found');
 
-   test('uploads and imports a local mod file on the paired receiver', async () => {
-      const harness = await createHarness();
-      const paired = await pair(harness);
-      const registry = createRegistry(paired.client);
-      const install = await createModdableInstall(harness);
-      const sourcePath = join(harness.dataPath, 'Manual.dll');
-      const bytes = Buffer.from('manual mod');
-      await writeFile(sourcePath, bytes);
+   harness.attach([]);
+   await waitFor(() => !paired.client.listTargets().some((target) => target.id === relayedId), 'relayed headset removed');
+   expect(await paired.client.callTarget(relayedId, questApi.namespace, 'getState', 'patch-game', {})).toMatchObject({ status: 'unsupported' });
+});
 
-      const prepared = await registry.callTarget(harness.modApi, 'prepareImportUpload', paired.targetId, {
-         installId: install.installId,
-         fileName: 'Manual.dll',
-         sizeBytes: bytes.byteLength,
-         sha256: createHash('sha256').update(bytes).digest('hex')
+test('refuses requests naming a target this receiver only reaches through another receiver', async () => {
+   const harness = await createHarness();
+   harness.attach([{ id: 'quest:1WMHH', kind: 'quest', name: 'Quest 3', status: 'ready', capabilities: ['manage-maps'] }]);
+   const paired = await pair(harness);
+   const preview = (first: string, second: string) =>
+      paired.client.callTarget(paired.targetId, mapSyncApi.namespace, 'preview', 'manage-maps', {
+         first: { targetId: first, installId: 'a' },
+         second: { targetId: second, installId: questInstallId }
       });
-      expect(prepared).toMatchObject({ status: 'ok', value: { status: 'ready' } });
-      if (prepared.status !== 'ok' || prepared.value.status !== 'ready') return;
 
-      const uploadId = prepared.value.uploadId;
-      const uploaded = await registry.uploadTarget(
-         harness.modApi,
-         'importFile',
-         paired.targetId,
-         { installId: install.installId, uploadId },
-         { path: sourcePath, sizeBytes: bytes.byteLength }
-      );
-      expect(uploaded.status).toBe('ok');
-
-      const preview = await registry.callTarget(harness.modApi, 'previewImportUpload', paired.targetId, {
-         installId: install.installId,
-         uploadId
-      });
-      expect(preview).toMatchObject({ status: 'ok', value: { status: 'ok', name: 'Manual.dll', uploadId } });
-
-      const imported = await registry.callTarget(harness.modApi, 'importUpload', paired.targetId, {
-         installId: install.installId,
-         uploadId
-      });
-      expect(imported).toMatchObject({ status: 'ok', value: { ok: true } });
-      if (imported.status !== 'ok' || !imported.value.ok) return;
-
-      expect(await waitForRemoteOperation(paired.client, imported.value.value.id)).toMatchObject({ status: 'completed' });
-      expect(await readdir(join(install.installPath, 'IPA', 'Pending', 'Plugins'))).toEqual(['Manual.dll']);
+   expect(await preview(localTargetId, 'quest:1WMHH')).toMatchObject({ status: 'ok' });
+   expect(await preview(localTargetId, 'remote_0123456789ab/quest:1WMHH')).toMatchObject({
+      status: 'unavailable',
+      error: { code: 'receiver.target.not-found' }
    });
+   expect(harness.mapSyncPreviews).toEqual([localTargetId]);
+});
 
-   test('keeps a healthy target ready when one remote request fails', async () => {
-      const harness = await createHarness();
-      const paired = await pair(harness);
+test('a response arriving after forget leaves the receiver removed', async () => {
+   const harness = await createHarness();
+   const paired = await pair(harness);
+   const request = paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', 'run-operations', {});
+   const events: TargetEvent[] = [];
+   paired.client.subscribe((event) => events.push(event));
+   expect((await paired.client.forget(paired.targetId)).isOk()).toBe(true);
+   await request;
 
-      const failed = await paired.client.callTarget(paired.targetId, 'missing', 'procedure', operationsApi.procedures.list, {});
-      const subsequent = await paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', operationsApi.procedures.list, {});
-
-      expect(failed).toMatchObject({ status: 'unavailable' });
-      expect(paired.client.listTargets()).toMatchObject([{ id: paired.targetId, status: 'ready' }]);
-      expect(subsequent).toMatchObject({ status: 'ok' });
-   });
-
-   test('surfaces auth loss once the receiver revokes the device', async () => {
-      const harness = await createHarness();
-      const paired = await pair(harness);
-      const device = (await harness.settingsStore.getSnapshot()).app.receiver.pairedDevices[0];
-      if (!device) throw new Error('receiver device was not paired');
-
-      const revoked = await harness.server.revokeDevice(device.id);
-      const health = await paired.client.getHealth(paired.targetId);
-
-      expect(revoked.ok).toBe(true);
-      expect(health).toMatchObject({ status: 'unpaired', capabilities: [] });
-      expect(await paired.client.callTarget(paired.targetId, operationsApi.namespace, 'list', operationsApi.procedures.list, {})).toMatchObject({
-         status: 'unsupported'
-      });
-   });
-
-   test('fails closed when the pinned identity no longer matches', async () => {
-      const harness = await createHarness();
-      const paired = await pair(harness);
-      paired.client.dispose();
-
-      const record = (await harness.remoteStore.listRecords())[0];
-      if (!record) throw new Error('remote receiver record was not stored');
-      const other = await createHarness();
-      const otherIdentity = await probeReceiverIdentity({
-         host: '127.0.0.1',
-         port: other.port
-      });
-      expect(Result.isOk(otherIdentity)).toBe(true);
-      if (Result.isError(otherIdentity)) return;
-
-      await harness.remoteStore.saveRecord({ ...record, port: other.port });
-      const pinned = createRemoteReceiverClient({
-         store: harness.remoteStore,
-         apis: harness.apiModules.map(({ api }) => api)
-      });
-      cleanups.push(async () => pinned.dispose());
-      await pinned.restore();
-      const health = await pinned.getHealth(paired.targetId);
-
-      expect(otherIdentity.value.fingerprint).not.toBe(record.fingerprint);
-      expect(health?.status).toBe('incompatible');
-   });
+   expect(events).toEqual([{ type: 'target-removed', targetId: paired.targetId }]);
 });
 
 async function createHarness() {
    const dataPath = await mkdtemp(join(tmpdir(), 'encore-bridge-'));
-   const settingsStore = createSettingsStore({
-      dataPath,
-      appVersion: '0.0.0',
-      platform: 'linux',
-      arch: 'x64'
-   });
+   const settingsStore = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+   await settingsStore.updateAppSettingsWith(() => ({ receiver: { interfaceName: 'lo0' } }));
    const secretStore = createSecretStore({
       dataPath,
       platform: 'darwin',
-      protection: createTestProtection(true)
-   });
-   const stores = { settingsStore, secretStore };
-   const installs = createInstallRegistry({
-      dataPath,
-      settingsStore,
-      detectStores: () => Promise.resolve({ candidates: [] })
+      protection: {
+         isEncryptionAvailable: () => true,
+         getSelectedStorageBackend: () => 'keychain',
+         encryptString: (plainText) => Buffer.from(plainText),
+         decryptString: (encrypted) => encrypted.toString()
+      }
    });
    const operations = createOperationRegistry();
-   const operationApi = defineApiHandlers(operationsApi, operations, { subscribe: operations.subscribe });
-   const modRepositories = createModRepositoryService({ dataPath, settingsStore });
-   const mods = createModService({
-      registry: installs,
-      operations,
-      dataPath,
-      ingestion: createContentIngestionService({
-         dataPath,
-         fetchContent: fakeModCdn
-      }),
-      catalog: createModCatalogService({
-         dataPath,
-         repositories: modRepositories,
-         api: createBeatModsApi({ fetchJson: fakeBeatMods })
-      })
-   });
-   const modUploads = createModUploadService({ dataPath, mods });
-   const modApi = defineApiHandlers(
-      modsApi,
-      {
-         ...mods,
-         syncRepositories: modRepositories.sync,
-         prepareImportUpload: modUploads.prepare,
-         previewImportUpload: modUploads.preview,
-         importUpload: modUploads.importMod,
-         discardImportUpload: async ({ uploadId }) => ({ discarded: await modUploads.discard(uploadId) })
-      },
-      { uploadHandlers: { importFile: modUploads.receive } }
-   );
-   const apiModules = [operationApi, modApi];
+   let attached: Target[] = [];
+   const mapSyncPreviews: string[] = [];
+   const targetListeners = new Set<(event: TargetEvent) => void>();
+   const questListeners = new Set<(event: TargetSnapshot<QuestState>) => void>();
    const server = createReceiverServer({
       settingsStore,
       identityStore: createReceiverIdentityStore({ secretStore }),
-      apiModules,
+      implementations: [
+         implementApi(operationsApi, operations, { subscribe: operations.subscribe }),
+         implementApi(mapSyncApi, {
+            preview: async ({ first }) => {
+               mapSyncPreviews.push(first.targetId);
+               return { toFirst: 0, toSecond: 0, problem: null, runsOn: null };
+            },
+            start: () => Result.err(createProblem('maps.sync.unsupported'))
+         })
+      ],
+      attached: {
+         listTargets: () => attached,
+         subscribe: (listener) => subscribeTo(targetListeners, listener),
+         implementations: [
+            implementTargetApi(
+               questApi,
+               {
+                  getState: ({ targetId }) => ({
+                     modded: attached.some((target) => target.id === targetId),
+                     savedPlayerData: false,
+                     companionInstalled: false
+                  })
+               },
+               { subscribe: (listener) => subscribeTo(questListeners, listener) }
+            ),
+            implementTargetApi(
+               mapsApi,
+               {},
+               {
+                  downloads: {
+                     exportArchive: async ({ targetId, mapId }) => Result.ok(Readable.from([Buffer.from(`map ${mapId} from ${targetId}`)]))
+                  }
+               }
+            )
+         ]
+      },
       getSecretStoreAvailability: () => secretStore.getAvailability(),
-      platform: 'linux',
+      name: 'zhu',
       port: 0,
-      listAddresses: () => [{ host: '127.0.0.1', interfaceName: 'lo0' }],
-      heartbeatIntervalMs: 1_000
+      listAddresses: () => [{ host: '127.0.0.1', interfaceName: 'lo0' }]
    });
-
-   const started = await server.start();
-   expect(started.ok).toBe(true);
+   expect((await server.start()).isOk()).toBe(true);
    const port = server.getState().addresses[0]?.port ?? 0;
-   expect(port).toBeGreaterThan(0);
 
    cleanups.push(async () => {
-      installs.dispose();
       await server.stop();
       await rm(dataPath, { recursive: true, force: true });
    });
@@ -319,32 +243,39 @@ async function createHarness() {
    return {
       dataPath,
       settingsStore,
-      installs,
-      modApi,
-      apiModules,
+      operations,
+      mapSyncPreviews,
       server,
       port,
-      remoteStore: createRemoteTargetStore(stores)
+      remoteStore: createRemoteTargetStore({ settingsStore, secretStore }),
+      attach: (targets: Target[]) => {
+         const removed = attached.filter((target) => !targets.includes(target));
+         attached = targets;
+         for (const listener of targetListeners) {
+            for (const target of targets) listener({ type: 'target-updated', target });
+            for (const target of removed) listener({ type: 'target-removed', targetId: target.id });
+         }
+      },
+      emitQuestState: (event: TargetSnapshot<QuestState>) => {
+         for (const listener of questListeners) listener(event);
+      }
+   };
+}
+
+function subscribeTo<Listener>(listeners: Set<Listener>, listener: Listener) {
+   listeners.add(listener);
+   return () => {
+      listeners.delete(listener);
    };
 }
 
 async function pair(harness: Harness) {
    const session = harness.server.startPairing();
-   expect(session.ok).toBe(true);
-   if (!session.ok) throw new Error('pairing did not start');
+   if (Result.isError(session)) throw new Error('pairing did not start');
 
-   const identity = await probeReceiverIdentity({
-      host: '127.0.0.1',
-      port: harness.port
-   });
+   const identity = await probeReceiverIdentity({ host: '127.0.0.1', port: harness.port });
    if (Result.isError(identity)) throw new Error(identity.error.message);
-
-   const endpoint: ReceiverEndpoint = {
-      host: '127.0.0.1',
-      port: harness.port,
-      certificatePem: identity.value.certificatePem,
-      fingerprint: identity.value.fingerprint
-   };
+   const endpoint = { host: '127.0.0.1', port: harness.port, certificatePem: identity.value.certificatePem, fingerprint: identity.value.fingerprint };
 
    const started = await requestReceiverJson({
       endpoint,
@@ -354,8 +285,6 @@ async function pair(harness: Harness) {
       schema: receiverPairStartResponseSchema
    });
    if (Result.isError(started)) throw new Error(started.error.message);
-   expect(started.value.pairing.status).toBe('waiting');
-
    const completed = await requestReceiverJson({
       endpoint,
       path: '/pair/complete',
@@ -366,21 +295,10 @@ async function pair(harness: Harness) {
    if (Result.isError(completed)) throw new Error(completed.error.message);
 
    const targetId = createRemoteTargetId(endpoint);
-   await harness.remoteStore.saveRecord({
-      id: targetId,
-      name: identity.value.name,
-      host: endpoint.host,
-      port: endpoint.port,
-      fingerprint: endpoint.fingerprint,
-      certificatePem: endpoint.certificatePem,
-      pairedAt: new Date().toISOString()
-   });
+   await harness.remoteStore.saveRecord({ id: targetId, name: identity.value.name, ...endpoint, pairedAt: new Date().toISOString() });
    await harness.remoteStore.saveToken(targetId, completed.value.token);
 
-   const client = createRemoteReceiverClient({
-      store: harness.remoteStore,
-      apis: harness.apiModules.map(({ api }) => api)
-   });
+   const client = createRemoteReceiverClient({ store: harness.remoteStore });
    cleanups.push(async () => client.dispose());
    let streaming = false;
    client.subscribe((event) => {
@@ -389,119 +307,16 @@ async function pair(harness: Harness) {
    await client.restore();
    await waitFor(() => streaming, 'receiver stream attached');
 
-   return { client, endpoint, targetId, token: completed.value.token };
-}
-
-function createRegistry(client: RemoteReceiverClient) {
-   return createTargetRegistry({ remote: client });
-}
-
-async function createModdableInstall(harness: Harness) {
-   const installRoot = (await harness.settingsStore.getSnapshot()).library.installRoot;
-   const installPath = join(installRoot, 'Beat Saber');
-   await mkdir(join(installPath, 'Beat Saber_Data'), { recursive: true });
-   await writeFile(join(installPath, 'Beat Saber.exe'), 'stub', 'utf8');
-   await writeFile(join(installPath, 'Beat Saber_Data', 'globalgamemanagers'), 'public.app-category.games  1.37.0 ', 'latin1');
-
-   const registered = await harness.installs.register({
-      source: 'library',
-      path: installPath
-   });
-   if (Result.isError(registered)) throw new Error('the receiver install did not register');
-
-   return { installPath, installId: registered.value.id };
-}
-
-async function waitForRemoteOperation(client: RemoteReceiverClient, operationId: string) {
-   let snapshot: OperationSnapshot | undefined;
-   const unsubscribe = client.subscribeSnapshots(operationsApi, (event) => {
-      if (event.snapshot.id === operationId) snapshot = event.snapshot;
-   });
-   await waitFor(() => {
-      return Boolean(snapshot?.completedAt);
-   }, 'remote operation finished');
-   unsubscribe();
-
-   return snapshot;
+   return { client, targetId, endpoint, token: completed.value.token };
 }
 
 function rawGet(port: number, path: string, headers: Record<string, string>) {
-   return rawRequest('GET', port, path, headers);
-}
-
-function rawRequest(method: 'GET' | 'POST', port: number, path: string, headers: Record<string, string>) {
-   return new Promise<{ status: number; body: string }>((resolve, reject) => {
-      const clientRequest = httpsRequest(
-         {
-            host: '127.0.0.1',
-            port,
-            path,
-            method,
-            agent: false,
-            rejectUnauthorized: false,
-            headers
-         },
-         (response) => {
-            const chunks: Buffer[] = [];
-            response.on('data', (chunk: Buffer) => chunks.push(chunk));
-            response.on('end', () =>
-               resolve({
-                  status: response.statusCode ?? 0,
-                  body: Buffer.concat(chunks).toString('utf8')
-               })
-            );
-         }
-      );
-
+   return new Promise<{ status: number }>((resolve, reject) => {
+      const clientRequest = httpsRequest({ host: '127.0.0.1', port, path, agent: false, rejectUnauthorized: false, headers }, (response) => {
+         response.resume();
+         response.on('end', () => resolve({ status: response.statusCode ?? 0 }));
+      });
       clientRequest.on('error', reject);
       clientRequest.end();
    });
-}
-
-function createTestProtection(available: boolean): SecretProtection {
-   return {
-      isEncryptionAvailable: () => available,
-      getSelectedStorageBackend: () => 'gnome_libsecret',
-      encryptString: (plainText) => Buffer.from(`protected:${Buffer.from(plainText).toString('base64')}`),
-      decryptString: (encrypted) => Buffer.from(encrypted.toString().slice('protected:'.length), 'base64').toString()
-   };
-}
-
-const bridgeModZip = buildZipArchive([{ name: 'Plugins/BSML.dll', data: 'bsml' }]);
-const bridgeModHash = md5(bridgeModZip);
-const bridgeCatalog = {
-   mods: [
-      {
-         mod: {
-            id: 2,
-            name: 'BSML',
-            summary: 'the ui library',
-            category: 'library',
-            authors: [{ displayName: 'monkeymanboy' }]
-         },
-         latest: {
-            id: 20,
-            modId: 2,
-            modVersion: '1.6.0',
-            zipHash: bridgeModHash,
-            fileSize: bridgeModZip.byteLength,
-            contentHashes: [{ path: 'Plugins/BSML.dll', hash: md5('bsml') }]
-         }
-      }
-   ]
-};
-
-function fakeBeatMods(url: string) {
-   if (url.includes('/api/hashlookup')) return Promise.resolve(Response.json({ modVersions: [] }));
-
-   return Promise.resolve(Response.json(url.includes('/api/status') ? { status: 'ok' } : bridgeCatalog));
-}
-
-const fakeModCdn: ContentFetch = (url) =>
-   Promise.resolve(
-      url === beatModsDownloadUrl(bridgeModHash) ? new Response(new Uint8Array(bridgeModZip)) : new Response('not found', { status: 404 })
-   );
-
-function md5(value: string | Buffer) {
-   return createHash('md5').update(value).digest('hex');
 }

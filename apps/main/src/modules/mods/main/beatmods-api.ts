@@ -1,6 +1,7 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
+import { createProblem, type Problem } from '@/lib/errors';
 import { fetchJsonResource, type JsonDocumentFetch, type JsonDocumentProblem } from '@/lib/http/json';
 import { beatModsOrigin, modCategorySchema, type ModPlatform } from '@/modules/mods/contract';
 
@@ -9,15 +10,11 @@ const maxResponseBytes = 16 * 1024 * 1024;
 const maxDescriptionChars = 40_000;
 const md5Schema = z.hash('md5');
 
-export type BeatModsProblemCode = 'mods.catalog.fetch-failed' | 'mods.catalog.invalid' | 'mods.catalog.unreachable';
+type BeatModsProblemCode = 'mods.catalog.fetch-failed' | 'mods.catalog.invalid' | 'mods.catalog.unreachable';
 
-export type BeatModsProblem = {
-   code: BeatModsProblemCode;
-   message: string;
-   detail?: string;
-};
+export type BeatModsProblem = Problem<BeatModsProblemCode>;
 
-export type BeatModsResult<T> = Result<T, BeatModsProblem>;
+type BeatModsResult<T> = Result<T, BeatModsProblem>;
 
 const beatModsUserSchema = z.object({
    username: z.string().trim().min(1).optional(),
@@ -61,55 +58,48 @@ const beatModsHashLookupSchema = z.object({
    modVersions: z.array(beatModsVersionSchema.nullable().catch(null)).default([])
 });
 
-export type BeatModsVersion = z.infer<typeof beatModsVersionSchema>;
-export type BeatModsMod = z.infer<typeof beatModsModSchema>;
+type BeatModsVersion = z.infer<typeof beatModsVersionSchema>;
+type BeatModsMod = z.infer<typeof beatModsModSchema>;
 export type BeatModsEntry = { mod: BeatModsMod; version: BeatModsVersion };
-
-export type BeatModsApiOptions = {
-   origin?: string;
-   fetchJson?: JsonDocumentFetch;
-};
 
 export type BeatModsApi = ReturnType<typeof createBeatModsApi>;
 
-export function createBeatModsApi(options: BeatModsApiOptions = {}) {
-   const origin = options.origin ?? beatModsOrigin;
-
+export function createBeatModsApi(options: { fetchJson?: JsonDocumentFetch } = {}) {
    async function checkStatus(): Promise<BeatModsResult<void>> {
-      const read = await readJson(new URL('/api/status', origin).toString(), z.unknown());
+      const read = await readJson(new URL('/api/status', beatModsOrigin).toString(), z.unknown());
 
-      return Result.isError(read) ? Result.err<void, BeatModsProblem>(read.error) : Result.ok<void, BeatModsProblem>(undefined);
+      return Result.isError(read) ? Result.err(read.error) : Result.ok();
    }
 
    async function listMods(input: { gameVersion: string; platform: ModPlatform }): Promise<BeatModsResult<BeatModsEntry[]>> {
-      const url = new URL('/api/mods', origin);
+      const url = new URL('/api/mods', beatModsOrigin);
       url.searchParams.set('status', 'verified');
       url.searchParams.set('gameName', 'BeatSaber');
       url.searchParams.set('gameVersion', input.gameVersion);
       url.searchParams.set('platform', input.platform);
 
-      const read = await readJson(url.toString(), beatModsListSchema, 'the BeatMods list could not be read');
-      if (Result.isError(read)) return Result.err<BeatModsEntry[], BeatModsProblem>(read.error);
+      const read = await readJson(url.toString(), beatModsListSchema);
+      if (Result.isError(read)) return Result.err(read.error);
 
       const entries = read.value.mods.filter((entry) => entry !== null).map((entry) => ({ mod: entry.mod, version: entry.latest }));
-      return Result.ok<BeatModsEntry[], BeatModsProblem>(entries);
+      return Result.ok(entries);
    }
 
    async function lookupHash(hash: string): Promise<BeatModsResult<BeatModsVersion | null>> {
       if (!md5Schema.safeParse(hash).success) {
-         return Result.err<BeatModsVersion | null, BeatModsProblem>({ code: 'mods.catalog.invalid', message: 'the file hash is not an md5 digest' });
+         return Result.err(createProblem('mods.catalog.invalid', { detail: hash }));
       }
 
-      const url = new URL('/api/hashlookup', origin);
+      const url = new URL('/api/hashlookup', beatModsOrigin);
       url.searchParams.set('hash', hash);
 
-      const read = await readJson(url.toString(), beatModsHashLookupSchema, 'the BeatMods hash lookup could not be read');
-      if (Result.isError(read)) return Result.err<BeatModsVersion | null, BeatModsProblem>(read.error);
+      const read = await readJson(url.toString(), beatModsHashLookupSchema);
+      if (Result.isError(read)) return Result.err(read.error);
 
-      return Result.ok<BeatModsVersion | null, BeatModsProblem>(read.value.modVersions.find((version) => version !== null) ?? null);
+      return Result.ok(read.value.modVersions.find((version) => version !== null) ?? null);
    }
 
-   async function readJson<Output>(url: string, schema: z.ZodType<Output>, invalidResponseMessage = 'the BeatMods answer could not be read') {
+   async function readJson<Output>(url: string, schema: z.ZodType<Output>) {
       const read = await fetchJsonResource({
          url,
          schema,
@@ -118,33 +108,29 @@ export function createBeatModsApi(options: BeatModsApiOptions = {}) {
          fetchJson: options.fetchJson
       });
 
-      return Result.mapError(read, (problem) => toBeatModsProblem(problem, invalidResponseMessage));
+      return Result.mapError(read, toBeatModsProblem);
    }
 
    return { checkStatus, listMods, lookupHash };
 }
 
-function toBeatModsProblem(problem: JsonDocumentProblem, invalidResponseMessage: string): BeatModsProblem {
-   const detail = problem.detail ? { detail: problem.detail } : {};
-
-   if (problem.code === 'json.unreachable') return { code: 'mods.catalog.unreachable', message: 'BeatMods could not be reached', ...detail };
-   if (problem.code === 'json.unexpected-shape') return { code: 'mods.catalog.invalid', message: invalidResponseMessage, ...detail };
-   if (problem.code === 'json.invalid') return { code: 'mods.catalog.invalid', message: 'the BeatMods answer could not be read', ...detail };
-   if (problem.code === 'json.too-large') return { code: 'mods.catalog.fetch-failed', message: 'the BeatMods answer could not be read', ...detail };
-
-   return { code: 'mods.catalog.fetch-failed', message: 'BeatMods answered with an error', ...detail };
+function toBeatModsProblem(problem: JsonDocumentProblem): BeatModsProblem {
+   const detail = { detail: problem.detail };
+   if (problem.code === 'json.unreachable') return createProblem('mods.catalog.unreachable', detail);
+   if (problem.code === 'json.unexpected-shape' || problem.code === 'json.invalid') return createProblem('mods.catalog.invalid', detail);
+   return createProblem('mods.catalog.fetch-failed', detail);
 }
 
-export function beatModsDownloadUrl(zipHash: string, origin = beatModsOrigin) {
-   return new URL(`/cdn/mod/${zipHash}.zip`, origin).toString();
+export function beatModsDownloadUrl(zipHash: string) {
+   return new URL(`/cdn/mod/${zipHash}.zip`, beatModsOrigin).toString();
 }
 
-export function beatModsIconUrl(iconFileName: string, origin = beatModsOrigin) {
+export function beatModsIconUrl(iconFileName: string) {
    const name = iconFileName.trim();
 
-   return name === '' ? null : new URL(`/cdn/icon/${encodeURIComponent(name)}`, origin).toString();
+   return name === '' ? null : new URL(`/cdn/icon/${encodeURIComponent(name)}`, beatModsOrigin).toString();
 }
 
-export function beatModsModUrl(modId: number, origin = beatModsOrigin) {
-   return new URL(`/mods/${modId}`, origin).toString();
+export function beatModsModUrl(modId: number) {
+   return new URL(`/mods/${modId}`, beatModsOrigin).toString();
 }

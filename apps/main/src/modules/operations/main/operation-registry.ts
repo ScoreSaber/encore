@@ -1,6 +1,6 @@
 import { Result } from 'better-result';
 
-import { causeFailure } from '@/lib/errors';
+import { createProblem, type Problem } from '@/lib/errors';
 import type {
    OperationCancelResult,
    OperationError,
@@ -12,18 +12,27 @@ import type {
    OperationStatus
 } from '@/modules/operations/contract';
 import { isOperationTerminalStatus } from '@/modules/operations/contract';
+import { localTargetId, type TargetId } from '@/modules/targets/contract';
 
 type OperationCancelHandler = () => void | Promise<void>;
 type OperationListener = (snapshot: OperationSnapshot) => void;
+type TargetOperationListener = (targetId: TargetId, snapshot: OperationSnapshot) => void;
+
+type OperationPhase =
+   | { status: 'running'; cancel?: OperationCancelHandler }
+   | { status: 'cancelling'; settled: Promise<OperationCancelResult> }
+   | { status: 'terminal' };
 
 type OperationRecord = {
+   targetId: TargetId;
    snapshot: OperationSnapshot;
-   cancel?: OperationCancelHandler;
+   phase: OperationPhase;
 };
 
 export type CreateOperationInput = {
    id?: OperationId;
    kind: OperationKind;
+   targetId?: TargetId;
    title: string;
    message?: string;
    progress?: OperationProgress;
@@ -31,6 +40,14 @@ export type CreateOperationInput = {
    metadata?: OperationSerializable;
    cancel?: OperationCancelHandler;
 };
+
+type OperationJob = {
+   signal: AbortSignal;
+   cancel: OperationCancelHandler;
+   release?: () => void;
+};
+
+type OperationFailure = Problem & { readonly [field: string]: OperationSerializable | undefined };
 
 type OperationUpdate = {
    title?: string;
@@ -49,40 +66,71 @@ let nextOperationNumber = 0;
 
 export function createOperationRegistry() {
    const operations = new Map<OperationId, OperationRecord>();
-   const listeners = new Set<OperationListener>();
+   const listeners = new Set<TargetOperationListener>();
+   let disposed = false;
 
-   function create(input: CreateOperationInput) {
+   function create(input: CreateOperationInput): OperationSnapshot {
       const now = new Date().toISOString();
-      const id = input.id ?? createOperationId();
+      const { id: inputId, targetId = localTargetId, cancel, cancelable = Boolean(cancel), ...details } = input;
+      let id = inputId;
+      if (!id) {
+         nextOperationNumber += 1;
+         id = `op_${Date.now().toString(36)}_${nextOperationNumber.toString(36)}`;
+      }
 
       if (operations.has(id)) {
          throw new Error(`Duplicate operation id "${id}"`);
       }
 
+      if (disposed) {
+         return {
+            ...details,
+            id,
+            status: 'cancelled',
+            cancelable: false,
+            createdAt: now,
+            updatedAt: now,
+            completedAt: now
+         };
+      }
+
       const snapshot: OperationSnapshot = {
+         ...details,
          id,
-         kind: input.kind,
          status: 'running',
-         title: input.title,
-         message: input.message,
-         progress: input.progress,
-         cancelable: input.cancelable ?? Boolean(input.cancel),
-         metadata: input.metadata,
+         cancelable,
          createdAt: now,
          updatedAt: now
       };
 
-      operations.set(id, {
-         snapshot,
-         cancel: input.cancel
-      });
-      emitSnapshot(snapshot);
+      operations.set(id, { targetId, snapshot, phase: { status: 'running', cancel } });
+      emitSnapshot(targetId, snapshot);
       return snapshot;
+   }
+
+   function start<Settled>(
+      input: Omit<CreateOperationInput, 'cancel'>,
+      run: (id: OperationId, signal: AbortSignal) => Promise<Settled>,
+      job?: OperationJob
+   ) {
+      const controller = new AbortController();
+      const { signal, cancel, release } = job ?? { signal: controller.signal, cancel: () => controller.abort() };
+      if (disposed) {
+         release?.();
+         return create({ ...input, cancelable: false });
+      }
+      const operation = create({ ...input, cancel });
+      void Result.tryPromise({ try: () => run(operation.id, signal), catch: (cause) => createProblem('operations.failed', { cause }) })
+         .then((ran) => {
+            if (Result.isError(ran)) fail(operation.id, ran.error);
+         })
+         .finally(release);
+      return operation;
    }
 
    function update(id: OperationId, update: OperationUpdate) {
       const record = operations.get(id);
-      if (!record || isOperationTerminalStatus(record.snapshot.status)) return record?.snapshot;
+      if (!record || record.phase.status === 'terminal') return record?.snapshot;
 
       return replaceSnapshot(record, {
          ...record.snapshot,
@@ -98,16 +146,23 @@ export function createOperationRegistry() {
       });
    }
 
-   function fail(id: OperationId, error: OperationError) {
+   function fail(id: OperationId, { code, message, ...details }: OperationFailure) {
+      const error: OperationError = { code, message };
+      if (Object.keys(details).length > 0) error.details = details;
+
       return finish(id, 'failed', {
          error,
          cancelable: false
       });
    }
 
-   async function cancel({ id }: { id: OperationId }): Promise<OperationCancelResult> {
+   function cancel(request: { id: OperationId }) {
+      return cancelForTarget(localTargetId, request);
+   }
+
+   async function cancelForTarget(targetId: TargetId, { id }: { id: OperationId }): Promise<OperationCancelResult> {
       const record = operations.get(id);
-      if (!record) {
+      if (!record || record.targetId !== targetId) {
          return {
             ok: true,
             status: 'noop',
@@ -116,7 +171,7 @@ export function createOperationRegistry() {
          };
       }
 
-      if (isOperationTerminalStatus(record.snapshot.status)) {
+      if (record.phase.status === 'terminal') {
          return {
             ok: true,
             status: 'noop',
@@ -124,6 +179,10 @@ export function createOperationRegistry() {
             id,
             operation: record.snapshot
          };
+      }
+
+      if (record.phase.status === 'cancelling') {
+         return record.phase.settled;
       }
 
       if (!record.snapshot.cancelable) {
@@ -136,51 +195,80 @@ export function createOperationRegistry() {
          };
       }
 
-      const cancelOperation = record.cancel;
-      if (cancelOperation) {
-         const cancelResult = await Result.tryPromise({
-            try: () => Promise.resolve(cancelOperation()),
-            catch: (cause) => createOperationError('operations.cancel.failed', 'failed to cancel operation', cause)
-         });
+      const cancelOperation = record.phase.cancel;
+      const settled = (async (): Promise<OperationCancelResult> => {
+         if (cancelOperation) {
+            const cancelResult = await Result.tryPromise({
+               try: () => Promise.resolve(cancelOperation()),
+               catch: (cause) => createProblem('operations.cancel.failed', { cause })
+            });
 
-         if (Result.isError(cancelResult)) {
+            if (Result.isError(cancelResult)) {
+               if (record.phase.status === 'cancelling') {
+                  record.phase = { status: 'running', cancel: cancelOperation };
+               }
+               return {
+                  ok: false,
+                  status: 'failed',
+                  id,
+                  operation: record.snapshot,
+                  error: cancelResult.error
+               };
+            }
+         }
+
+         if (record.phase.status === 'terminal' || isOperationTerminalStatus(record.snapshot.status)) {
             return {
-               ok: false,
-               status: 'failed',
+               ok: true,
+               status: 'noop',
+               reason: 'already-finished',
                id,
-               operation: record.snapshot,
-               error: cancelResult.error
+               operation: record.snapshot
             };
          }
-      }
 
-      const now = new Date().toISOString();
-      const snapshot = replaceSnapshot(record, {
-         ...record.snapshot,
-         status: 'cancelled',
-         cancelable: false,
-         updatedAt: now,
-         completedAt: now
-      });
-      pruneTerminalOperations();
+         const now = new Date().toISOString();
+         const snapshot = replaceSnapshot(record, {
+            ...record.snapshot,
+            status: 'cancelled',
+            cancelable: false,
+            updatedAt: now,
+            completedAt: now
+         });
+         pruneTerminalOperations();
 
-      return {
-         ok: true,
-         status: 'cancelled',
-         operation: snapshot
-      };
+         return {
+            ok: true,
+            status: 'cancelled',
+            operation: snapshot
+         };
+      })();
+
+      record.phase = { status: 'cancelling', settled };
+      return settled;
    }
 
    function list() {
-      return [...operations.values()].map(({ snapshot }) => snapshot);
+      return listForTarget(localTargetId);
+   }
+
+   function listForTarget(targetId: TargetId) {
+      return [...operations.values()].filter((record) => record.targetId === targetId).map(({ snapshot }) => snapshot);
+   }
+
+   function uncancelable() {
+      return [...operations.values()]
+         .map(({ snapshot }) => snapshot)
+         .filter((snapshot) => !snapshot.cancelable && !isOperationTerminalStatus(snapshot.status));
    }
 
    async function dispose() {
-      const running = [...operations.values()].filter((record) => !isOperationTerminalStatus(record.snapshot.status));
+      disposed = true;
+      const running = [...operations.values()].filter((record) => record.snapshot.cancelable && record.phase.status !== 'terminal');
 
       await Promise.all(
          running.map(async (record) => {
-            const cancelOperation = record.cancel;
+            const cancelOperation = record.phase.status === 'running' ? record.phase.cancel : undefined;
             if (cancelOperation) {
                await Result.tryPromise({
                   try: () => Promise.resolve(cancelOperation()),
@@ -188,7 +276,10 @@ export function createOperationRegistry() {
                });
             }
 
+            if (record.phase.status === 'terminal') return;
+
             const now = new Date().toISOString();
+            record.phase = { status: 'terminal' };
             record.snapshot = {
                ...record.snapshot,
                status: 'cancelled',
@@ -204,6 +295,12 @@ export function createOperationRegistry() {
    }
 
    function subscribe(listener: OperationListener) {
+      return subscribeTargets((targetId, snapshot) => {
+         if (targetId === localTargetId) listener(snapshot);
+      });
+   }
+
+   function subscribeTargets(listener: TargetOperationListener) {
       listeners.add(listener);
       return () => {
          listeners.delete(listener);
@@ -212,7 +309,7 @@ export function createOperationRegistry() {
 
    function finish(id: OperationId, status: Extract<OperationStatus, 'completed' | 'failed'>, update: OperationUpdate) {
       const record = operations.get(id);
-      if (!record || isOperationTerminalStatus(record.snapshot.status)) return record?.snapshot;
+      if (!record || record.phase.status === 'terminal') return record?.snapshot;
 
       const now = new Date().toISOString();
       const snapshot = replaceSnapshot(record, {
@@ -229,11 +326,11 @@ export function createOperationRegistry() {
    function replaceSnapshot(record: OperationRecord, snapshot: OperationSnapshot) {
       record.snapshot = snapshot;
       if (isOperationTerminalStatus(snapshot.status)) {
-         record.cancel = undefined;
+         record.phase = { status: 'terminal' };
          operations.delete(snapshot.id);
          operations.set(snapshot.id, record);
       }
-      emitSnapshot(snapshot);
+      emitSnapshot(record.targetId, snapshot);
       return snapshot;
    }
 
@@ -245,32 +342,25 @@ export function createOperationRegistry() {
       }
    }
 
-   function emitSnapshot(snapshot: OperationSnapshot) {
+   function emitSnapshot(targetId: TargetId, snapshot: OperationSnapshot) {
       for (const listener of listeners) {
-         listener(snapshot);
+         listener(targetId, snapshot);
       }
    }
 
    return {
       create,
+      start,
       update,
       complete,
       fail,
       cancel,
+      cancelForTarget,
       list,
+      listForTarget,
       subscribe,
+      subscribeTargets,
+      uncancelable,
       dispose
-   };
-}
-
-function createOperationId(): OperationId {
-   nextOperationNumber += 1;
-   return `op_${Date.now().toString(36)}_${nextOperationNumber.toString(36)}`;
-}
-
-function createOperationError(code: string, message: string, cause: unknown): OperationError {
-   return {
-      code,
-      message: causeFailure(message, cause)
    };
 }

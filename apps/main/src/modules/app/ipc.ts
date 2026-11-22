@@ -1,11 +1,15 @@
 import { z } from 'zod';
 
-import { defineIpcCommand, defineIpcDescriptor, defineIpcQuery } from '@/ipc/core';
-import { externalLinkRequestSchema, type AppInfo, type ExternalLinkRequest, type ExternalLinkResult } from '@/modules/app/contract';
+import { defineIpc, request } from '@/ipc/core';
+import { externalLinkRequestSchema, pathChoiceRequestSchema, type AppInfo, type ExternalLinkResult, type PathChoice } from '@/modules/app/contract';
 
-export const appIpc = defineIpcDescriptor({
-   copyText: defineIpcCommand<void, { text: string }>('app:copy-text', z.object({ text: z.string() })),
-   getInfo: defineIpcQuery<AppInfo>('app:info'),
-   openLink: defineIpcCommand<ExternalLinkResult, ExternalLinkRequest>('app:open-link', externalLinkRequestSchema),
-   quit: defineIpcCommand<undefined>('app:quit')
+const copyTextRequestSchema = z.object({ text: z.string() });
+
+export const appIpc = defineIpc('app', {
+   copyText: request(copyTextRequestSchema),
+   getInfo: request().returns<AppInfo>(),
+   openLink: request(externalLinkRequestSchema).returns<ExternalLinkResult>(),
+   choosePath: request(pathChoiceRequestSchema).returns<PathChoice>(),
+   hasTray: request().returns<boolean>(),
+   quit: request()
 });

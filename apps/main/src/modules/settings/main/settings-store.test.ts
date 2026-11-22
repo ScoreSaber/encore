@@ -1,121 +1,90 @@
-import { afterEach, describe, expect, test } from 'vite-plus/test';
+import { expect, onTestFinished, test } from 'vite-plus/test';
 
-import { createDefaultAppSettings, createDefaultLibrarySettings } from '@/modules/settings/contract';
+import { defaultReceiverPort } from '@/modules/receiver/address';
 import { createSettingsStore } from '@/modules/settings/main/settings-store';
 
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const tempRoots: string[] = [];
+test('recovers usable fields without overwriting a damaged settings file', async () => {
+   const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
+   onTestFinished(() => rm(dataPath, { recursive: true, force: true }));
+   const settingsPath = join(dataPath, 'settings.json');
+   const damaged = {
+      app: { theme: 'dark', receiver: { enabled: true, pairedDevices: [{ id: 'incomplete' }] } },
+      library: { installRoot: '/games/encore' }
+   };
+   await writeFile(settingsPath, JSON.stringify(damaged), 'utf8');
 
-afterEach(async () => {
-   await Promise.all(tempRoots.map((root) => rm(root, { recursive: true, force: true })));
-   tempRoots.length = 0;
+   const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+
+   expect(await store.getSnapshot()).toMatchObject({
+      status: 'recovered',
+      problem: { code: 'settings.read.invalid' },
+      app: { theme: 'dark', receiver: { enabled: true, pairedDevices: [] } },
+      library: { installRoot: '/games/encore' }
+   });
+   expect(JSON.parse(await readFile(settingsPath, 'utf8'))).toEqual(damaged);
 });
 
-describe('settings store', () => {
-   test('defaults fields added after an existing settings file was written', async () => {
-      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
-      tempRoots.push(dataPath);
-      const {
-         scoreSaberModSourceEnabled: _scoreSaberModSourceEnabled,
-         linkHandling: _linkHandling,
-         telemetryEnabled: _telemetryEnabled,
-         ...app
-      } = createDefaultAppSettings();
-      const { customFolders: _customFolders, launchOptions: _launchOptions, ...library } = createDefaultLibrarySettings('/games/encore');
-      await writeFile(join(dataPath, 'settings.json'), JSON.stringify({ app, library }), 'utf8');
+test('keeps a copy of unparseable settings before saving over them', async () => {
+   const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
+   onTestFinished(() => rm(dataPath, { recursive: true, force: true }));
+   const damaged = '{"app": {"telemetryEnabled": false';
+   await writeFile(join(dataPath, 'settings.json'), damaged, 'utf8');
 
-      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-      const snapshot = await store.getSnapshot();
+   const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
+   expect(await store.getSnapshot()).toMatchObject({ status: 'recovered', problem: { code: 'settings.read.corrupt' } });
+   expect(await store.updateAppSettings({ theme: 'dark' })).toMatchObject({ ok: true, value: { status: 'ready' } });
 
-      expect(snapshot.status).toBe('ready');
-      expect(snapshot.app.scoreSaberModSourceEnabled).toBe(true);
-      expect(snapshot.app.linkHandling).toEqual({ launchWithoutAsking: false, downloadInstall: null });
-      expect(snapshot.app.telemetryEnabled).toBe(true);
-      expect(snapshot.library.launchOptions).toEqual({});
-      expect(snapshot.library.customFolders).toEqual([]);
+   const backups = (await readdir(dataPath)).filter((name) => name.startsWith('settings.invalid-'));
+   expect(await Promise.all(backups.map((name) => readFile(join(dataPath, name), 'utf8')))).toEqual([damaged]);
+});
+
+test('upgrades a settings file from an older release in memory', async () => {
+   const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
+   onTestFinished(() => rm(dataPath, { recursive: true, force: true }));
+   const repository = { name: 'Repo', listingUrl: 'https://example.com/index.json', enabled: true, addedAt: 'then', acknowledgedAt: 'then' };
+   const legacyOptions = { flags: ['fpfc'], args: [], runAsAdmin: false };
+   const legacy = {
+      app: {
+         theme: 'dark',
+         accentColor: '#ABCDEF',
+         locale: 'en',
+         selection: { targetId: 'local', installIds: {} },
+         receiver: { enabled: true, interfaceName: null, pairedDevices: [], remoteTargets: [] },
+         modRepositories: [
+            { ...repository, id: 'com.ScoreSaber.latest' },
+            { ...repository, id: 'com.example.repo' }
+         ],
+         linkHandling: { launchWithoutAsking: false, downloadInstall: { targetId: 'local', installId: 'install_1' } }
+      },
+      library: {
+         installRoot: '/games/encore',
+         sharedRoot: null,
+         protonPath: null,
+         lastLaunch: { installId: 'install_1', launchedAt: 'then', options: legacyOptions }
+      }
+   };
+   await writeFile(join(dataPath, 'settings.json'), JSON.stringify(legacy), 'utf8');
+
+   const snapshot = await createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' }).getSnapshot();
+
+   expect(snapshot).toMatchObject({
+      status: 'ready',
+      app: {
+         accentColor: '#abcdef',
+         receiver: { enabled: true, bindHost: null, port: defaultReceiverPort },
+         modRepositories: [{ id: 'com.example.repo', owner: '' }],
+         telemetryEnabled: true,
+         linkHandling: { launchWithoutAsking: false, downloadInstalls: [{ targetId: 'local', installId: 'install_1' }] }
+      },
+      library: {
+         installRoot: '/games/encore',
+         sharedRoots: [],
+         launchOptions: { install_1: { ...legacyOptions, environment: {}, closeEncore: false } }
+      }
    });
-
-   test('persists each link handling choice without discarding the other', async () => {
-      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
-      tempRoots.push(dataPath);
-      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-      const downloadInstall = { targetId: 'remote-lounge', installId: 'install_abcdef012345' };
-
-      await store.updateAppSettings({ linkHandling: { downloadInstall } });
-      await store.updateAppSettings({ linkHandling: { launchWithoutAsking: true } });
-
-      expect((await store.getSnapshot()).app.linkHandling).toEqual({
-         launchWithoutAsking: true,
-         downloadInstall
-      });
-   });
-
-   test('persists the default folder used by new installs', async () => {
-      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
-      tempRoots.push(dataPath);
-      const installRoot = join(dataPath, 'Beat Saber installs');
-      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-
-      expect((await store.updateLibrarySettings({ installRoot })).ok).toBe(true);
-
-      const reloaded = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-      expect((await reloaded.getSnapshot()).library.installRoot).toBe(installRoot);
-   });
-
-   test('defaults newer options in an existing last launch', async () => {
-      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
-      tempRoots.push(dataPath);
-      const library = createDefaultLibrarySettings('/games/encore');
-      await writeFile(
-         join(dataPath, 'settings.json'),
-         JSON.stringify({
-            app: createDefaultAppSettings(),
-            library: {
-               ...library,
-               lastLaunch: {
-                  installId: 'install_abcdef012345',
-                  launchedAt: '2026-08-06T00:00:00.000Z',
-                  options: { flags: [], args: [], runAsAdmin: false }
-               }
-            }
-         }),
-         'utf8'
-      );
-
-      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-
-      expect((await store.getSnapshot()).library.lastLaunch?.options).toMatchObject({ environment: {}, closeEncore: false });
-   });
-
-   test('recovers usable fields without overwriting a damaged file', async () => {
-      const dataPath = await mkdtemp(join(tmpdir(), 'encore-settings-'));
-      tempRoots.push(dataPath);
-      const settingsPath = join(dataPath, 'settings.json');
-      const damaged = {
-         app: {
-            theme: 'dark',
-            receiver: { enabled: true, pairedDevices: [{ id: 'incomplete' }] },
-            linkHandling: { launchWithoutAsking: true, downloadInstall: { targetId: '', installId: '' } }
-         },
-         library: { installRoot: '/games/encore' }
-      };
-      await writeFile(settingsPath, JSON.stringify(damaged), 'utf8');
-
-      const store = createSettingsStore({ dataPath, appVersion: '0.0.0', platform: 'linux', arch: 'x64' });
-
-      expect(await store.getSnapshot()).toMatchObject({
-         status: 'recovered',
-         problem: { code: 'settings.read.invalid' },
-         app: {
-            theme: 'dark',
-            receiver: { enabled: true, pairedDevices: [] },
-            linkHandling: { launchWithoutAsking: true, downloadInstall: null }
-         },
-         library: { installRoot: '/games/encore' }
-      });
-      expect(JSON.parse(await readFile(settingsPath, 'utf8'))).toEqual(damaged);
-   });
+   expect(snapshot.problem).toBeUndefined();
 });

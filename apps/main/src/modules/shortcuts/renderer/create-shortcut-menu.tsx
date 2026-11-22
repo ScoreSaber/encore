@@ -7,25 +7,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger } from '@/components/ui/dropdown-menu';
 
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import { shortcutKinds, type ShortcutIssue, type ShortcutWarning } from '@/modules/shortcuts/contract';
+import { shortcutKinds } from '@/modules/shortcuts/contract';
 import type { InstallShortcuts } from '@/modules/shortcuts/renderer/use-install-shortcuts';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<ShortcutIssue, 'shortcuts.issues'> = {
-   'install-not-found': 'installNotFound',
-   'invalid-options': 'invalidOptions',
-   'steam-client-missing': 'steamClientMissing',
-   'steam-file-unreadable': 'steamFileUnreadable',
-   'steam-user-missing': 'steamUserMissing',
-   'unsupported-kind': 'unsupportedKind',
-   'unsupported-platform': 'unsupportedPlatform',
-   'write-failed': 'writeFailed'
-};
-
-const warningKeys: MessageKeyMap<ShortcutWarning, 'shortcuts.warnings'> = {
-   'replaces-existing': 'replacesExisting',
-   'steam-must-be-closed': 'steamMustBeClosed'
-};
 
 export function CreateShortcutSubmenu({ shortcuts }: { shortcuts: InstallShortcuts }) {
    const t = useTranslations('shortcuts');
@@ -57,6 +40,7 @@ export function CreateShortcutSubmenu({ shortcuts }: { shortcuts: InstallShortcu
 export function ShortcutDialog({ shortcuts }: { shortcuts: InstallShortcuts }) {
    const t = useTranslations('shortcuts');
    const common = useTranslations('common');
+   const problems = useTranslations('problems.shortcuts');
    const { state } = shortcuts;
    const busy = state.status === 'previewing' || state.status === 'creating';
 
@@ -80,7 +64,7 @@ export function ShortcutDialog({ shortcuts }: { shortcuts: InstallShortcuts }) {
 
                {state.status === 'unavailable' ? (
                   <>
-                     <p>{t(`issues.${issueKeys[state.preview.issue]}`)}</p>
+                     <p>{problems(state.preview.issue)}</p>
                      {state.preview.detail ? <p className="text-muted-foreground text-xs break-all">{state.preview.detail}</p> : null}
                   </>
                ) : null}
@@ -100,7 +84,7 @@ export function ShortcutDialog({ shortcuts }: { shortcuts: InstallShortcuts }) {
                      <PreviewRow label={t('dialog.link')} value={state.preview.link} />
 
                      {state.preview.warnings.map((warning) => (
-                        <WarningLine key={warning}>{t(`warnings.${warningKeys[warning]}`)}</WarningLine>
+                        <WarningLine key={warning}>{t(`warnings.${warning}`)}</WarningLine>
                      ))}
                   </>
                ) : null}

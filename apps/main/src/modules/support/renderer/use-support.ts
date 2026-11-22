@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { queryOptions, skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Result } from 'better-result';
 
+import { createLatestGuard } from '@/lib/state/machine';
 import type {
    SupportDiagnosticsBundle,
    SupportExportResult,
@@ -9,14 +11,16 @@ import type {
    SupportLogExcerpt,
    SupportLogSelection
 } from '@/modules/support/contract';
-import { supportIpc } from '@/modules/support/ipc';
 import type { TargetId } from '@/modules/targets/contract';
-import { abortable } from '@/renderer/query/utils';
-import { ipcQueryKey } from '@/renderer/query/utils';
+import { abortable, targetKey } from '@/renderer/query/api-query';
 
 type SupportNotice = { code: 'blocked' | 'cancelled' | 'failed' | 'saved'; detail?: string };
 type SupportRequest = { targetId: TargetId };
 type SelectedLogState = SupportLogExcerpt | { status: 'closed' | 'loading' | 'error' };
+type LogModalState =
+   | { status: 'closed' }
+   | { status: 'viewing'; selection: SupportLogSelection }
+   | { status: 'copying' | 'saving' | 'opening'; selection: SupportLogSelection };
 type SupportDiagnosticsState =
    | { status: 'closed' }
    | { status: 'building' }
@@ -26,7 +30,7 @@ type SupportDiagnosticsState =
 
 function supportLogsQueryOptions(request: SupportRequest) {
    return queryOptions({
-      queryKey: ipcQueryKey(supportIpc.getLogs, request.targetId),
+      queryKey: targetKey('support', request.targetId, 'getLogs'),
       queryFn: ({ signal }) => abortable(signal, () => window.encore.support.getLogs(request))
    });
 }
@@ -35,9 +39,10 @@ function supportLogQueryOptions(request: SupportRequest & { selection: SupportLo
    const selection = request.selection;
 
    return queryOptions({
-      queryKey: ipcQueryKey(
-         supportIpc.readLog,
+      queryKey: targetKey(
+         'support',
          request.targetId,
+         'readLog',
          selection?.source ?? '',
          selection?.fileId ?? '',
          selection?.source === 'install' ? selection.installId : ''
@@ -54,21 +59,57 @@ export function useSupport(request: SupportRequest) {
    const api = window.encore.support;
    const queryClient = useQueryClient();
    const { targetId } = request;
-   const [selection, setSelection] = useState<SupportLogSelection | null>(null);
-   const [logActionStatus, setLogActionStatus] = useState<'idle' | 'copying' | 'saving' | 'opening'>('idle');
+   const [logModal, setLogModal] = useState<LogModalState>({ status: 'closed' });
    const [notice, setNotice] = useState<SupportNotice | null>(null);
    const [diagnostics, setDiagnostics] = useState<SupportDiagnosticsState>({ status: 'closed' });
-   const diagnosticsRequest = useRef(0);
-   const logs = useQuery(supportLogsQueryOptions(request));
-   const selectedLogQuery = useQuery(supportLogQueryOptions({ targetId, selection }));
+   const [shownTargetId, setShownTargetId] = useState(targetId);
+   const logGuardRef = useRef<ReturnType<typeof createLatestGuard> | null>(null);
+   const diagnosticsGuardRef = useRef<ReturnType<typeof createLatestGuard> | null>(null);
+   const linkGuardRef = useRef<ReturnType<typeof createLatestGuard> | null>(null);
+
+   if (shownTargetId !== targetId) {
+      setShownTargetId(targetId);
+      setLogModal({ status: 'closed' });
+      setNotice(null);
+      setDiagnostics({ status: 'closed' });
+   }
+
+   const getLogGuard = useCallback(() => {
+      if (!logGuardRef.current) logGuardRef.current = createLatestGuard();
+      return logGuardRef.current;
+   }, []);
+
+   const getDiagnosticsGuard = useCallback(() => {
+      if (!diagnosticsGuardRef.current) diagnosticsGuardRef.current = createLatestGuard();
+      return diagnosticsGuardRef.current;
+   }, []);
+
+   const getLinkGuard = useCallback(() => {
+      if (!linkGuardRef.current) linkGuardRef.current = createLatestGuard();
+      return linkGuardRef.current;
+   }, []);
 
    useEffect(() => {
-      setSelection(null);
-      setLogActionStatus('idle');
-      setNotice(null);
-      diagnosticsRequest.current += 1;
-      setDiagnostics({ status: 'closed' });
-   }, [targetId]);
+      const logGuard = getLogGuard();
+      const diagnosticsGuard = getDiagnosticsGuard();
+      const linkGuard = getLinkGuard();
+      logGuard.invalidate();
+      diagnosticsGuard.invalidate();
+      linkGuard.invalidate();
+
+      return () => {
+         logGuard.invalidate();
+         diagnosticsGuard.invalidate();
+         linkGuard.invalidate();
+      };
+   }, [getDiagnosticsGuard, getLinkGuard, getLogGuard, targetId]);
+
+   const selection = logModal.status === 'closed' ? null : logModal.selection;
+   const logActionStatus: 'idle' | 'copying' | 'saving' | 'opening' =
+      logModal.status === 'copying' || logModal.status === 'saving' || logModal.status === 'opening' ? logModal.status : 'idle';
+
+   const logs = useQuery(supportLogsQueryOptions(request));
+   const selectedLogQuery = useQuery(supportLogQueryOptions({ targetId, selection }));
 
    const snapshot = logs.data ?? null;
    const loadStatus = logs.isError ? 'error' : logs.isPending ? 'loading' : 'ready';
@@ -80,104 +121,132 @@ export function useSupport(request: SupportRequest) {
    }
 
    const reload = useCallback(
-      () => void queryClient.invalidateQueries({ queryKey: supportLogsQueryOptions({ targetId }).queryKey }),
+      () => queryClient.invalidateQueries({ queryKey: supportLogsQueryOptions({ targetId }).queryKey }),
       [queryClient, targetId]
    );
 
    const openLink = useCallback(
       async (id: SupportLinkId) => {
-         const result = await api.openLink({ id }).catch(() => null);
+         const guard = getLinkGuard();
+         const token = guard.next();
+         const result = Result.unwrapOr(await Result.tryPromise(() => api.openLink({ id })), null);
+         if (!guard.isCurrent(token)) return;
 
          if (result?.status === 'opened') {
             setNotice(null);
          } else {
-            const notice: SupportNotice = { code: 'blocked' };
-            if (result?.reason) notice.detail = result.reason;
-            setNotice(notice);
+            const next: SupportNotice = { code: 'blocked' };
+            if (result?.reason) next.detail = result.reason;
+            setNotice(next);
          }
       },
-      [api]
+      [api, getLinkGuard]
    );
 
    const exportSelectedLog = useCallback(
       async (destination: 'clipboard' | 'file') => {
-         if (!selection || logActionStatus !== 'idle') return;
+         if (logModal.status !== 'viewing') return;
 
-         setLogActionStatus(destination === 'clipboard' ? 'copying' : 'saving');
-         const result = await (destination === 'clipboard' ? api.copyLog({ ...selection, targetId }) : api.saveLog({ ...selection, targetId })).catch(
-            () => null
+         const activeSelection = logModal.selection;
+         const guard = getLogGuard();
+         const token = guard.next();
+         setLogModal({ status: destination === 'clipboard' ? 'copying' : 'saving', selection: activeSelection });
+         const result = Result.unwrapOr(
+            await Result.tryPromise(() =>
+               destination === 'clipboard' ? api.copyLog({ ...activeSelection, targetId }) : api.saveLog({ ...activeSelection, targetId })
+            ),
+            null
          );
-         const next: SupportNotice | null = result ? exportNotice(result) : { code: 'failed' };
+         if (!guard.isCurrent(token)) return;
 
+         const next: SupportNotice | null = result ? exportNotice(result) : { code: 'failed' };
          setNotice(next);
-         setLogActionStatus('idle');
-         if (result?.status === 'copied' || result?.status === 'saved') setSelection(null);
+         setLogModal(
+            result?.status === 'copied' || result?.status === 'saved' ? { status: 'closed' } : { status: 'viewing', selection: activeSelection }
+         );
       },
-      [api, logActionStatus, selection, targetId]
+      [api, getLogGuard, logModal, targetId]
    );
 
    const openSelectedLog = useCallback(async () => {
-      if (!selection || logActionStatus !== 'idle') return;
+      if (logModal.status !== 'viewing') return;
 
-      setLogActionStatus('opening');
-      const result = await api.openLog({ ...selection, targetId }).catch(() => null);
-      setLogActionStatus('idle');
+      const activeSelection = logModal.selection;
+      const guard = getLogGuard();
+      const token = guard.next();
+      setLogModal({ status: 'opening', selection: activeSelection });
+      const result = Result.unwrapOr(await Result.tryPromise(() => api.openLog({ ...activeSelection, targetId })), null);
+      if (!guard.isCurrent(token)) return;
 
       if (result?.status === 'opened') {
-         setSelection(null);
+         setLogModal({ status: 'closed' });
          return;
       }
 
-      const notice: SupportNotice = { code: 'failed' };
-      if (result?.message) notice.detail = result.message;
-      setNotice(notice);
-   }, [api, logActionStatus, selection, targetId]);
+      setLogModal({ status: 'viewing', selection: activeSelection });
+      const next: SupportNotice = { code: 'failed' };
+      if (result?.detail) next.detail = result.detail;
+      setNotice(next);
+   }, [api, getLogGuard, logModal, targetId]);
 
-   const selectLog = useCallback((next: SupportLogSelection) => {
-      setNotice(null);
-      setSelection(next);
-   }, []);
+   const selectLog = useCallback(
+      (next: SupportLogSelection) => {
+         getLogGuard().invalidate();
+         setNotice(null);
+         setLogModal({ status: 'viewing', selection: next });
+      },
+      [getLogGuard]
+   );
 
    const closeLog = useCallback(() => {
-      if (logActionStatus === 'idle') setSelection(null);
-   }, [logActionStatus]);
+      if (logModal.status === 'viewing') {
+         getLogGuard().invalidate();
+         setLogModal({ status: 'closed' });
+      }
+   }, [getLogGuard, logModal.status]);
 
    const buildDiagnostics = useCallback(async () => {
-      const requestId = ++diagnosticsRequest.current;
+      const guard = getDiagnosticsGuard();
+      const token = guard.next();
       setNotice(null);
       setDiagnostics({ status: 'building' });
 
-      const bundle = await api.previewDiagnostics({ targetId }).catch(() => null);
-      if (requestId !== diagnosticsRequest.current) return;
+      const bundle = Result.unwrapOr(await Result.tryPromise(() => api.previewDiagnostics({ targetId })), null);
+      if (!guard.isCurrent(token)) return;
 
-      setDiagnostics(bundle ? { status: 'ready', bundle } : { status: 'failed' });
-   }, [api, targetId]);
+      setDiagnostics((current) => (current.status !== 'building' ? current : bundle ? { status: 'ready', bundle } : { status: 'failed' }));
+   }, [api, getDiagnosticsGuard, targetId]);
 
    const exportDiagnostics = useCallback(
       async (destination: 'clipboard' | 'file') => {
          if (diagnostics.status !== 'ready') return;
 
-         setDiagnostics({ status: 'exporting', bundle: diagnostics.bundle });
+         const bundle = diagnostics.bundle;
+         const guard = getDiagnosticsGuard();
+         const token = guard.next();
+         setDiagnostics({ status: 'exporting', bundle });
 
-         const result = await api
-            .exportDiagnostics({ destination, fileName: diagnostics.bundle.fileName, text: diagnostics.bundle.text })
-            .catch(() => null);
+         const result = Result.unwrapOr(
+            await Result.tryPromise(() => api.exportDiagnostics({ destination, fileName: bundle.fileName, text: bundle.text })),
+            null
+         );
+         if (!guard.isCurrent(token)) return;
+
          const next: SupportNotice | null = result ? exportNotice(result) : { code: 'failed' };
-
          setNotice(next);
          setDiagnostics(
-            result?.status === 'cancelled' || result?.status === 'failed' || !result
-               ? { status: 'ready', bundle: diagnostics.bundle }
-               : { status: 'closed' }
+            result?.status === 'cancelled' || result?.status === 'failed' || !result ? { status: 'ready', bundle } : { status: 'closed' }
          );
       },
-      [api, diagnostics]
+      [api, diagnostics, getDiagnosticsGuard]
    );
 
    const closeDiagnostics = useCallback(() => {
-      diagnosticsRequest.current += 1;
+      if (diagnostics.status === 'exporting') return;
+
+      getDiagnosticsGuard().invalidate();
       setDiagnostics({ status: 'closed' });
-   }, []);
+   }, [diagnostics.status, getDiagnosticsGuard]);
 
    return {
       snapshot,
@@ -202,7 +271,7 @@ export function useSupport(request: SupportRequest) {
 
 function exportNotice(result: SupportExportResult): SupportNotice | null {
    if (result.status === 'saved') return { code: 'saved', detail: result.path };
-   if (result.status === 'failed') return { code: 'failed', detail: result.message };
+   if (result.status === 'failed') return { code: 'failed', detail: result.detail };
    if (result.status === 'copied') return null;
 
    return { code: result.status };

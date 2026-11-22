@@ -1,13 +1,9 @@
-import { useEffect } from 'react';
+import { queryOptions } from '@tanstack/react-query';
 
-import { queryOptions, useQueryClient } from '@tanstack/react-query';
-
-import { createTargetIpcDescriptor } from '@/ipc/target-api';
-import { operationsApi } from '@/modules/operations/api';
 import { isOperationTerminalStatus, type OperationSnapshot } from '@/modules/operations/contract';
-import { ipcQueryKey, setExistingQueryData } from '@/renderer/query/utils';
-
-const operationsIpc = createTargetIpcDescriptor(operationsApi);
+import type { TargetId } from '@/modules/targets/contract';
+import { unwrapTarget } from '@/renderer/ipc-result';
+import { targetKey } from '@/renderer/query/api-query';
 
 const maxTerminalOperations = 100;
 
@@ -31,31 +27,16 @@ function retainOperationHistory(operations: OperationSnapshot[]) {
    return retained;
 }
 
-export function operationListQueryOptions(targetId: string) {
+export function operationListQueryOptions(targetId: TargetId) {
    return queryOptions({
-      queryKey: ipcQueryKey(operationsIpc.list, targetId),
-      queryFn: async () => {
-         const response = await window.encore.operations.list({ targetId });
-         return retainOperationHistory(response.status === 'ok' ? response.value : []);
-      }
+      queryKey: targetKey('operations', targetId, 'list'),
+      queryFn: async () => retainOperationHistory(unwrapTarget(await window.encore.operations.list({ targetId })))
    });
 }
 
-export function useOperationEventSync() {
-   const queryClient = useQueryClient();
+export function upsertOperation(operations: OperationSnapshot[], snapshot: OperationSnapshot) {
+   const known = operations.some((operation) => operation.id === snapshot.id);
+   const updated = known ? operations.map((operation) => (operation.id === snapshot.id ? snapshot : operation)) : [...operations, snapshot];
 
-   useEffect(() => {
-      return window.encore.operations.onSnapshot((event) => {
-         const queryKey = operationListQueryOptions(event.targetId).queryKey;
-         setExistingQueryData<OperationSnapshot[]>(queryClient, queryKey, (current) => {
-            const operations = current ?? [];
-            const known = operations.some((operation) => operation.id === event.snapshot.id);
-            const updated = known
-               ? operations.map((operation) => (operation.id === event.snapshot.id ? event.snapshot : operation))
-               : [...operations, event.snapshot];
-
-            return retainOperationHistory(updated);
-         });
-      });
-   }, [queryClient]);
+   return retainOperationHistory(updated);
 }

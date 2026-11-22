@@ -1,17 +1,20 @@
 import { Result } from 'better-result';
 
+import { createProblem } from '@/lib/errors';
 import type { ReceiverPairingSession } from '@/modules/receiver/contract';
 import type { HttpFailure } from '@/modules/receiver/main/receiver-http';
 import { createPairingCode, createReceiverToken, hashReceiverToken, receiverTokenHashesEqual } from '@/modules/receiver/main/tokens';
 import type { PairedDevice } from '@/modules/settings/contract';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 
-export const pairingTtlMs = 2 * 60 * 1_000;
-export const maxSessionAttempts = 5;
+import { randomUUID } from 'node:crypto';
+
+const pairingTtlMs = 2 * 60 * 1_000;
+const maxSessionAttempts = 5;
 export const maxAddressFailures = 10;
-export const addressFailureWindowMs = 5 * 60 * 1_000;
-export const addressBlockMs = 5 * 60 * 1_000;
-export const lastSeenWriteIntervalMs = 60 * 1_000;
+const addressFailureWindowMs = 5 * 60 * 1_000;
+const addressBlockMs = 5 * 60 * 1_000;
+const lastSeenWriteIntervalMs = 60 * 1_000;
 export const maxTrackedFailureAddresses = 256;
 
 type PendingPairing = ReceiverPairingSession & {
@@ -19,25 +22,17 @@ type PendingPairing = ReceiverPairingSession & {
    timer: ReturnType<typeof setTimeout>;
 };
 
-type AddressFailures = {
-   count: number;
-   firstFailedAt: number;
-   blockedUntil: number;
-};
+type PairingState = { status: 'idle' } | { status: 'waiting'; session: PendingPairing } | { status: 'completing'; session: PendingPairing };
 
-type PairingOptions = {
+type AddressFailureState = { status: 'tracking'; count: number; firstFailedAt: number } | { status: 'blocked'; blockedUntil: number };
+
+export function createReceiverPairingController(options: {
    settingsStore: SettingsStore;
    onSessionChanged: (session: ReceiverPairingSession | null) => void;
-   now?: () => number;
-};
-
-export type ReceiverPairingController = ReturnType<typeof createReceiverPairingController>;
-
-export function createReceiverPairingController(options: PairingOptions) {
-   const now = options.now ?? (() => Date.now());
-   const addressFailures = new Map<string, AddressFailures>();
+}) {
+   const addressFailures = new Map<string, AddressFailureState>();
    const lastSeenUpdates = new Map<string, Promise<boolean>>();
-   let pending: PendingPairing | null = null;
+   let pairingState: PairingState = { status: 'idle' };
 
    function start() {
       clear();
@@ -45,78 +40,73 @@ export function createReceiverPairingController(options: PairingOptions) {
       const code = createPairingCode();
       const session: ReceiverPairingSession = {
          code,
-         expiresAt: new Date(now() + pairingTtlMs).toISOString(),
+         expiresAt: new Date(Date.now() + pairingTtlMs).toISOString(),
          attemptsRemaining: maxSessionAttempts
       };
 
-      pending = {
+      const pending: PendingPairing = {
          ...session,
          codeHash: hashReceiverToken(code),
          timer: setTimeout(() => {
-            clear();
+            if (pairingState.status === 'waiting' && pairingState.session === pending) clear();
          }, pairingTtlMs)
       };
+      pairingState = { status: 'waiting', session: pending };
 
       options.onSessionChanged(session);
       return session;
    }
 
    function clear() {
-      if (pending) {
-         clearTimeout(pending.timer);
-         pending = null;
-         options.onSessionChanged(null);
-      }
+      if (pairingState.status === 'idle') return;
+
+      clearTimeout(pairingState.session.timer);
+      pairingState = { status: 'idle' };
+      options.onSessionChanged(null);
    }
 
    function getSession(): ReceiverPairingSession | null {
-      if (!pending) return null;
+      if (pairingState.status === 'idle') return null;
 
       return {
-         code: pending.code,
-         expiresAt: pending.expiresAt,
-         attemptsRemaining: pending.attemptsRemaining
+         code: pairingState.session.code,
+         expiresAt: pairingState.session.expiresAt,
+         attemptsRemaining: pairingState.session.attemptsRemaining
       };
    }
 
-   async function complete(input: { code: string; deviceName: string; address: string }) {
+   async function complete(input: {
+      code: string;
+      deviceName: string;
+      address: string;
+   }): Promise<Result<{ token: string; device: PairedDevice }, HttpFailure>> {
       const blocked = checkAddressBlock(input.address);
-      if (blocked) return Result.err<{ token: string; device: PairedDevice }, HttpFailure>(blocked);
+      if (blocked) return Result.err(blocked);
 
-      if (!pending || Date.parse(pending.expiresAt) <= now()) {
-         clear();
-         return Result.err<{ token: string; device: PairedDevice }, HttpFailure>({
-            status: 403,
-            code: 'receiver.pairing.expired',
-            message: 'Pairing code is not active'
-         });
+      if (pairingState.status !== 'waiting' || Date.parse(pairingState.session.expiresAt) <= Date.now()) {
+         if (pairingState.status === 'waiting') clear();
+         return Result.err({ status: 403, ...createProblem('receiver.pairing.expired') });
       }
 
-      if (!receiverTokenHashesEqual(hashReceiverToken(input.code), pending.codeHash)) {
+      const active = pairingState.session;
+      if (!receiverTokenHashesEqual(hashReceiverToken(input.code), active.codeHash)) {
          recordFailure(input.address);
-         pending.attemptsRemaining -= 1;
+         active.attemptsRemaining -= 1;
 
-         if (pending.attemptsRemaining <= 0) {
+         if (active.attemptsRemaining <= 0) {
             clear();
-            return Result.err<{ token: string; device: PairedDevice }, HttpFailure>({
-               status: 429,
-               code: 'receiver.pairing.attempts-exhausted',
-               message: 'Too many failed pairing attempts. Start pairing again on the receiver'
-            });
+            return Result.err({ status: 429, ...createProblem('receiver.pairing.attempts-exhausted') });
          }
 
          options.onSessionChanged(getSession());
-         return Result.err<{ token: string; device: PairedDevice }, HttpFailure>({
-            status: 403,
-            code: 'receiver.pairing.invalid',
-            message: `Pairing code is invalid. ${pending.attemptsRemaining} attempts remaining`
-         });
+         return Result.err({ status: 403, ...createProblem('receiver.pairing.invalid', { attemptsRemaining: active.attemptsRemaining }) });
       }
 
+      pairingState = { status: 'completing', session: active };
       const token = createReceiverToken();
-      const pairedAt = new Date(now()).toISOString();
+      const pairedAt = new Date().toISOString();
       const device: PairedDevice = {
-         id: `device_${now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+         id: `device_${randomUUID()}`,
          name: input.deviceName,
          tokenHash: hashReceiverToken(token),
          pairedAt,
@@ -130,17 +120,17 @@ export function createReceiverPairingController(options: PairingOptions) {
       }));
 
       if (!written.ok) {
-         return Result.err<{ token: string; device: PairedDevice }, HttpFailure>({
-            status: 500,
-            code: written.error.code,
-            message: 'Pairing could not be saved'
-         });
+         if (pairingState.status === 'completing' && pairingState.session === active) {
+            if (Date.parse(active.expiresAt) <= Date.now()) clear();
+            else pairingState = { status: 'waiting', session: active };
+         }
+         return Result.err({ status: 500, ...createProblem('receiver.pairing.save-failed', { cause: written.error.code }) });
       }
 
+      if (pairingState.status === 'completing' && pairingState.session === active) clear();
       addressFailures.delete(input.address);
-      clear();
 
-      return Result.ok<{ token: string; device: PairedDevice }, HttpFailure>({ token, device });
+      return Result.ok({ token, device });
    }
 
    async function authenticate(token: string) {
@@ -149,16 +139,17 @@ export function createReceiverPairingController(options: PairingOptions) {
       const device = snapshot.app.receiver.pairedDevices.find((candidate) => receiverTokenHashesEqual(tokenHash, candidate.tokenHash));
       if (!device) return null;
 
-      const seenAt = now();
+      const seenAt = Date.now();
       if (device.lastSeenAt && seenAt - Date.parse(device.lastSeenAt) < lastSeenWriteIntervalMs) return device;
 
       const pendingUpdate = lastSeenUpdates.get(device.id);
       if (pendingUpdate) return (await pendingUpdate) ? device : null;
 
-      const update = persistLastSeen(device.id, new Date(seenAt).toISOString());
+      const update = persistLastSeen(device.id, new Date(seenAt).toISOString()).finally(() => {
+         if (lastSeenUpdates.get(device.id) === update) lastSeenUpdates.delete(device.id);
+      });
       lastSeenUpdates.set(device.id, update);
       const stillPaired = await update;
-      if (lastSeenUpdates.get(device.id) === update) lastSeenUpdates.delete(device.id);
 
       return stillPaired ? device : null;
    }
@@ -185,31 +176,22 @@ export function createReceiverPairingController(options: PairingOptions) {
    function checkAddressBlock(address: string): HttpFailure | null {
       pruneAddressFailures();
       const failures = addressFailures.get(address);
-      if (!failures) return null;
+      if (!failures || failures.status !== 'blocked') return null;
 
-      if (failures.blockedUntil > now()) {
-         return {
-            status: 429,
-            code: 'receiver.pairing.rate-limited',
-            message: 'Too many failed pairing attempts from this address. Try again later'
-         };
-      }
-
-      if (failures.blockedUntil > 0) addressFailures.delete(address);
-      return null;
+      return { status: 429, ...createProblem('receiver.pairing.rate-limited') };
    }
 
    function recordFailure(address: string) {
-      const at = now();
+      const at = Date.now();
       pruneAddressFailures(at);
       const current = addressFailures.get(address);
 
-      if (!current || at - current.firstFailedAt > addressFailureWindowMs) {
+      if (!current || current.status === 'blocked') {
          if (!current && addressFailures.size === maxTrackedFailureAddresses) {
             let oldestUnblocked: { address: string; failedAt: number } | undefined;
 
             for (const [candidateAddress, failures] of addressFailures) {
-               if (failures.blockedUntil > at || (oldestUnblocked && failures.firstFailedAt >= oldestUnblocked.failedAt)) continue;
+               if (failures.status === 'blocked' || (oldestUnblocked && failures.firstFailedAt >= oldestUnblocked.failedAt)) continue;
 
                oldestUnblocked = { address: candidateAddress, failedAt: failures.firstFailedAt };
             }
@@ -218,19 +200,21 @@ export function createReceiverPairingController(options: PairingOptions) {
             addressFailures.delete(oldestUnblocked.address);
          }
 
-         addressFailures.set(address, { count: 1, firstFailedAt: at, blockedUntil: 0 });
+         addressFailures.set(address, { status: 'tracking', count: 1, firstFailedAt: at });
          return;
       }
 
-      current.count += 1;
-      if (current.count >= maxAddressFailures) {
-         current.blockedUntil = at + addressBlockMs;
+      const nextCount = current.count + 1;
+      if (nextCount >= maxAddressFailures) {
+         addressFailures.set(address, { status: 'blocked', blockedUntil: at + addressBlockMs });
+      } else {
+         current.count = nextCount;
       }
    }
 
-   function pruneAddressFailures(at = now()) {
+   function pruneAddressFailures(at = Date.now()) {
       for (const [address, failures] of addressFailures) {
-         const expired = failures.blockedUntil > 0 ? failures.blockedUntil <= at : at - failures.firstFailedAt > addressFailureWindowMs;
+         const expired = failures.status === 'blocked' ? failures.blockedUntil <= at : at - failures.firstFailedAt > addressFailureWindowMs;
          if (expired) addressFailures.delete(address);
       }
    }

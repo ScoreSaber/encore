@@ -1,30 +1,29 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { AlertTriangle, KeyRound, Pencil, PowerOff, ShieldCheck, Trash2, Unplug, Wifi } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { AlertTriangle, Cable, CircleArrowUp, Monitor, MoreHorizontal, Plus, Trash2 } from 'lucide-react';
+import semver from 'semver';
 import { useTranslations } from 'use-intl';
 
 import { ConfirmDialog } from '@/components/dialog/confirm-dialog';
 import { ErrorPanel, LoadingPanel } from '@/components/state/state-panel';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/components/utils';
 
+import { appInfoQueryOptions } from '@/modules/app/renderer/app-queries';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import { receiverDeviceNameSchema } from '@/modules/receiver/protocol';
-import { ConnectionSetupPrompt } from '@/modules/receiver/renderer/connection-setup-prompt';
 import { RemoteSetupDialog } from '@/modules/receiver/renderer/remote-setup-dialog';
-import { useReceiver, type Receiver } from '@/modules/receiver/renderer/use-receiver';
-import type { PairedDevice, ReceiverSettings } from '@/modules/settings/contract';
+import { ThisComputerSection } from '@/modules/receiver/renderer/this-computer-section';
+import { useReceiver } from '@/modules/receiver/renderer/use-receiver';
+import type { ReceiverSettings } from '@/modules/settings/contract';
 import { SettingsSection } from '@/modules/settings/renderer/settings-layout';
 import type { Target, TargetId } from '@/modules/targets/contract';
 import type { TargetsLoadStatus } from '@/modules/targets/renderer/use-targets';
-import { useFormatters } from '@/renderer/i18n/formatters';
-
-const automaticInterfaceValue = 'automatic';
+import { useUpdate } from '@/modules/updates/renderer/use-update';
 
 export function RemoteSection({
    receiverSettings,
@@ -43,481 +42,199 @@ export function RemoteSection({
    onReloadTargets: () => void;
    onRemotePaired: (targetId: TargetId) => void;
 }) {
-   const t = useTranslations('settings');
+   const t = useTranslations('settings.remote');
    const receiver = useReceiver();
-   const [setupOpen, setSetupOpen] = useState(false);
-   const [teardownOpen, setTeardownOpen] = useState(false);
-   const configured = receiverSettings.enabled || receiverSettings.remoteTargets.length > 0;
+   const [addOpen, setAddOpen] = useState(false);
    const controlsDisabled = disabled || receiver.busy;
-   const showControlledComputers = targetsStatus !== 'ready' || remoteTargets.length > 0;
 
    return (
       <>
-         <SettingsSection title={t('remote.title')}>
-            <div className="flex min-w-0 flex-col gap-3">
-               {receiver.error && !setupOpen && !teardownOpen ? (
-                  <Alert variant="destructive">
-                     <AlertTriangle />
-                     <AlertTitle>{t('remote.errorTitle')}</AlertTitle>
-                     <AlertDescription>{receiver.error}</AlertDescription>
-                  </Alert>
-               ) : null}
+         {receiver.error && !addOpen ? (
+            <Alert variant="destructive">
+               <AlertTriangle />
+               <AlertTitle>{t('errorTitle')}</AlertTitle>
+               <AlertDescription>{receiver.error}</AlertDescription>
+            </Alert>
+         ) : null}
 
-               {configured ? (
-                  <>
-                     <div className="flex flex-wrap justify-end gap-2">
-                        <Button type="button" size="sm" disabled={controlsDisabled} onClick={() => setSetupOpen(true)}>
-                           <Wifi data-icon="inline-start" />
-                           {t('remote.connectComputer')}
-                        </Button>
-                        <Button type="button" variant="outline" size="sm" disabled={controlsDisabled} onClick={() => setTeardownOpen(true)}>
-                           <PowerOff data-icon="inline-start" />
-                           {t('remote.turnOff.action')}
-                        </Button>
-                     </div>
+         {canShareThisComputer ? <ThisComputerSection receiver={receiver} receiverSettings={receiverSettings} disabled={controlsDisabled} /> : null}
 
-                     <div className="min-w-0 divide-y border-t">
-                        {canShareThisComputer ? (
-                           <ThisComputerSection receiver={receiver} receiverSettings={receiverSettings} disabled={controlsDisabled} />
-                        ) : null}
-                        {showControlledComputers ? (
-                           <ControlledComputersSection
-                              receiver={receiver}
-                              disabled={controlsDisabled}
-                              targets={remoteTargets}
-                              status={targetsStatus}
-                              onReloadTargets={onReloadTargets}
-                           />
-                        ) : null}
-                     </div>
-                  </>
-               ) : (
-                  <ConnectionSetupPrompt
-                     context="settings"
-                     canShareThisComputer={canShareThisComputer}
-                     disabled={controlsDisabled}
-                     onSetup={() => setSetupOpen(true)}
-                  />
-               )}
-            </div>
+         <SettingsSection
+            title={t('remotes.title')}
+            headerAction={
+               <Button type="button" variant="ghost" size="xs" disabled={controlsDisabled} onClick={() => setAddOpen(true)}>
+                  <Plus />
+                  {t('remotes.add')}
+               </Button>
+            }
+         >
+            {targetsStatus === 'loading' ? <LoadingPanel className="min-h-20" /> : null}
+            {targetsStatus === 'error' ? <ErrorPanel className="px-4 py-3" message={t('remotes.loadError')} onRetry={onReloadTargets} /> : null}
+            {targetsStatus === 'ready' && remoteTargets.length === 0 ? (
+               <Empty className="min-h-52">
+                  <EmptyHeader>
+                     <EmptyMedia variant="icon">
+                        <Cable />
+                     </EmptyMedia>
+                     <EmptyTitle>{t('remotes.emptyTitle')}</EmptyTitle>
+                     <EmptyDescription>{t('remotes.emptyDescription')}</EmptyDescription>
+                  </EmptyHeader>
+               </Empty>
+            ) : null}
+            {remoteTargets.map((target) => (
+               <RemoteTargetRow key={target.id} target={target} disabled={controlsDisabled} onForget={() => receiver.forgetRemote(target.id)} />
+            ))}
          </SettingsSection>
 
-         <RemoteSetupDialog
-            open={setupOpen}
-            receiver={receiver}
-            receiverSettings={receiverSettings}
-            startWithConnection={!canShareThisComputer}
-            onOpenChange={setSetupOpen}
-            onRemotePaired={onRemotePaired}
-         />
-
-         <RemoteTeardownDialog
-            open={teardownOpen}
-            receiver={receiver}
-            receiverSettings={receiverSettings}
-            remoteTargets={remoteTargets}
-            onOpenChange={setTeardownOpen}
-         />
+         <RemoteSetupDialog open={addOpen} receiver={receiver} onOpenChange={setAddOpen} onRemotePaired={onRemotePaired} />
       </>
    );
 }
 
-function ThisComputerSection({
-   receiver,
-   receiverSettings,
-   disabled
-}: {
-   receiver: Receiver;
-   receiverSettings: ReceiverSettings;
-   disabled: boolean;
-}) {
-   const t = useTranslations('settings');
-   const format = useFormatters();
-   const state = receiver.state;
-   const status = state?.status ?? 'disabled';
-   const addresses = state?.addresses ?? [];
-   const pairing = state?.pairing ?? null;
-   const selectedInterface = state?.interfaces.find((option) => option.interfaceName === receiverSettings.interfaceName);
-   const listensOnAllInterfaces = selectedInterface?.host === '0.0.0.0';
-
-   return (
-      <div className="min-w-0 py-3">
-         <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-               <h3 className="text-sm font-medium">{t('remote.thisComputer.title')}</h3>
-               <p className="text-muted-foreground mt-0.5 text-xs">{t('remote.thisComputer.description')}</p>
-            </div>
-            <Badge variant={status === 'running' ? 'default' : status === 'error' ? 'destructive' : 'outline'}>
-               {t(`remote.receiver.statusValue.${status}`)}
-            </Badge>
-         </div>
-
-         {receiverSettings.enabled ? (
-            <div className="flex flex-col gap-4 pt-4">
-               {addresses.length > 0 ? (
-                  <div>
-                     <div className="text-muted-foreground text-xs font-medium">{t('remote.receiver.address', { count: addresses.length })}</div>
-                     <div className="mt-1.5 flex flex-col gap-1.5">
-                        {addresses.map((item) => (
-                           <div key={item.url} className="flex min-w-0 items-center justify-between gap-3 text-sm">
-                              <span className="min-w-0 font-mono break-all" data-selectable="true">
-                                 {item.url}
-                              </span>
-                              <span className="text-muted-foreground shrink-0 text-xs">{item.interfaceName}</span>
-                           </div>
-                        ))}
-                     </div>
-                  </div>
-               ) : null}
-               {state?.message ? <p className="text-muted-foreground text-xs break-words">{state.message}</p> : null}
-
-               <div>
-                  <label className="text-muted-foreground text-xs font-medium" htmlFor="settings-remote-interface">
-                     {t('remote.receiver.interface')}
-                  </label>
-                  <Select
-                     value={receiverSettings.interfaceName ?? automaticInterfaceValue}
-                     disabled={disabled}
-                     onValueChange={(value) => void receiver.selectInterface(value === automaticInterfaceValue ? null : value)}
-                  >
-                     <SelectTrigger id="settings-remote-interface" className="mt-1.5 w-full">
-                        <SelectValue />
-                     </SelectTrigger>
-                     <SelectContent>
-                        <SelectGroup>
-                           <SelectItem value={automaticInterfaceValue}>{t('remote.receiver.interfaceAutomatic')}</SelectItem>
-                           {(state?.interfaces ?? []).map((option) => (
-                              <SelectItem key={option.interfaceName} value={option.interfaceName}>
-                                 {option.host === '0.0.0.0' ? t('remote.receiver.interfaceAll') : `${option.interfaceName} (${option.host})`}
-                              </SelectItem>
-                           ))}
-                        </SelectGroup>
-                     </SelectContent>
-                  </Select>
-                  {listensOnAllInterfaces ? (
-                     <p className="text-status-warning mt-2 flex gap-1.5 text-xs">
-                        <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                        <span>{t('remote.receiver.interfaceAllWarning')}</span>
-                     </p>
-                  ) : null}
-               </div>
-
-               {pairing ? (
-                  <div className="border-primary/30 bg-primary/5 rounded-lg border p-3">
-                     <div className="text-muted-foreground flex items-center gap-1.5 text-xs font-medium">
-                        <KeyRound className="size-3.5" />
-                        {t('remote.receiver.pairing')}
-                     </div>
-                     <div className="mt-1 font-mono text-xl font-semibold tracking-[0.25em]" data-selectable="true">
-                        {pairing.code}
-                     </div>
-                     <p className="text-muted-foreground mt-1 text-xs">
-                        {t('remote.receiver.pairingExpires', { time: format.time(pairing.expiresAt) })}
-                     </p>
-                  </div>
-               ) : null}
-
-               {state?.identity ? (
-                  <details className="group rounded-lg border px-3 py-2.5">
-                     <summary className="flex cursor-default list-none items-center gap-2 text-sm font-medium">
-                        <ShieldCheck className="text-muted-foreground size-4" />
-                        {t('remote.receiver.securityDetails')}
-                     </summary>
-                     <p className="text-muted-foreground mt-2 text-xs">{t('remote.receiver.identityDescription')}</p>
-                     <p className="mt-1.5 font-mono text-xs break-all" data-selectable="true">
-                        {state.identity.fingerprint}
-                     </p>
-                  </details>
-               ) : null}
-
-               {state && !state.secureStorage.available ? (
-                  <Alert variant="warning">
-                     <AlertTriangle />
-                     <AlertTitle>{t('remote.receiver.secureStorage.title')}</AlertTitle>
-                     <AlertDescription>{t('remote.receiver.secureStorage.description')}</AlertDescription>
-                  </Alert>
-               ) : null}
-
-               {receiverSettings.pairedDevices.length > 0 ? (
-                  <div className="border-t pt-4">
-                     <div className="mb-3 flex items-center justify-between gap-3">
-                        <h4 className="text-sm font-medium">{t('remote.receiver.pairedDevices')}</h4>
-                        <span className="text-muted-foreground text-xs">
-                           {t('remote.receiver.deviceCount', { count: receiverSettings.pairedDevices.length })}
-                        </span>
-                     </div>
-                     <div className="flex w-full flex-col divide-y border-t">
-                        {receiverSettings.pairedDevices.map((device) => (
-                           <PairedDeviceRow
-                              key={device.id}
-                              device={device}
-                              disabled={disabled}
-                              onRename={receiver.renameDevice}
-                              onRevoke={receiver.revokeDevice}
-                           />
-                        ))}
-                     </div>
-                  </div>
-               ) : null}
-            </div>
-         ) : null}
-      </div>
-   );
-}
-
-function ControlledComputersSection({
-   receiver,
-   disabled,
-   targets,
-   status,
-   onReloadTargets
-}: {
-   receiver: Receiver;
-   disabled: boolean;
-   targets: Target[];
-   status: TargetsLoadStatus;
-   onReloadTargets: () => void;
-}) {
-   const t = useTranslations('settings');
-
-   return (
-      <div className="min-w-0">
-         {status === 'loading' ? <LoadingPanel className="w-full py-3" /> : null}
-
-         {status === 'error' ? <ErrorPanel className="w-full py-3" message={t('remote.remotes.loadError')} onRetry={onReloadTargets} /> : null}
-
-         {targets.length > 0 ? (
-            <div className="flex w-full flex-col divide-y">
-               {targets.map((target) => (
-                  <RemoteTargetRow key={target.id} target={target} disabled={disabled} onForget={() => void receiver.forgetRemote(target.id)} />
-               ))}
-            </div>
-         ) : null}
-      </div>
-   );
-}
+type RemoteUpdatePhase = { status: 'idle' } | { status: 'requested'; fromVersion: string } | { status: 'active'; fromVersion: string };
 
 function RemoteTargetRow({ target, disabled, onForget }: { target: Target; disabled: boolean; onForget: () => void }) {
-   const t = useTranslations('settings');
+   const t = useTranslations('settings.remote.remotes');
    const targetLabels = useTranslations('targets');
-   const [confirmOpen, setConfirmOpen] = useState(false);
+   const common = useTranslations('common');
+   const [forgetOpen, setForgetOpen] = useState(false);
+   const [updateOpen, setUpdateOpen] = useState(false);
+   const [updatePhase, setUpdatePhase] = useState<RemoteUpdatePhase>({ status: 'idle' });
+   const localVersion = useQuery(appInfoQueryOptions).data?.version ?? null;
+   const updatable = target.status === 'ready' && target.capabilities.includes('update-app');
+   const update = useUpdate(target.id, updatable);
+   const remote = target.capabilities.includes('update-app') ? update.state : null;
+   const behind =
+      remote !== null && localVersion !== null && semver.valid(remote.currentVersion) !== null && semver.lt(remote.currentVersion, localVersion);
+   const failure = remote?.errorContext && remote.message ? remote.message : null;
+   const remoteInProgress = remote?.status === 'checking' || remote?.status === 'downloading' || remote?.status === 'downloaded';
+
+   useEffect(() => {
+      if (updatePhase.status === 'idle') return;
+      if (failure || (remote && remote.currentVersion !== updatePhase.fromVersion)) {
+         setUpdatePhase({ status: 'idle' });
+         return;
+      }
+      if (updatePhase.status === 'requested' && (remoteInProgress || target.status !== 'ready')) {
+         setUpdatePhase({ status: 'active', fromVersion: updatePhase.fromVersion });
+         return;
+      }
+      if (updatePhase.status === 'active' && target.status === 'ready' && remote && !remoteInProgress) {
+         setUpdatePhase({ status: 'idle' });
+      }
+   }, [failure, remote, remoteInProgress, target.status, updatePhase]);
+
+   const updating =
+      updatePhase.status !== 'idle' &&
+      remote !== null &&
+      updatePhase.fromVersion === remote.currentVersion &&
+      !failure &&
+      (updatePhase.status === 'requested' || target.status !== 'ready' || remoteInProgress);
+   const progress =
+      remote?.status === 'downloading'
+         ? t('update.downloading', { percent: remote.downloadPercent ?? 0 })
+         : !updating
+           ? null
+           : updatePhase.status === 'requested' || remote?.status === 'checking'
+             ? t('update.checking')
+             : t('update.restarting');
+   const offerUpdate =
+      updatable &&
+      remote !== null &&
+      progress === null &&
+      (remote.status === 'available' || remote.status === 'downloaded' || (behind && remote.status !== 'disabled'));
+   const subtitle = [
+      target.address,
+      targetLabels(`status.${target.status}`),
+      target.status === 'ready' ? null : target.message,
+      remote ? t('version', { version: remote.currentVersion }) : null
+   ]
+      .filter(Boolean)
+      .join(' · ');
 
    return (
-      <div className="flex items-center gap-3 py-2.5 text-sm">
-         <div className="min-w-0 flex-1">
-            <div className="truncate font-medium">{target.name}</div>
-            <div className="text-muted-foreground truncate text-xs">
-               {[target.address, target.status === 'ready' ? null : targetLabels(`status.${target.status}`), target.message]
-                  .filter(Boolean)
-                  .join(' - ')}
-            </div>
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-3 sm:px-4">
+         <Monitor className="text-muted-foreground size-4" />
+         <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{target.name}</p>
+            <p className={cn('text-muted-foreground truncate text-xs', target.status === 'incompatible' && 'text-destructive')} title={subtitle}>
+               {subtitle}
+            </p>
+            {progress ? (
+               <p className="mt-1 flex items-center gap-2 text-xs font-medium" role="status">
+                  <span aria-hidden="true" className="bg-foreground size-1.5 shrink-0 rounded-full" />
+                  {progress}
+               </p>
+            ) : failure ? (
+               <p className="text-destructive mt-1 flex min-w-0 items-center gap-2 text-xs" role="alert">
+                  <span aria-hidden="true" className="bg-destructive size-1.5 shrink-0 rounded-full" />
+                  <span className="truncate">{failure}</span>
+               </p>
+            ) : behind && remote && !remote.selfUpdates ? (
+               <p className="text-muted-foreground mt-1 text-xs">{t('update.manual')}</p>
+            ) : null}
          </div>
-         <Button type="button" variant="ghost" size="sm" className="shrink-0" disabled={disabled} onClick={() => setConfirmOpen(true)}>
-            <Unplug data-icon="inline-start" />
-            {t('remote.remotes.forget')}
-         </Button>
+         <div className="flex shrink-0 items-center gap-1">
+            {offerUpdate && remote?.selfUpdates ? (
+               <Tooltip>
+                  <TooltipTrigger asChild>
+                     <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={t('update.action', { version: remote.availableVersion ?? localVersion ?? '' })}
+                        disabled={disabled}
+                        onClick={() => setUpdateOpen(true)}
+                     >
+                        <CircleArrowUp />
+                     </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{t('update.action', { version: remote.availableVersion ?? localVersion ?? '' })}</TooltipContent>
+               </Tooltip>
+            ) : null}
+            <DropdownMenu>
+               <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="ghost" size="icon-xs" aria-label={common('more')} disabled={disabled}>
+                     <MoreHorizontal />
+                  </Button>
+               </DropdownMenuTrigger>
+               <DropdownMenuContent align="end">
+                  <DropdownMenuItem variant="destructive" onSelect={() => setForgetOpen(true)}>
+                     <Trash2 />
+                     {t('forgetAction')}
+                  </DropdownMenuItem>
+               </DropdownMenuContent>
+            </DropdownMenu>
+         </div>
 
          <ConfirmDialog
-            open={confirmOpen}
-            title={t('remote.remotes.forgetConfirm.title')}
-            description={t('remote.remotes.forgetConfirm.description')}
-            confirmLabel={t('remote.remotes.forgetConfirm.confirm')}
-            busy={disabled}
-            onOpenChange={setConfirmOpen}
+            open={updateOpen}
+            title={t('update.confirmTitle', { name: target.name })}
+            description={t('update.confirmDescription')}
+            confirmLabel={t('update.confirm')}
+            confirmVariant="default"
+            onOpenChange={setUpdateOpen}
             onConfirm={() => {
-               setConfirmOpen(false);
+               setUpdateOpen(false);
+               if (remote) setUpdatePhase({ status: 'requested', fromVersion: remote.currentVersion });
+               update.run('update');
+            }}
+         />
+
+         <ConfirmDialog
+            open={forgetOpen}
+            title={t('forgetConfirm.title')}
+            description={t('forgetConfirm.description')}
+            confirmLabel={t('forgetConfirm.confirm')}
+            busy={disabled}
+            onOpenChange={setForgetOpen}
+            onConfirm={() => {
+               setForgetOpen(false);
                onForget();
             }}
          >
-            <PreviewRow label={t('remote.remotes.forgetConfirm.name')} value={target.name} />
-            {target.address ? <PreviewRow label={t('remote.remotes.forgetConfirm.address')} value={target.address} /> : null}
-            {target.fingerprint ? <PreviewRow label={t('remote.receiver.identity')} value={target.fingerprint} /> : null}
-         </ConfirmDialog>
-      </div>
-   );
-}
-
-function RemoteTeardownDialog({
-   open,
-   receiver,
-   receiverSettings,
-   remoteTargets,
-   onOpenChange
-}: {
-   open: boolean;
-   receiver: Receiver;
-   receiverSettings: ReceiverSettings;
-   remoteTargets: Target[];
-   onOpenChange: (open: boolean) => void;
-}) {
-   const t = useTranslations('settings');
-   const common = useTranslations('common');
-   const nothingPaired = receiverSettings.pairedDevices.length === 0 && remoteTargets.length === 0;
-
-   return (
-      <Dialog
-         open={open}
-         onOpenChange={(nextOpen) => {
-            if (nextOpen || receiver.busy) return;
-
-            onOpenChange(false);
-         }}
-      >
-         <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-               <DialogTitle>{t('remote.turnOff.confirmTitle')}</DialogTitle>
-               <DialogDescription>{t('remote.turnOff.confirmDescription')}</DialogDescription>
-            </DialogHeader>
-
-            {receiver.error ? (
-               <Alert variant="destructive">
-                  <AlertTriangle />
-                  <AlertTitle>{t('remote.errorTitle')}</AlertTitle>
-                  <AlertDescription>{receiver.error}</AlertDescription>
-               </Alert>
-            ) : null}
-
-            <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto text-sm">
-               {nothingPaired ? <p className="text-muted-foreground">{t('remote.turnOff.nothing')}</p> : null}
-
-               {receiverSettings.pairedDevices.length > 0 ? (
-                  <div className="flex flex-col gap-1">
-                     <p className="font-medium">{t('remote.turnOff.devices')}</p>
-                     {receiverSettings.pairedDevices.map((device) => (
-                        <p key={device.id} className="text-muted-foreground text-xs break-all">
-                           {device.name}
-                        </p>
-                     ))}
-                  </div>
-               ) : null}
-
-               {remoteTargets.length > 0 ? (
-                  <div className="flex flex-col gap-1">
-                     <p className="font-medium">{t('remote.turnOff.receivers')}</p>
-                     {remoteTargets.map((target) => (
-                        <p key={target.id} className="text-muted-foreground text-xs break-all">
-                           {target.address ? `${target.name} (${target.address})` : target.name}
-                        </p>
-                     ))}
-                  </div>
-               ) : null}
-            </div>
-
-            <DialogFooter>
-               <Button type="button" variant="outline" size="sm" disabled={receiver.busy} onClick={() => onOpenChange(false)}>
-                  {common('cancel')}
-               </Button>
-               <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  disabled={receiver.busy}
-                  onClick={async () => {
-                     const turnedOff = await receiver.disableRemote();
-                     if (turnedOff) onOpenChange(false);
-                  }}
-               >
-                  <PowerOff data-icon="inline-start" />
-                  {receiver.busy ? t('remote.turnOff.working') : t('remote.turnOff.confirm')}
-               </Button>
-            </DialogFooter>
-         </DialogContent>
-      </Dialog>
-   );
-}
-
-function PairedDeviceRow({
-   device,
-   disabled,
-   onRename,
-   onRevoke
-}: {
-   device: PairedDevice;
-   disabled: boolean;
-   onRename: (deviceId: string, name: string) => Promise<void>;
-   onRevoke: (deviceId: string) => Promise<void>;
-}) {
-   const t = useTranslations('settings');
-   const common = useTranslations('common');
-   const format = useFormatters();
-   const [draft, setDraft] = useState<{ source: string; value: string } | null>(null);
-   const [confirmOpen, setConfirmOpen] = useState(false);
-   let activeDraft = draft;
-
-   if (draft && draft.source !== device.name) {
-      activeDraft = null;
-      setDraft(null);
-   }
-
-   const name = activeDraft?.value ?? device.name;
-   const editing = activeDraft !== null;
-   const trimmedName = name.trim();
-   const renameDisabled = disabled || !receiverDeviceNameSchema.safeParse(trimmedName).success || trimmedName === device.name;
-   const seenAt = format.time(device.lastSeenAt ?? device.pairedAt);
-
-   return (
-      <div className="flex flex-col gap-2 py-3 text-sm">
-         {editing ? (
-            <ButtonGroup className="w-full" aria-label={t('remote.receiver.deviceName')}>
-               <Input
-                  autoFocus
-                  value={name}
-                  disabled={disabled}
-                  aria-label={t('remote.receiver.deviceName')}
-                  onChange={(event) => setDraft({ source: device.name, value: event.target.value })}
-               />
-               <Button
-                  type="button"
-                  size="sm"
-                  disabled={renameDisabled}
-                  onClick={async () => {
-                     await onRename(device.id, trimmedName);
-                     setDraft(null);
-                  }}
-               >
-                  {t('remote.receiver.rename')}
-               </Button>
-               <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => setDraft(null)}>
-                  {common('cancel')}
-               </Button>
-            </ButtonGroup>
-         ) : (
-            <div className="flex items-center gap-3">
-               <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">{device.name}</div>
-                  <div className="text-muted-foreground mt-0.5 text-xs">{t('remote.receiver.deviceSeenAt', { time: seenAt })}</div>
-               </div>
-               <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={disabled}
-                  onClick={() => setDraft({ source: device.name, value: device.name })}
-               >
-                  <Pencil data-icon="inline-start" />
-                  {t('remote.receiver.rename')}
-               </Button>
-               <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={() => setConfirmOpen(true)}>
-                  <Trash2 data-icon="inline-start" />
-                  {t('remote.receiver.revoke')}
-               </Button>
-            </div>
-         )}
-
-         <ConfirmDialog
-            open={confirmOpen}
-            title={t('remote.receiver.revokeConfirm.title')}
-            description={t('remote.receiver.revokeConfirm.description')}
-            confirmLabel={t('remote.receiver.revokeConfirm.confirm')}
-            busy={disabled}
-            onOpenChange={setConfirmOpen}
-            onConfirm={() => {
-               setConfirmOpen(false);
-               void onRevoke(device.id);
-            }}
-         >
-            <PreviewRow label={t('remote.receiver.revokeConfirm.name')} value={device.name} />
-            <PreviewRow label={t('remote.receiver.revokeConfirm.seen')} value={seenAt} />
+            <PreviewRow label={t('forgetConfirm.name')} value={target.name} />
+            {target.address ? <PreviewRow label={t('forgetConfirm.address')} value={target.address} /> : null}
          </ConfirmDialog>
       </div>
    );

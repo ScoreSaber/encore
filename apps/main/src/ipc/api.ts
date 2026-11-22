@@ -7,31 +7,21 @@ import type {
    IpcResponse,
    IpcTransportValue
 } from '@/ipc/core';
-import { createTargetIpcDescriptor } from '@/ipc/target-api';
+import { createDomainIpcDescriptors } from '@/ipc/target-api';
 import { appIpc } from '@/modules/app/ipc';
-import { bsmanagerIpc } from '@/modules/bsmanager/ipc';
-import { downloadsApi } from '@/modules/downloads/api';
-import { installsApi } from '@/modules/installs/api';
 import { installsIpc } from '@/modules/installs/ipc';
-import { launchApi } from '@/modules/launch/api';
-import { mapsApi } from '@/modules/maps/api';
 import { mapsIpc } from '@/modules/maps/ipc';
-import { modelsApi } from '@/modules/models/api';
 import { modelsIpc } from '@/modules/models/ipc';
-import { modsApi } from '@/modules/mods/api';
 import { modsIpc } from '@/modules/mods/ipc';
-import { operationsApi } from '@/modules/operations/api';
-import { playlistsApi } from '@/modules/playlists/api';
 import { playlistsIpc } from '@/modules/playlists/ipc';
+import { questIpc, questLocalIpc } from '@/modules/quest/ipc';
 import { receiverIpc } from '@/modules/receiver/ipc';
 import { settingsIpc } from '@/modules/settings/ipc';
-import { sharedContentApi } from '@/modules/shared-content/api';
 import { sharedContentIpc } from '@/modules/shared-content/ipc';
 import { shortcutsIpc } from '@/modules/shortcuts/ipc';
-import { supportApi } from '@/modules/support/api';
 import { supportIpc } from '@/modules/support/ipc';
+import { targetApis } from '@/modules/targets/api';
 import { targetsIpc } from '@/modules/targets/ipc';
-import { updatesIpc } from '@/modules/updates/ipc';
 
 type IpcClient<Descriptor extends IpcDescriptor> = {
    [Method in keyof Descriptor]: Descriptor[Method] extends IpcRequestDefinition
@@ -48,34 +38,29 @@ type IpcClients<Descriptors extends Record<string, IpcDescriptor>> = {
    [Domain in keyof Descriptors]: IpcClient<Descriptors[Domain]>;
 };
 
-type BoundIpcClients = { readonly dynamicIpcClients?: never };
-
-const ipcDescriptors = {
+export const ipcDescriptors = createDomainIpcDescriptors(targetApis, {
    app: appIpc,
    settings: settingsIpc,
    receiver: receiverIpc,
    targets: targetsIpc,
-   installs: { ...createTargetIpcDescriptor(installsApi), ...installsIpc },
-   maps: { ...createTargetIpcDescriptor(mapsApi), ...mapsIpc },
-   models: { ...createTargetIpcDescriptor(modelsApi), ...modelsIpc },
-   playlists: { ...createTargetIpcDescriptor(playlistsApi), ...playlistsIpc },
-   sharedContent: { ...createTargetIpcDescriptor(sharedContentApi), ...sharedContentIpc },
-   bsmanager: bsmanagerIpc,
-   downloads: createTargetIpcDescriptor(downloadsApi),
-   launch: createTargetIpcDescriptor(launchApi),
-   mods: { ...createTargetIpcDescriptor(modsApi), ...modsIpc },
+   installs: installsIpc,
+   maps: mapsIpc,
+   models: modelsIpc,
+   playlists: playlistsIpc,
+   sharedContent: sharedContentIpc,
+   mods: modsIpc,
    shortcuts: shortcutsIpc,
-   support: { ...createTargetIpcDescriptor(supportApi), ...supportIpc },
-   update: updatesIpc,
-   operations: createTargetIpcDescriptor(operationsApi)
-};
+   support: supportIpc,
+   quest: questIpc,
+   questLocal: questLocalIpc
+});
 
 function bindIpc<Descriptors extends Record<string, IpcDescriptor>>(
    descriptors: Descriptors,
    invoke: IpcInvoke,
    subscribe: IpcSubscribe
 ): IpcClients<Descriptors>;
-function bindIpc(descriptors: Record<string, IpcDescriptor>, invoke: IpcInvoke, subscribe: IpcSubscribe): BoundIpcClients {
+function bindIpc(descriptors: Record<string, IpcDescriptor>, invoke: IpcInvoke, subscribe: IpcSubscribe): object {
    return Object.fromEntries(
       Object.entries(descriptors).map(([domain, descriptor]) => [
          domain,
@@ -91,8 +76,8 @@ function bindIpc(descriptors: Record<string, IpcDescriptor>, invoke: IpcInvoke, 
    );
 }
 
-export function createEncoreApi(platform: NodeJS.Platform, invoke: IpcInvoke, subscribe: IpcSubscribe) {
-   return { platform, ...bindIpc(ipcDescriptors, invoke, subscribe) };
+export function createEncoreApi(platform: NodeJS.Platform, invoke: IpcInvoke, subscribe: IpcSubscribe, runtime: 'desktop' | 'mobile' = 'desktop') {
+   return { platform, runtime, ...bindIpc(ipcDescriptors, invoke, subscribe) };
 }
 
 export type EncoreApi = ReturnType<typeof createEncoreApi>;

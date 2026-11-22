@@ -7,7 +7,7 @@ import { useTranslations } from 'use-intl';
 import { ErrorCard } from '@/components/error/error-card';
 import { RouteError } from '@/components/error/route-error';
 
-import { createQueryClient } from '@/renderer/query/query-provider';
+import { createQueryClient } from '@/renderer/query/api-query';
 import { routeTree } from '@/routeTree.gen';
 
 export interface RouterContext {

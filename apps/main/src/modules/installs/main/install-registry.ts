@@ -1,6 +1,8 @@
 import { Result } from 'better-result';
 
+import { createProblem } from '@/lib/errors';
 import { isSamePath, resolveFilesystemPath, readPathInfo, type FilesystemProblem } from '@/lib/filesystem/path';
+import { createSerialQueue } from '@/lib/state/machine';
 import {
    installSummarySchema,
    type InstallDetail,
@@ -8,131 +10,173 @@ import {
    type InstallProblem,
    type InstallRegistrySnapshot
 } from '@/modules/installs/contract';
-import { readBeatSaberVersion } from '@/modules/installs/main/beat-saber-version';
+import { readBeatSaberVersion } from '@/modules/installs/main/beat-saber-files';
 import { createInstallStore, type InstallRecord, type InstallRecordPatch, type InstallRegistration } from '@/modules/installs/main/install-store';
 import { stripMechanicalSuffix } from '@/modules/installs/main/naming';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
-import type { StoreInstallCandidate } from '@/modules/stores/contract';
-import { localTargetId } from '@/modules/targets/contract';
+import type { StoreInstallCandidate, StoreKind } from '@/modules/stores/contract';
 
 import { basename } from 'node:path';
 
 type InstallRegistryOptions = {
    dataPath: string;
    settingsStore: SettingsStore;
-   detectStores: () => Promise<{ candidates: StoreInstallCandidate[] }>;
+   detectStores: () => Promise<StoreInstallCandidate[]>;
 };
+
+type RegistryState =
+   | { status: 'uninitialized' }
+   | { status: 'scanning'; scan: number; pending: Promise<InstallRegistrySnapshot>; lastInstallRoot: string | null }
+   | { status: 'ready'; scan: number; snapshot: InstallRegistrySnapshot; details: Map<InstallId, InstallDetail> }
+   | { status: 'disposed' };
 
 export type InstallRegistry = ReturnType<typeof createInstallRegistry>;
 
 export function createInstallRegistry(options: InstallRegistryOptions) {
    const store = createInstallStore({ dataPath: options.dataPath });
    const listeners = new Set<(snapshot: InstallRegistrySnapshot) => void>();
+   const mutations = createSerialQueue();
 
-   let snapshot: InstallRegistrySnapshot | null = null;
-   let details = new Map<InstallId, InstallDetail>();
-   let pendingScan: Promise<InstallRegistrySnapshot> | null = null;
+   let state: RegistryState = { status: 'uninitialized' };
+   let scans = 0;
 
    const unsubscribeSettings = options.settingsStore.subscribe((settings) => {
-      if (!snapshot || isSamePath(settings.library.installRoot, snapshot.installRoot)) return;
+      if (state.status === 'disposed' || state.status === 'uninitialized') return;
+
+      const knownRoot = state.status === 'ready' ? state.snapshot.installRoot : state.lastInstallRoot;
+      if (knownRoot !== null && isSamePath(settings.library.installRoot, knownRoot)) return;
 
       void rescan();
    });
 
    async function list() {
-      return snapshot ?? scan();
+      if (state.status === 'ready') return state.snapshot;
+      if (state.status === 'scanning') return state.pending;
+      return rescan();
    }
 
    async function get(installId: InstallId) {
       await list();
-      return details.get(installId) ?? null;
+      return state.status === 'ready' ? (state.details.get(installId) ?? null) : null;
    }
 
-   async function rescan() {
-      snapshot = null;
-      return scan();
-   }
+   function rescan(): Promise<InstallRegistrySnapshot> {
+      if (state.status === 'disposed') return runScan().then((scanned) => scanned.snapshot);
 
-   async function register(registration: Omit<InstallRegistration, 'targetId'>) {
-      const registered = await store.register({ ...registration, targetId: localTargetId });
-      if (Result.isError(registered)) return Result.err<InstallDetail, FilesystemProblem>(registered.error);
+      const scan = ++scans;
+      const lastInstallRoot = state.status === 'ready' ? state.snapshot.installRoot : state.status === 'scanning' ? state.lastInstallRoot : null;
+      const pending = runScan().then((scanned) => {
+         if (state.status === 'disposed') return scanned.snapshot;
+         if (scan !== scans) return list();
 
-      await rescan();
-      const detail = details.get(registered.value.id);
-
-      return detail
-         ? Result.ok<InstallDetail, FilesystemProblem>(detail)
-         : Result.err<InstallDetail, FilesystemProblem>({
-              code: 'filesystem.path.not-found',
-              message: 'the registered install could not be read back',
-              path: registered.value.path
-           });
-   }
-
-   async function update(installId: InstallId, patch: InstallRecordPatch) {
-      const current = await list();
-      const detail = details.get(installId);
-      if (!detail) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
-
-      const updated = await store.update(installId, patch);
-      if (Result.isError(updated)) return Result.err<InstallDetail | null, FilesystemProblem>(updated.error);
-      if (!updated.value) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
-
-      if (patch.path !== undefined) {
-         await rescan();
-         return Result.ok<InstallDetail | null, FilesystemProblem>(details.get(installId) ?? null);
-      }
-
-      const changed = {
-         name: updated.value.name ?? detail.name,
-         pinned: updated.value.pinned,
-         color: updated.value.color,
-         updatedAt: updated.value.updatedAt
-      };
-      const nextDetail = { ...detail, ...changed };
-      details.set(installId, nextDetail);
-      snapshot = {
-         ...current,
-         installs: current.installs.map((install) => (install.id === installId ? { ...install, ...changed } : install))
-      };
-      emit(snapshot);
-
-      return Result.ok<InstallDetail | null, FilesystemProblem>(nextDetail);
-   }
-
-   async function reorder(installIds: InstallId[]) {
-      const current = await list();
-      const reordered = await store.reorder(installIds);
-      if (Result.isError(reordered)) return Result.err<InstallRegistrySnapshot, FilesystemProblem>(reordered.error);
-
-      const installs = new Map(current.installs.map((install) => [install.id, install]));
-      const reorderedInstalls = reordered.value.flatMap((record) => {
-         const install = installs.get(record.id);
-         return install ? [install] : [];
+         state = { status: 'ready', scan, snapshot: scanned.snapshot, details: scanned.details };
+         emit(scanned.snapshot);
+         return scanned.snapshot;
       });
-      snapshot = { ...current, installs: reorderedInstalls };
-      emit(snapshot);
-
-      return Result.ok<InstallRegistrySnapshot, FilesystemProblem>(snapshot);
+      state = { status: 'scanning', scan, pending, lastInstallRoot };
+      return pending;
    }
 
-   async function associateStore(installId: InstallId, detectedStore: InstallDetail['store']) {
-      if (!detectedStore) return Result.ok<InstallDetail | null, FilesystemProblem>(await get(installId));
+   function register(registration: InstallRegistration) {
+      return mutations.run(async () => {
+         const registered = await store.register(registration);
+         if (Result.isError(registered)) return Result.err<InstallDetail, FilesystemProblem>(registered.error);
 
-      const updated = await store.update(installId, { store: detectedStore });
-      if (Result.isError(updated)) return Result.err<InstallDetail | null, FilesystemProblem>(updated.error);
-      if (!updated.value) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
+         await rescan();
+         const detail = state.status === 'ready' ? state.details.get(registered.value.id) : undefined;
 
-      await rescan();
-      return Result.ok<InstallDetail | null, FilesystemProblem>(details.get(installId) ?? null);
+         return detail
+            ? Result.ok<InstallDetail, FilesystemProblem>(detail)
+            : Result.err<InstallDetail, FilesystemProblem>(createProblem('filesystem.path.not-found', { path: registered.value.path }));
+      });
    }
 
-   async function forget(installId: InstallId) {
-      const removed = await store.remove(installId);
-      if (Result.isError(removed)) return removed;
+   function update(installId: InstallId, patch: InstallRecordPatch) {
+      return mutations.run(async () => {
+         await list();
+         if (state.status !== 'ready') return Result.ok<InstallDetail | null, FilesystemProblem>(null);
 
-      await rescan();
-      return removed;
+         const detail = state.details.get(installId);
+         if (!detail) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
+         const baseScan = state.scan;
+
+         const updated = await store.update(installId, patch);
+         if (Result.isError(updated)) return Result.err<InstallDetail | null, FilesystemProblem>(updated.error);
+         if (!updated.value) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
+
+         if (patch.path !== undefined || state.status !== 'ready' || state.scan !== baseScan) {
+            await rescan();
+            return Result.ok<InstallDetail | null, FilesystemProblem>(state.status === 'ready' ? (state.details.get(installId) ?? null) : null);
+         }
+
+         const changed = {
+            name: updated.value.name ?? detail.name,
+            pinned: updated.value.pinned,
+            color: updated.value.color,
+            updatedAt: updated.value.updatedAt
+         };
+         const nextDetail = { ...detail, ...changed };
+         const nextDetails = new Map(state.details);
+         nextDetails.set(installId, nextDetail);
+         const nextSnapshot: InstallRegistrySnapshot = {
+            ...state.snapshot,
+            installs: state.snapshot.installs.map((install) => (install.id === installId ? { ...install, ...changed } : install))
+         };
+         state = { status: 'ready', scan: baseScan, snapshot: nextSnapshot, details: nextDetails };
+         emit(nextSnapshot);
+
+         return Result.ok<InstallDetail | null, FilesystemProblem>(nextDetail);
+      });
+   }
+
+   function reorder(installIds: InstallId[]) {
+      return mutations.run(async () => {
+         await list();
+         if (state.status !== 'ready') {
+            return Result.err<InstallRegistrySnapshot, FilesystemProblem>(createProblem('filesystem.path.not-found', { path: store.filePath }));
+         }
+         const baseScan = state.scan;
+
+         const reordered = await store.reorder(installIds);
+         if (Result.isError(reordered)) return Result.err<InstallRegistrySnapshot, FilesystemProblem>(reordered.error);
+
+         if (state.status !== 'ready' || state.scan !== baseScan) {
+            const refreshed = await rescan();
+            return Result.ok<InstallRegistrySnapshot, FilesystemProblem>(refreshed);
+         }
+
+         const installs = new Map(state.snapshot.installs.map((install) => [install.id, install]));
+         const reorderedInstalls = reordered.value.flatMap((record) => {
+            const install = installs.get(record.id);
+            return install ? [install] : [];
+         });
+         const nextSnapshot = { ...state.snapshot, installs: reorderedInstalls };
+         state = { status: 'ready', scan: baseScan, snapshot: nextSnapshot, details: state.details };
+         emit(nextSnapshot);
+
+         return Result.ok<InstallRegistrySnapshot, FilesystemProblem>(nextSnapshot);
+      });
+   }
+
+   function associateStore(installId: InstallId, detectedStore: StoreKind) {
+      return mutations.run(async () => {
+         const updated = await store.update(installId, { store: detectedStore });
+         if (Result.isError(updated)) return Result.err<InstallDetail | null, FilesystemProblem>(updated.error);
+         if (!updated.value) return Result.ok<InstallDetail | null, FilesystemProblem>(null);
+
+         await rescan();
+         return Result.ok<InstallDetail | null, FilesystemProblem>(state.status === 'ready' ? (state.details.get(installId) ?? null) : null);
+      });
+   }
+
+   function forget(installId: InstallId) {
+      return mutations.run(async () => {
+         const removed = await store.remove(installId);
+         if (Result.isError(removed)) return removed;
+
+         await rescan();
+         return removed;
+      });
    }
 
    function subscribe(listener: (snapshot: InstallRegistrySnapshot) => void) {
@@ -144,69 +188,51 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
    }
 
    function dispose() {
+      state = { status: 'disposed' };
       unsubscribeSettings();
       listeners.clear();
    }
 
-   async function scan() {
-      pendingScan ??= runScan();
-
-      try {
-         return await pendingScan;
-      } finally {
-         pendingScan = null;
-      }
-   }
-
-   async function runScan(): Promise<InstallRegistrySnapshot> {
+   async function runScan() {
       const settings = await options.settingsStore.getSnapshot();
       const installRoot = resolveFilesystemPath(settings.library.installRoot);
       const problems: InstallProblem[] = [];
-
-      const detection = await options.detectStores();
-      const resolved = await store.resolveStoreCandidates(detection.candidates);
-      if (Result.isError(resolved)) {
-         const problem: InstallProblem = {
-            code: 'install.registry.write-failed',
-            message: 'the install registry could not be saved',
-            path: store.filePath
-         };
-         if (resolved.error.detail) problem.detail = resolved.error.detail;
-         problems.push(problem);
-      }
-
-      const records = Result.isOk(resolved) ? resolved.value : await store.load();
+      const records = await readRecords(problems);
       const scanned = await Promise.all(records.map((record) => describeInstall(record, problems)));
 
-      details = new Map(scanned.map((detail) => [detail.id, detail]));
-      snapshot = {
+      const scannedSnapshot: InstallRegistrySnapshot = {
          installRoot,
          scannedAt: new Date().toISOString(),
          installs: scanned.map((detail) => installSummarySchema.parse(detail)),
          problems
       };
+      return { snapshot: scannedSnapshot, details: new Map(scanned.map((detail) => [detail.id, detail])) };
+   }
 
-      emit(snapshot);
-      return snapshot;
+   async function readRecords(problems: InstallProblem[]) {
+      const resolved = await store.resolveStoreCandidates(await options.detectStores());
+      if (Result.isOk(resolved)) return resolved.value;
+
+      const loaded = await store.load();
+      if (Result.isOk(loaded)) {
+         problems.push(createProblem('installs.registry.write-failed', { path: store.filePath, detail: resolved.error.detail }));
+         return loaded.value;
+      }
+
+      problems.push(createProblem('installs.registry.read-failed', { path: store.filePath, detail: loaded.error.detail }));
+      return [];
    }
 
    async function describeInstall(record: InstallRecord, problems: InstallProblem[]): Promise<InstallDetail> {
       const info = await readPathInfo(record.path);
       const missing = Result.isError(info) || info.value.kind !== 'directory';
       const version = missing ? null : await readBeatSaberVersion(record.path);
-      let problem: InstallProblem | undefined;
-      if (missing) {
-         problem = { code: 'install.path.unreadable', message: 'the install folder could not be read', installId: record.id, path: record.path };
-         if (Result.isError(info) && info.error.detail) problem.detail = info.error.detail;
-      } else if (!version) {
-         problem = {
-            code: 'install.version.unknown',
-            message: 'Beat Saber version could not be detected',
-            installId: record.id,
-            path: record.path
-         };
-      }
-
+      const located = { installId: record.id, path: record.path };
+      const problem: InstallProblem | undefined = missing
+         ? createProblem('installs.path.unreadable', { ...located, detail: Result.isError(info) ? info.error.detail : undefined })
+         : version
+           ? undefined
+           : createProblem('installs.version.unknown', located);
       if (problem) problems.push(problem);
 
       const detail: InstallDetail = {
@@ -226,10 +252,6 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
          updatedAt: record.updatedAt,
          aliases: record.aliases
       };
-      if (record.libraryPath) detail.libraryPath = record.libraryPath;
-      if (record.appId) detail.appId = record.appId;
-      if (record.manifestPath) detail.manifestPath = record.manifestPath;
-      if (record.executablePath) detail.executablePath = record.executablePath;
       if (problem) detail.problem = problem;
       return detail;
    }

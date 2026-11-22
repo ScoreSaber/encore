@@ -1,26 +1,15 @@
-import { Download, ExternalLink, Search } from 'lucide-react';
+import { Download } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { CopyPathContextMenu } from '@/components/copy-path-context-menu';
-import { EmptyPanel, ErrorPanel, LoadingPanel } from '@/components/state/state-panel';
+import { CatalogSearchDialog, useCatalogSearch } from '@/components/collection/catalog-search';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { RemoteImage } from '@/components/ui/remote-image';
 
 import type { TargetModelCollectionRequest } from '@/modules/models/api';
-import { isCatalogModelType, type ModelSaberModelSummary, type ModelSearchIssue, type ModelType } from '@/modules/models/contract';
-import { useModelSearch } from '@/modules/models/renderer/use-model-search';
+import { isCatalogModelType, type CatalogModelSummary, type ModelType } from '@/modules/models/contract';
 import { supportLinkUrls } from '@/modules/support/contract';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<ModelSearchIssue, 'models.search.issues'> = {
-   'fetch-failed': 'fetchFailed',
-   'invalid-response': 'invalidResponse',
-   unsupported: 'unsupported',
-   'unsupported-type': 'unsupportedType'
-};
+import { unwrapTarget } from '@/renderer/ipc-result';
+import { installKey } from '@/renderer/query/api-query';
 
 export function ModelSearchDialog({
    request,
@@ -35,92 +24,44 @@ export function ModelSearchDialog({
 }) {
    const t = useTranslations('models.search');
    const tabs = useTranslations('models.tabs');
-   const common = useTranslations('common');
-   const search = useModelSearch(request, type);
-   const { state } = search;
    const searchable = isCatalogModelType(type);
+   const search = useCatalogSearch(
+      installKey('models', request, 'search', type),
+      async (query, page) => {
+         const result = unwrapTarget(await window.encore.models.search({ ...request, type, query, page }));
+         return result.status === 'ok'
+            ? { status: 'ok', query: result.query, page: result.page, items: result.models, hasMore: result.hasMore }
+            : result;
+      },
+      searchable ? null : { issue: 'unsupported-type', detail: type }
+   );
 
    return (
-      <Dialog open onOpenChange={onOpenChange}>
-         <DialogContent className="sm:max-w-2xl">
-            <DialogHeader>
-               <div className="flex items-baseline gap-3">
-                  <DialogTitle>{t('title', { type: tabs(type) })}</DialogTitle>
-                  <CopyPathContextMenu pathType="url" value={supportLinkUrls.modelsaber}>
-                     <Button
-                        type="button"
-                        variant="link"
-                        className="text-muted-foreground h-auto p-0 text-xs font-normal"
-                        onClick={() => void window.encore.support.openLink({ id: 'modelsaber' })}
-                     >
-                        {t('browse')}
-                        <ExternalLink className="size-3" />
-                     </Button>
-                  </CopyPathContextMenu>
-               </div>
-               <DialogDescription>{t('description')}</DialogDescription>
-            </DialogHeader>
-
-            <form
-               onSubmit={(event) => {
-                  event.preventDefault();
-                  search.submit();
-               }}
-            >
-               <div className="flex gap-2">
-                  <Input
-                     value={search.query}
-                     placeholder={t('placeholder')}
-                     aria-label={t('placeholder')}
-                     onChange={(event) => search.setQuery(event.target.value)}
-                  />
-                  <Button type="submit" disabled={state.status === 'searching' || !searchable}>
-                     <Search data-icon="inline-start" />
-                     {t('submit')}
-                  </Button>
-               </div>
-            </form>
-
-            <div className="flex max-h-96 flex-col gap-2 overflow-y-auto">
-               {state.status === 'searching' ? <LoadingPanel /> : null}
-
-               {state.status === 'failed' ? (
-                  <ErrorPanel
-                     message={t(`issues.${issueKeys[state.issue]}`)}
-                     detail={state.detail}
-                     onRetry={state.issue === 'unsupported-type' ? undefined : search.submit}
-                  />
-               ) : null}
-
-               {state.status === 'ready' && state.models.length === 0 ? <EmptyPanel description={t('empty')} /> : null}
-
-               {state.status === 'ready'
-                  ? state.models.map((model) => <SearchResultRow key={model.id} model={model} onDownload={() => onDownload(model.id)} />)
-                  : null}
-            </div>
-
-            <DialogFooter>
-               {state.status === 'ready' ? (
-                  <ButtonGroup className="mr-auto" aria-label={`${t('previous')} / ${t('next')}`}>
-                     <Button type="button" variant="outline" size="sm" disabled={state.page === 0} onClick={() => search.goToPage(state.page - 1)}>
-                        {t('previous')}
-                     </Button>
-                     <Button type="button" variant="outline" size="sm" disabled={!state.hasMore} onClick={() => search.goToPage(state.page + 1)}>
-                        {t('next')}
-                     </Button>
-                  </ButtonGroup>
-               ) : null}
-
-               <Button type="button" size="sm" onClick={() => onOpenChange(false)}>
-                  {common('close')}
-               </Button>
-            </DialogFooter>
-         </DialogContent>
-      </Dialog>
+      <CatalogSearchDialog
+         search={search}
+         labels={{
+            title: t('title', { type: tabs(type) }),
+            description: t('description'),
+            browse: t('browse'),
+            placeholder: t('placeholder'),
+            submit: t('submit'),
+            empty: t('empty'),
+            previous: t('previous'),
+            next: t('next')
+         }}
+         browse={{ url: supportLinkUrls.modelsaber, open: () => void window.encore.support.openLink({ id: 'modelsaber' }) }}
+         disabled={!searchable}
+         issue={(issue) => t(`issues.${issue}`)}
+         retryable={(issue) => issue !== 'unsupported-type'}
+         itemKey={(model) => model.id}
+         onOpenChange={onOpenChange}
+      >
+         {(model) => <SearchResultRow model={model} onDownload={() => onDownload(model.id)} />}
+      </CatalogSearchDialog>
    );
 }
 
-function SearchResultRow({ model, onDownload }: { model: ModelSaberModelSummary; onDownload: () => void }) {
+function SearchResultRow({ model, onDownload }: { model: CatalogModelSummary; onDownload: () => void }) {
    const t = useTranslations('models.search');
 
    return (

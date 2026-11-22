@@ -2,7 +2,7 @@ import type { SharedFolderDefinition } from '@/modules/shared-content/contract';
 
 import { join } from 'node:path';
 
-export const sharedContentDirectoryName = 'shared';
+const sharedContentDirectoryName = 'shared';
 
 export function defaultSharedContentRootPath(installRoot: string) {
    return join(installRoot, sharedContentDirectoryName);

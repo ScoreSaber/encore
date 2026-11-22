@@ -4,10 +4,10 @@ import type { IpcResult } from '@/ipc/core';
 import type { InstallId } from '@/modules/installs/contract';
 import type { OperationSnapshot } from '@/modules/operations/contract';
 
-export const builtInSharedFolderIdSchema = z.enum(['avatars', 'maps', 'notes', 'platforms', 'playlists', 'sabers', 'user-data', 'wip-maps']);
-export const customSharedFolderIdSchema = z.string().regex(/^custom-[0-9a-f]{24}$/);
+const builtInSharedFolderIdSchema = z.enum(['avatars', 'maps', 'notes', 'platforms', 'playlists', 'sabers', 'user-data', 'wip-maps']);
+const customSharedFolderIdSchema = z.string().regex(/^custom-[0-9a-f]{24}$/);
 export const sharedFolderIdSchema = z.union([builtInSharedFolderIdSchema, customSharedFolderIdSchema]);
-export const sharedFolderKindSchema = z.enum(['custom', 'maps', 'models', 'playlists']);
+const sharedFolderKindSchema = z.enum(['custom', 'maps', 'models', 'playlists']);
 
 export const relativeFolderPathSchema = z
    .string()
@@ -30,13 +30,13 @@ export const customSharedFolderSchema = z.object({
 });
 
 export const sharedFolderLinkStateSchema = z.enum(['absent', 'blocked', 'broken', 'foreign', 'linked', 'unlinked']);
-export const sharedLinkModeSchema = z.enum(['junction', 'symlink']);
-export const sharedContentStatusSchema = z.enum(['missing', 'ready', 'unsupported']);
+const sharedLinkModeSchema = z.enum(['junction', 'symlink']);
+const sharedContentStatusSchema = z.enum(['missing', 'ready', 'unsupported']);
 export const sharedContentActionSchema = z.enum(['link', 'repair', 'unlink']);
 
 export const sharedContentsModeSchema = z.enum(['copy', 'discard', 'keep', 'move']);
 
-export const sharedContentWarningSchema = z.enum([
+const sharedContentWarningSchema = z.enum([
    'creates-shared-folder',
    'discards-contents',
    'merges-into-shared',
@@ -47,7 +47,7 @@ export const sharedContentWarningSchema = z.enum([
    'still-linked'
 ]);
 
-export const sharedContentIssueSchema = z.enum([
+const sharedContentIssueSchema = z.enum([
    'already-linked',
    'inspect-failed',
    'install-not-found',
@@ -55,20 +55,16 @@ export const sharedContentIssueSchema = z.enum([
    'not-linked',
    'nothing-to-connect',
    'path-blocked',
+   'root-inside-install',
    'shared-root-unavailable',
    'unknown-folder',
    'unknown-root',
    'unsupported-target'
 ]);
 
-export const sharedContentProblemCodeSchema = z.enum([
-   'shared.folder.unreadable',
-   'shared.link.failed',
-   'shared.root.unreadable',
-   'shared.support.failed'
-]);
+const sharedContentProblemCodeSchema = z.enum(['shared.support.failed']);
 
-export const sharedContentProblemSchema = z.object({
+const sharedContentProblemSchema = z.object({
    code: sharedContentProblemCodeSchema,
    message: z.string(),
    folderId: sharedFolderIdSchema.optional(),
@@ -77,11 +73,11 @@ export const sharedContentProblemSchema = z.object({
 });
 
 export type SharedFolderId = z.infer<typeof sharedFolderIdSchema>;
-export type BuiltInSharedFolderId = z.infer<typeof builtInSharedFolderIdSchema>;
-export type SharedFolderKind = z.infer<typeof sharedFolderKindSchema>;
+type BuiltInSharedFolderId = z.infer<typeof builtInSharedFolderIdSchema>;
+type SharedFolderKind = z.infer<typeof sharedFolderKindSchema>;
 export type SharedFolderLinkState = z.infer<typeof sharedFolderLinkStateSchema>;
 export type SharedLinkMode = z.infer<typeof sharedLinkModeSchema>;
-export type SharedContentStatus = z.infer<typeof sharedContentStatusSchema>;
+type SharedContentStatus = z.infer<typeof sharedContentStatusSchema>;
 export type SharedContentAction = z.infer<typeof sharedContentActionSchema>;
 export type SharedContentsMode = z.infer<typeof sharedContentsModeSchema>;
 export type SharedContentWarning = z.infer<typeof sharedContentWarningSchema>;
@@ -109,14 +105,14 @@ export const sharedFolderDefinitions: SharedFolderDefinition[] = [
    { id: 'user-data', kind: 'custom', segments: ['UserData'], sharedSegments: ['UserData'], risky: true }
 ];
 
-export const sharedLinkSupportSchema = z.object({
+const sharedLinkSupportSchema = z.object({
    supported: z.boolean(),
    mode: sharedLinkModeSchema,
    requestedMode: sharedLinkModeSchema,
    detail: z.string().nullable()
 });
 
-export const sharedFolderStatusSchema = z.object({
+const sharedFolderStatusSchema = z.object({
    id: sharedFolderIdSchema,
    kind: sharedFolderKindSchema,
    relativePath: z.string(),
@@ -140,34 +136,34 @@ export const sharedContentSnapshotSchema = z.object({
    scannedAt: z.string().nullable()
 });
 
-export const sharedFolderInstallLinkSchema = z.object({
+const sharedFolderInstallLinkSchema = z.object({
    installId: z.string(),
    installName: z.string(),
    state: sharedFolderLinkStateSchema
 });
 
-export const sharedRootFolderSchema = z.object({
+const sharedRootFolderSchema = z.object({
    id: sharedFolderIdSchema,
    relativePath: z.string(),
    path: z.string(),
    exists: z.boolean()
 });
 
-export const sharedRootOverviewSchema = z.object({
+const sharedRootOverviewSchema = z.object({
    path: z.string(),
    active: z.boolean(),
    exists: z.boolean(),
    folders: z.array(sharedRootFolderSchema)
 });
 
-export const sharedInstallOverviewSchema = z.object({
+const sharedInstallOverviewSchema = z.object({
    installId: z.string(),
    installName: z.string(),
    installPath: z.string(),
    folders: z.array(sharedFolderStatusSchema)
 });
 
-export const sharedFolderOverviewSchema = z.object({
+const sharedFolderOverviewSchema = z.object({
    id: sharedFolderIdSchema,
    kind: sharedFolderKindSchema,
    relativePath: z.string(),
@@ -210,9 +206,7 @@ export type SharedContentActionRequest = SharedFolderRequest & {
    contents?: SharedContentsMode;
 };
 
-export type SharedContentOpenFolderResult = { status: 'opened' } | { status: 'unsupported' } | { status: 'failed'; message: string };
-
-export const sharedContentActionProblemSchema = z.object({
+const sharedContentActionProblemSchema = z.object({
    status: z.literal('invalid'),
    installId: z.string(),
    folderId: sharedFolderIdSchema,
@@ -221,7 +215,7 @@ export const sharedContentActionProblemSchema = z.object({
    detail: z.string().optional()
 });
 
-export const readySharedContentPreviewSchema = z.object({
+const readySharedContentPreviewSchema = z.object({
    status: z.literal('ok'),
    action: sharedContentActionSchema,
    installId: z.string(),
@@ -264,7 +258,7 @@ export type SharedContentOutcome = {
 // bulk connect/disconnect: point every applicable folder of an install at one root
 
 export const sharedConnectActionSchema = z.enum(['connect', 'disconnect']);
-export const sharedConnectStepSchema = z.enum(['link', 'repair', 'skip', 'unlink']);
+const sharedConnectStepSchema = z.enum(['link', 'repair', 'skip', 'unlink']);
 
 export type SharedConnectAction = z.infer<typeof sharedConnectActionSchema>;
 export type SharedConnectStep = z.infer<typeof sharedConnectStepSchema>;
@@ -277,7 +271,7 @@ export type SharedConnectRequest = {
    includeRisky?: boolean;
 };
 
-export const sharedConnectFolderPlanSchema = z.object({
+const sharedConnectFolderPlanSchema = z.object({
    id: sharedFolderIdSchema,
    relativePath: z.string(),
    state: sharedFolderLinkStateSchema,
@@ -289,7 +283,7 @@ export const sharedConnectFolderPlanSchema = z.object({
    risky: z.boolean()
 });
 
-export const readySharedConnectPreviewSchema = z.object({
+const readySharedConnectPreviewSchema = z.object({
    status: z.literal('ok'),
    installId: z.string(),
    action: sharedConnectActionSchema,
@@ -301,7 +295,7 @@ export const readySharedConnectPreviewSchema = z.object({
    warnings: z.array(sharedContentWarningSchema)
 });
 
-export const sharedConnectProblemSchema = z.object({
+const sharedConnectProblemSchema = z.object({
    status: z.literal('invalid'),
    installId: z.string(),
    action: sharedConnectActionSchema,
@@ -326,16 +320,7 @@ export type SharedConnectOutcome = {
    conflicts: number;
 };
 
-// shared root management
-
-export const sharedRootIssueSchema = z.enum([
-   'create-failed',
-   'remote-failed',
-   'root-active',
-   'root-inside-install',
-   'root-unknown',
-   'unsupported-target'
-]);
+const sharedRootIssueSchema = z.enum(['create-failed', 'remote-failed', 'root-active', 'root-inside-install', 'root-unknown', 'unsupported-target']);
 
 export type SharedRootIssue = z.infer<typeof sharedRootIssueSchema>;
 
@@ -363,9 +348,7 @@ export const sharedRootCandidateSchema = z.object({
 export type SharedRootActionResult = z.infer<typeof sharedRootActionResultSchema>;
 export type SharedRootCandidate = z.infer<typeof sharedRootCandidateSchema>;
 
-export type SharedRootChoice = { status: 'cancelled' } | ({ status: 'selected' } & SharedRootCandidate);
-
-export const customSharedFolderIssueSchema = z.enum([
+const customSharedFolderIssueSchema = z.enum([
    'already-added',
    'choose-failed',
    'destination-conflict',
@@ -393,11 +376,12 @@ export type AddCustomSharedFolderRequest = {
 export type ForgetCustomSharedFolderRequest = {
    folderId: SharedFolderId;
 };
-export type CustomSharedFolderChoice =
-   | { status: 'cancelled' }
-   | { status: 'unsupported' }
-   | { status: 'selected'; relativePath: string }
-   | { status: 'invalid'; issue: CustomSharedFolderIssue; detail?: string };
+export const customSharedFolderChoiceSchema = z.discriminatedUnion('status', [
+   z.object({ status: z.literal('selected'), relativePath: z.string() }),
+   z.object({ status: z.literal('invalid'), issue: customSharedFolderIssueSchema, detail: z.string().optional() })
+]);
+
+export type CustomSharedFolderChoice = z.infer<typeof customSharedFolderChoiceSchema>;
 
 export function isBuiltInSharedFolderId(folderId: SharedFolderId): folderId is BuiltInSharedFolderId {
    return !folderId.startsWith('custom-');
@@ -449,7 +433,7 @@ function isStrictRelativePathInside(parent: string, child: string) {
    return childKey.startsWith(`${parentKey}/`);
 }
 
-function relativeFolderPathKey(path: string) {
+export function relativeFolderPathKey(path: string) {
    return path.replaceAll('\\', '/').toLowerCase();
 }
 

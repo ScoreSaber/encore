@@ -5,6 +5,7 @@ import { isPathInside, resolveFilesystemPath } from '@/lib/filesystem/path';
 import type { ExternalMod } from '@/modules/mods/contract';
 import type { ModCatalogService } from '@/modules/mods/main/mod-catalog';
 import { fileHashKey, type ModIndex } from '@/modules/mods/main/mod-index';
+import { readEmbeddedManifest } from '@/modules/mods/main/mod-manifest';
 import { bsipaInjectorPath, modFileExtensions, modScanFolders } from '@/modules/mods/main/mod-paths';
 
 import { lstat, readdir, realpath, stat } from 'node:fs/promises';
@@ -24,6 +25,13 @@ export type ModScan = {
    external: ExternalMod[];
    bsipaInstalled: boolean;
 };
+
+export type LocalModScan = ModScan & { installedFiles: Map<string, string[]> };
+
+export function withoutInstalledMods(scan: ModScan, modIds: string[]): ModScan {
+   const removed = new Set(modIds);
+   return { ...scan, installed: new Map([...scan.installed].filter(([modId]) => !removed.has(modId))) };
+}
 
 type ScannedFile = {
    absolutePath: string;
@@ -45,7 +53,7 @@ export async function scanInstalledMods(input: {
    installPath: string;
    index: ModIndex;
    lookupHash: ModCatalogService['lookupHash'];
-}): Promise<ModScan> {
+}): Promise<LocalModScan> {
    const files: ScannedFile[] = [];
    const visitedDirectories = new Set<string>();
    const seenFiles = new Set<string>();
@@ -63,25 +71,37 @@ export async function scanInstalledMods(input: {
    }
 
    const installed = new Map<string, InstalledMod>();
-   const external: ExternalMod[] = [];
+   const installedFiles = new Map<string, string[]>();
+   const unmatched: ScannedFile[] = [];
+   const unknown: { file: ScannedFile; md5: string }[] = [];
+   const record = (file: ScannedFile, match: InstalledMod | null) => {
+      if (!match) {
+         if (file.holdsUserMods && extname(file.relativePath).toLowerCase() !== '.manifest') unmatched.push(file);
+         return;
+      }
+
+      if (!installed.has(match.modId)) installed.set(match.modId, match);
+      installedFiles.set(match.modId, [...(installedFiles.get(match.modId) ?? []), file.absolutePath]);
+   };
 
    for (let index = 0; index < files.length; index += hashConcurrency) {
       const chunk = files.slice(index, index + hashConcurrency);
-      const matches = await Promise.all(chunk.map((file) => matchModFile(file, input.index, input.lookupHash)));
-
-      for (const [offset, match] of matches.entries()) {
-         const file = chunk[offset];
-         if (!file) continue;
-
-         if (!match) {
-            if (file.holdsUserMods && extname(file.relativePath).toLowerCase() !== '.manifest') {
-               external.push({ id: file.relativePath, name: modNameFromPath(file.relativePath), path: file.relativePath, sizeBytes: file.sizeBytes });
-            }
-            continue;
-         }
-
-         if (!installed.has(match.modId)) installed.set(match.modId, match);
+      const hashed = await Promise.all(chunk.map(async (file) => ({ file, local: await matchLocally(file, input.index) })));
+      for (const { file, local } of hashed) {
+         if ('lookup' in local) unknown.push({ file, md5: local.lookup });
+         else record(file, local.match);
       }
+   }
+
+   for (let index = 0; index < unknown.length; index += hashConcurrency) {
+      const chunk = unknown.slice(index, index + hashConcurrency);
+      const looked = await Promise.all(chunk.map(async ({ file, md5 }) => ({ file, match: await lookupMatch(md5, input.index, input.lookupHash) })));
+      for (const { file, match } of looked) record(file, match);
+   }
+
+   const external: ExternalMod[] = [];
+   for (let index = 0; index < unmatched.length; index += hashConcurrency) {
+      external.push(...(await Promise.all(unmatched.slice(index, index + hashConcurrency).map(describeExternal))));
    }
 
    const bsipa = await scanBsipa(input.installPath, input.index, input.lookupHash);
@@ -89,8 +109,20 @@ export async function scanInstalledMods(input: {
 
    return {
       installed,
+      installedFiles,
       external: external.sort((first, second) => first.path.localeCompare(second.path)),
       bsipaInstalled: bsipa.present
+   };
+}
+
+async function describeExternal(file: ScannedFile): Promise<ExternalMod> {
+   const details = extname(file.relativePath).toLowerCase() === '.dll' ? await readEmbeddedManifest(file.absolutePath) : null;
+   return {
+      id: file.relativePath,
+      name: details?.name ?? modNameFromPath(file.relativePath),
+      path: file.relativePath,
+      sizeBytes: file.sizeBytes,
+      details
    };
 }
 
@@ -105,12 +137,18 @@ async function scanBsipa(installPath: string, index: ModIndex, lookupHash: ModCa
 }
 
 async function matchModFile(file: ScannedFile, index: ModIndex, lookupHash: ModCatalogService['lookupHash']): Promise<InstalledMod | null> {
+   const local = await matchLocally(file, index);
+
+   return 'lookup' in local ? lookupMatch(local.lookup, index, lookupHash) : local.match;
+}
+
+async function matchLocally(file: ScannedFile, index: ModIndex): Promise<{ match: InstalledMod | null } | { lookup: string }> {
    const md5 = await hashFile(file.absolutePath, 'md5');
-   if (Result.isError(md5)) return null;
+   if (Result.isError(md5)) return { match: null };
 
    const md5Value = md5.value.toLowerCase();
    const byMd5 = index.byFileHash.get(fileHashKey({ algorithm: 'md5', value: md5Value }));
-   if (byMd5) return { modId: byMd5.modId, version: byMd5.version };
+   if (byMd5) return { match: { modId: byMd5.modId, version: byMd5.version } };
 
    for (const algorithm of index.hashAlgorithms) {
       if (algorithm === 'md5') continue;
@@ -119,12 +157,14 @@ async function matchModFile(file: ScannedFile, index: ModIndex, lookupHash: ModC
       if (Result.isError(digest)) continue;
 
       const entry = index.byFileHash.get(fileHashKey({ algorithm, value: digest.value.toLowerCase() }));
-      if (entry) return { modId: entry.modId, version: entry.version };
+      if (entry) return { match: { modId: entry.modId, version: entry.version } };
    }
 
-   if (!file.holdsUserMods) return null;
+   return file.holdsUserMods ? { lookup: md5Value } : { match: null };
+}
 
-   const looked = await lookupHash(md5Value);
+async function lookupMatch(md5: string, index: ModIndex, lookupHash: ModCatalogService['lookupHash']) {
+   const looked = await lookupHash(md5);
 
    return looked && index.byModId.has(looked.modId) ? looked : null;
 }

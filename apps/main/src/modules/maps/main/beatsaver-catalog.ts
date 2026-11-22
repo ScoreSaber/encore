@@ -1,8 +1,16 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { fetchJsonResource, type JsonDocumentFetch, type JsonDocumentProblem } from '@/lib/http/json';
-import { mapHashSchema, type BeatSaverListing, type BeatSaverMapSummary, type MapHash, type MapSearchIssue } from '@/modules/maps/contract';
+import { fetchJsonResource, toCatalogProblem } from '@/lib/http/json';
+import {
+   mapHashSchema,
+   type BeatSaverListing,
+   type BeatSaverMapSummary,
+   type MapHash,
+   type MapSearchIssue,
+   type MapSearchRequest,
+   type MapSearchResult
+} from '@/modules/maps/contract';
 
 const beatSaverApiOrigin = 'https://api.beatsaver.com';
 const fetchTimeoutMs = 15_000;
@@ -68,19 +76,43 @@ const hashResponseSchema = z
 
 type BeatSaverDocument = z.infer<typeof documentSchema>;
 
-export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch } = {}) {
-   async function readJson<Output>(url: string, schema: z.ZodType<Output>, signal?: AbortSignal) {
-      const read = await fetchJsonResource({ url, schema, timeoutMs: fetchTimeoutMs, signal, fetchJson: options.fetchJson });
-
-      return Result.mapError(read, toBeatSaverProblem);
+export async function searchBeatSaver(
+   catalog: BeatSaverCatalog,
+   request: MapSearchRequest,
+   installedHashes: () => Promise<Set<MapHash>>
+): Promise<MapSearchResult> {
+   const page = request.page ?? 0;
+   const found = await catalog.search({ query: request.query, page });
+   if (Result.isError(found)) {
+      const result: MapSearchResult = { status: 'failed', issue: found.error.issue };
+      if (found.error.detail) result.detail = found.error.detail;
+      return result;
    }
 
-   async function search(input: { query: string; page: number; signal?: AbortSignal }) {
+   const installed = await installedHashes();
+
+   return {
+      status: 'ok',
+      query: request.query,
+      page,
+      hasMore: found.value.length >= catalog.pageSize,
+      maps: found.value.map((record) => ({ ...record.summary, installed: installed.has(record.summary.hash) }))
+   };
+}
+
+export function createBeatSaverCatalog() {
+   async function readJson<Output>(url: string, schema: z.ZodType<Output>) {
+      const read = await fetchJsonResource({ url, schema, timeoutMs: fetchTimeoutMs });
+
+      return Result.mapError(read, toCatalogProblem);
+   }
+
+   async function search(input: { query: string; page: number }) {
       const url = new URL(`${beatSaverApiOrigin}/search/text/${input.page}`);
       url.searchParams.set('q', input.query);
       url.searchParams.set('sortOrder', input.query.trim() ? 'Relevance' : 'Latest');
 
-      const fetched = await readJson(url.toString(), searchResponseSchema, input.signal);
+      const fetched = await readJson(url.toString(), searchResponseSchema);
       if (Result.isError(fetched)) return Result.err<BeatSaverMapRecord[], BeatSaverProblem>(fetched.error);
 
       const maps = fetched.value.docs.flatMap((document) => {
@@ -91,19 +123,19 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
       return Result.ok<BeatSaverMapRecord[], BeatSaverProblem>(maps);
    }
 
-   async function getByKey(key: string, signal?: AbortSignal) {
-      const fetched = await readJson(`${beatSaverApiOrigin}/maps/id/${encodeURIComponent(key)}`, documentSchema, signal);
+   async function getByKey(key: string) {
+      const fetched = await readJson(`${beatSaverApiOrigin}/maps/id/${encodeURIComponent(key)}`, documentSchema);
       if (Result.isError(fetched)) return Result.err<BeatSaverMapRecord, BeatSaverProblem>(fetched.error);
 
       const record = toRecord(fetched.value);
       if (!record) {
-         return Result.err<BeatSaverMapRecord, BeatSaverProblem>({ issue: 'invalid-response', detail: 'the map has no downloadable version' });
+         return Result.err<BeatSaverMapRecord, BeatSaverProblem>({ issue: 'invalid-response' });
       }
 
       return Result.ok<BeatSaverMapRecord, BeatSaverProblem>(record);
    }
 
-   async function getByHashes(hashes: readonly string[], signal?: AbortSignal) {
+   async function getByHashes(hashes: readonly string[]) {
       const wanted = [
          ...new Set(
             hashes.flatMap((hash) => {
@@ -116,7 +148,7 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
 
       for (let index = 0; index < wanted.length; index += hashLookupChunkSize) {
          const chunk = wanted.slice(index, index + hashLookupChunkSize);
-         const fetched = await readJson(`${beatSaverApiOrigin}/maps/hash/${chunk.join(',')}`, hashResponseSchema, signal);
+         const fetched = await readJson(`${beatSaverApiOrigin}/maps/hash/${chunk.join(',')}`, hashResponseSchema);
          if (Result.isError(fetched)) return Result.err<Map<MapHash, BeatSaverMapRecord>, BeatSaverProblem>(fetched.error);
 
          for (const document of fetched.value) {
@@ -131,14 +163,6 @@ export function createBeatSaverCatalog(options: { fetchJson?: JsonDocumentFetch 
    }
 
    return { search, getByKey, getByHashes, pageSize: searchPageSize };
-}
-
-function toBeatSaverProblem(problem: JsonDocumentProblem): BeatSaverProblem {
-   const failed = problem.code === 'json.unreachable' || problem.code === 'json.fetch-failed' || problem.code === 'json.not-found';
-
-   const catalogProblem: BeatSaverProblem = { issue: failed ? 'fetch-failed' : 'invalid-response' };
-   if (problem.detail) catalogProblem.detail = problem.detail;
-   return catalogProblem;
 }
 
 function toRecord(document: BeatSaverDocument, hash?: string): BeatSaverMapRecord | null {

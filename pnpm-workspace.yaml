@@ -4,6 +4,7 @@ packages:
 autoInstallPeers: false
 
 allowBuilds:
+   '@capawesome/capacitor-nodejs': true
    electron: true
    esbuild: true
    sharp: true

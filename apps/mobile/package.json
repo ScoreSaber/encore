@@ -1,0 +1,37 @@
+{
+   "name": "@encore/mobile",
+   "version": "0.1.15",
+   "private": true,
+   "type": "module",
+   "scripts": {
+      "build": "vp build && node scripts/copy-daemon.ts && tsc --noEmit",
+      "sync": "cap sync",
+      "capacitor:copy:after": "node scripts/native-projects.ts",
+      "capacitor:update:after": "node scripts/native-projects.ts",
+      "android": "cap open android",
+      "ios": "cap open ios"
+   },
+   "dependencies": {
+      "@capacitor/android": "8.5.2",
+      "@capacitor/core": "8.5.2",
+      "@capacitor/ios": "8.5.2",
+      "@capawesome/capacitor-nodejs": "0.2.0",
+      "better-result": "2.8.2",
+      "encore": "workspace:*",
+      "react": "19.2.5",
+      "react-dom": "19.2.5",
+      "zod": "4.4.3"
+   },
+   "devDependencies": {
+      "@capacitor/cli": "8.5.2",
+      "@tailwindcss/vite": "4.3.2",
+      "@tanstack/router-plugin": "1.168.18",
+      "@types/node": "24.12.2",
+      "@types/react": "19.2.14",
+      "@types/react-dom": "19.2.3",
+      "@vitejs/plugin-react": "6.0.3",
+      "typescript": "5.9.3",
+      "vite": "catalog:",
+      "vite-plus": "catalog:"
+   }
+}

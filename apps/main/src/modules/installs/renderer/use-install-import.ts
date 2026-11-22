@@ -1,64 +1,90 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
-import type { IpcError } from '@/ipc/core';
+import { Result } from 'better-result';
+
+import { createProblem, type Problem } from '@/lib/errors';
+import { createLatestGuard } from '@/lib/state/machine';
+import { usePathChooser } from '@/modules/files/renderer/path-chooser';
 import type { InstallDetail, InstallImportPreview } from '@/modules/installs/contract';
-import type { TargetId } from '@/modules/targets/contract';
-import { inlineIpcResult } from '@/renderer/ipc-result';
+import { localTargetId, type TargetId } from '@/modules/targets/contract';
+import { inlineIpcResult, unwrapTarget } from '@/renderer/ipc-result';
 
 type InvalidPreview = Extract<InstallImportPreview, { status: 'invalid' }>;
 type ReadyPreview = Extract<InstallImportPreview, { status: 'ok' }>;
 
 type InstallImportState =
    | { status: 'idle' }
-   | { status: 'choosing' }
-   | { status: 'unsupported' }
-   | { status: 'invalid'; preview: InvalidPreview }
-   | { status: 'ready'; preview: ReadyPreview }
-   | { status: 'registering'; preview: ReadyPreview }
-   | { status: 'registered'; preview: ReadyPreview; install: InstallDetail }
-   | { status: 'failed'; error: IpcError };
+   | { status: 'choosing'; targetId: TargetId }
+   | { status: 'previewing'; targetId: TargetId }
+   | { status: 'invalid'; targetId: TargetId; preview: InvalidPreview }
+   | { status: 'ready'; targetId: TargetId; preview: ReadyPreview }
+   | { status: 'registering'; targetId: TargetId; preview: ReadyPreview }
+   | { status: 'registered'; targetId: TargetId; preview: ReadyPreview; install: InstallDetail }
+   | { status: 'failed'; targetId: TargetId; error: Problem };
 
 export type InstallImporter = ReturnType<typeof useInstallImport>;
 
-export function useInstallImport(targetId: TargetId) {
+export function useInstallImport() {
    const installs = window.encore.installs;
+   const chooser = usePathChooser();
    const [state, setState] = useState<InstallImportState>({ status: 'idle' });
+   const guard = useRef(createLatestGuard());
+   const targetId = state.status === 'idle' ? localTargetId : state.targetId;
 
-   const choose = useCallback(async () => {
-      setState({ status: 'choosing' });
-      const choice = await installs.chooseImportSource({ targetId }).catch(() => null);
+   const choose = useCallback(
+      async (destination: TargetId) => {
+         const token = guard.current.next();
+         setState({ status: 'choosing', targetId: destination });
+         const sourcePath = await chooser.choose({ targetId: destination, kind: 'folder' });
+         if (!guard.current.isCurrent(token)) return;
+         if (!sourcePath) {
+            setState({ status: 'idle' });
+            return;
+         }
 
-      if (!choice) {
-         setState({ status: 'failed', error: { code: 'installs.import.choose-failed', message: 'the folder picker could not be opened' } });
-         return;
-      }
-      if (choice.status === 'cancelled') {
-         setState({ status: 'idle' });
-         return;
-      }
-      if (choice.status === 'unsupported') {
-         setState({ status: 'unsupported' });
-         return;
-      }
+         setState({ status: 'previewing', targetId: destination });
+         const previewed = await Result.tryPromise({
+            try: async () => unwrapTarget(await installs.previewImport({ targetId: destination, sourcePath })),
+            catch: (cause) => createProblem('installs.import.choose-failed', { cause })
+         });
+         if (!guard.current.isCurrent(token)) return;
+         if (Result.isError(previewed)) {
+            setState({ status: 'failed', targetId: destination, error: previewed.error });
+            return;
+         }
 
-      setState(choice.preview.status === 'ok' ? { status: 'ready', preview: choice.preview } : { status: 'invalid', preview: choice.preview });
-   }, [installs, targetId]);
+         const preview = previewed.value;
+         setState(
+            preview.status === 'ok' ? { status: 'ready', targetId: destination, preview } : { status: 'invalid', targetId: destination, preview }
+         );
+      },
+      [chooser, installs]
+   );
 
    const confirm = useCallback(async () => {
       if (state.status !== 'ready') return;
 
-      const preview = state.preview;
-      setState({ status: 'registering', preview });
+      const token = guard.current.next();
+      const { targetId: destination, preview } = state;
+      setState({ status: 'registering', targetId: destination, preview });
 
-      const registered = await inlineIpcResult(() => installs.import({ targetId, sourcePath: preview.sourcePath }), {
-         code: 'installs.import.register-failed',
-         message: 'the install could not be registered'
-      });
+      const registered = await inlineIpcResult(
+         () => installs.importFolder({ targetId: destination, sourcePath: preview.sourcePath }),
+         createProblem('installs.import.register-failed')
+      );
+      if (!guard.current.isCurrent(token)) return;
 
-      setState(registered.ok ? { status: 'registered', preview, install: registered.value } : { status: 'failed', error: registered.error });
-   }, [installs, state, targetId]);
+      setState(
+         registered.ok
+            ? { status: 'registered', targetId: destination, preview, install: registered.value }
+            : { status: 'failed', targetId: destination, error: registered.error }
+      );
+   }, [installs, state]);
 
-   const dismiss = useCallback(() => setState({ status: 'idle' }), []);
+   const dismiss = useCallback(() => {
+      guard.current.invalidate();
+      setState({ status: 'idle' });
+   }, []);
 
-   return { state, choose, confirm, dismiss };
+   return { state, targetId, choose, confirm, dismiss, dialog: chooser.dialog };
 }

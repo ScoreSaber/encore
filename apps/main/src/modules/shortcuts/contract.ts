@@ -6,7 +6,7 @@ import { launchArgsSchema, launchFlagSchema, launchFlags, launchPlatformSchema, 
 import { localTargetId, type TargetId } from '@/modules/targets/contract';
 
 export const encoreProtocol = 'encore';
-export const launchLinkAction = 'launch';
+const launchLinkAction = 'launch';
 const launchLinkPrefix = `${encoreProtocol}://`;
 
 // links may name IDs, never paths or commands
@@ -39,7 +39,7 @@ const shortcutIssueSchema = z.enum([
 
 const shortcutWarningSchema = z.enum(['replaces-existing', 'steam-must-be-closed']);
 
-export const shortcutProtocolStateSchema = z.object({
+const shortcutProtocolStateSchema = z.object({
    scheme: z.literal(encoreProtocol),
    registered: z.boolean(),
    canUnregister: z.boolean()
@@ -64,7 +64,7 @@ export type LaunchLinkRequest = {
    options: LaunchOptions;
 };
 
-export type LaunchLinkParse = { status: 'ok'; request: LaunchLinkRequest } | { status: 'invalid'; issue: LaunchLinkIssue };
+type LaunchLinkParse = { status: 'ok'; request: LaunchLinkRequest } | { status: 'invalid'; issue: LaunchLinkIssue };
 
 export type LaunchLinkEvent =
    | { status: 'ready'; request: LaunchLinkRequest; installName: string }
@@ -153,20 +153,4 @@ export function parseLaunchLink(value: string): LaunchLinkParse {
          options: { flags: parsed.data.flags, args: parsed.data.args, environment: {}, runAsAdmin: parsed.data.admin, closeEncore: parsed.data.close }
       }
    };
-}
-
-export function unavailableShortcutPreview(
-   request: { kind: ShortcutKind; targetId: TargetId; installId: InstallId },
-   issue: ShortcutIssue,
-   detail?: string
-): UnavailableShortcutPreview {
-   const preview: UnavailableShortcutPreview = {
-      status: 'unavailable',
-      kind: request.kind,
-      targetId: request.targetId,
-      installId: request.installId,
-      issue
-   };
-   if (detail) preview.detail = detail;
-   return preview;
 }

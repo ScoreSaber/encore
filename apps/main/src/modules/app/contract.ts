@@ -33,5 +33,14 @@ export type AppInfo = {
 
 export const externalLinkRequestSchema = z.object({ url: z.string().min(1) });
 
-export type ExternalLinkRequest = z.infer<typeof externalLinkRequestSchema>;
 export type ExternalLinkResult = { status: 'opened' | 'blocked' };
+
+export const pathChoiceRequestSchema = z.object({
+   kind: z.enum(['folder', 'file']),
+   title: z.string().optional(),
+   defaultPath: z.string().optional(),
+   extensions: z.array(z.string().min(1)).optional()
+});
+
+export type PathChoiceRequest = z.infer<typeof pathChoiceRequestSchema>;
+export type PathChoice = { status: 'cancelled' } | { status: 'selected'; path: string };

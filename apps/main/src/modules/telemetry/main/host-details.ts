@@ -26,7 +26,7 @@ export async function readTelemetryHostDetails(platform: NodeJS.Platform, proton
    return { linuxDistribution, protonVersion };
 }
 
-export function describeLinuxDistribution(osRelease: string) {
+function describeLinuxDistribution(osRelease: string) {
    const fields = new Map<string, string>();
    for (const line of osRelease.split('\n')) {
       const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
@@ -44,7 +44,7 @@ export function describeLinuxDistribution(osRelease: string) {
    return version ? `${name} ${version}` : name;
 }
 
-export function describeProtonVersion(versionFile: string) {
+function describeProtonVersion(versionFile: string) {
    const version = cleanMetadataValue(versionFile.split(/\r?\n/, 1)[0]);
    return version?.replace(/^\d{9,}\s+/, '') || null;
 }

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.scoresaber.encore.Installer</id>
+  <name>Encore</name>
+  <summary>Beat Saber companion for the Steam Frame</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="com.scoresaber">
+    <name>ScoreSaber</name>
+  </developer>
+  <description>
+    <p>Installs Encore on this headset and opens it. Encore manages Beat Saber versions, mods, maps and playlists, and copies a PC's setup to play standalone.</p>
+  </description>
+  <launchable type="desktop-id">com.scoresaber.encore.Installer.desktop</launchable>
+  <url type="homepage">https://encore.scoresaber.com</url>
+  <content_rating type="oars-1.1" />
+</component>

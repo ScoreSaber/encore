@@ -1,12 +1,11 @@
 import { z } from 'zod';
 
-import type { IpcResult } from '@/ipc/core';
 import { installIdSchema, type InstallId } from '@/modules/installs/contract';
-import { operationSnapshotSchema, type OperationSnapshot } from '@/modules/operations/contract';
+import { operationSnapshotSchema } from '@/modules/operations/contract';
 import { storeKindSchema } from '@/modules/stores/contract';
 import type { TargetId } from '@/modules/targets/contract';
 
-export const protonIssueSchema = z.enum([
+const protonIssueSchema = z.enum([
    'empty',
    'inspect-failed',
    'not-a-directory',
@@ -16,7 +15,7 @@ export const protonIssueSchema = z.enum([
    'proton-binary-missing'
 ]);
 
-export const protonValidationSchema = z.discriminatedUnion('status', [
+const protonValidationSchema = z.discriminatedUnion('status', [
    z.object({
       status: z.literal('ok'),
       path: z.string(),
@@ -29,12 +28,13 @@ export const protonValidationSchema = z.discriminatedUnion('status', [
    })
 ]);
 
-export const protonLaunchPlanSchema = z.object({
+const protonLaunchPlanSchema = z.object({
    protonBinaryPath: z.string(),
    compatDataPath: z.string(),
    steamClientPath: z.string(),
    steamRunWrapper: z.boolean(),
    flatpakHost: z.boolean(),
+   steamFrame: z.boolean(),
    logPath: z.string().nullable()
 });
 
@@ -42,6 +42,7 @@ const protonStateSchema = z.object({
    supported: z.boolean(),
    path: z.string().nullable(),
    validation: protonValidationSchema.nullable(),
+   detectedPath: z.string().nullable(),
    nixOs: z.boolean(),
    flatpak: z.boolean()
 });
@@ -53,12 +54,7 @@ export type ProtonState = z.infer<typeof protonStateSchema>;
 
 export type ProtonFolderChoice = { status: 'cancelled' } | { status: 'selected'; selected: ProtonValidation };
 
-export function invalidProtonFolder(path: string, issue: ProtonIssue): ProtonValidation {
-   return { status: 'invalid', path, issue };
-}
-
-export const launchPlatformSchema = z.enum(['windows', 'linux', 'other']);
-export const beatSaberExecutableName = 'Beat Saber.exe';
+export const launchPlatformSchema = z.enum(['windows', 'linux', 'quest', 'other']);
 
 export const launchFlagSchema = z.enum(['oculus-mode', 'fpfc', 'debug', 'skip-steam', 'editor', 'proton-logs']);
 export const launchFlags = launchFlagSchema.options;
@@ -66,10 +62,12 @@ export const launchFlags = launchFlagSchema.options;
 const platformLaunchFlags = {
    windows: launchFlags.filter((flag) => flag !== 'proton-logs'),
    linux: launchFlags.filter((flag) => flag !== 'skip-steam'),
+   quest: [],
    other: launchFlags
 };
+const steamFrameLaunchFlags: LaunchFlag[] = ['debug', 'proton-logs'];
 
-export const launchArgSchema = z
+const launchArgSchema = z
    // arguments cross process boundaries; do not hand control characters to a launcher
    .string()
    .trim()
@@ -106,7 +104,7 @@ export const launchRequestBodySchema = launchOptionsRequestSchema.extend({
    options: launchOptionsSchema
 });
 
-export const launchIssueSchema = z.enum([
+const launchIssueSchema = z.enum([
    'executable-missing',
    'inspect-failed',
    'invalid-options',
@@ -118,14 +116,7 @@ export const launchIssueSchema = z.enum([
    'unsupported-target'
 ]);
 
-export const launchWarningSchema = z.enum([
-   'admin-prompt',
-   'admin-unsupported',
-   'oculus-client-starts',
-   'proton-logs',
-   'steam-client-starts',
-   'steam-skipped'
-]);
+const launchWarningSchema = z.enum(['admin-prompt', 'admin-unsupported', 'proton-logs', 'steam-skipped']);
 
 export const unavailableLaunchPreviewSchema = z.object({
    status: z.literal('unavailable'),
@@ -145,6 +136,7 @@ export const readyLaunchPreviewSchema = z.object({
    args: z.array(z.string()),
    options: launchOptionsSchema,
    proton: protonLaunchPlanSchema.nullable(),
+   startClient: z.enum(['steam', 'oculus']).nullable(),
    warnings: z.array(launchWarningSchema)
 });
 
@@ -160,6 +152,7 @@ export const launchStateSchema = z.object({
    platform: launchPlatformSchema,
    supported: z.boolean(),
    gameRunning: z.boolean().default(false),
+   steamFrame: z.boolean().default(false),
    lastLaunch: launchRecordSchema.nullable()
 });
 
@@ -173,7 +166,7 @@ export const launchOptionsResultSchema = z.union([
    z.object({ ok: z.literal(false), error: z.object({ code: z.string(), message: z.string() }) })
 ]);
 
-export type LaunchPlatform = z.infer<typeof launchPlatformSchema>;
+type LaunchPlatform = z.infer<typeof launchPlatformSchema>;
 export type LaunchFlag = z.infer<typeof launchFlagSchema>;
 export type LaunchEnvironment = z.infer<typeof launchEnvironmentSchema>;
 export type LaunchOptions = z.infer<typeof launchOptionsSchema>;
@@ -181,22 +174,13 @@ export type LaunchOptionsRequest = z.infer<typeof launchOptionsRequestSchema>;
 export type LaunchRequestBody = z.infer<typeof launchRequestBodySchema>;
 export type LaunchIssue = z.infer<typeof launchIssueSchema>;
 export type LaunchWarning = z.infer<typeof launchWarningSchema>;
-export type UnavailableLaunchPreview = z.infer<typeof unavailableLaunchPreviewSchema>;
+type UnavailableLaunchPreview = z.infer<typeof unavailableLaunchPreviewSchema>;
 export type ReadyLaunchPreview = z.infer<typeof readyLaunchPreviewSchema>;
 export type LaunchPreview = z.infer<typeof launchPreviewSchema>;
 export type LaunchRecord = z.infer<typeof launchRecordSchema>;
 export type LaunchState = z.infer<typeof launchStateSchema>;
-export type TargetLaunchPreview = { targetId: TargetId } & LaunchPreview;
 export type TargetUnavailableLaunchPreview = { targetId: TargetId } & UnavailableLaunchPreview;
 export type TargetReadyLaunchPreview = { targetId: TargetId } & ReadyLaunchPreview;
-export type LaunchResult = IpcResult<OperationSnapshot>;
-export type LaunchOptionsResult = IpcResult<LaunchOptions>;
-
-export type LaunchRequest = {
-   targetId: TargetId;
-   installId: InstallId;
-   options: LaunchOptions;
-};
 
 export function launchPlatformFor(platform: NodeJS.Platform): LaunchPlatform {
    if (platform === 'win32') return 'windows';
@@ -204,8 +188,8 @@ export function launchPlatformFor(platform: NodeJS.Platform): LaunchPlatform {
    return 'other';
 }
 
-export function launchFlagsFor(platform: LaunchPlatform): readonly LaunchFlag[] {
-   return platformLaunchFlags[platform];
+export function launchFlagsFor(platform: LaunchPlatform, steamFrame: boolean): readonly LaunchFlag[] {
+   return steamFrame ? steamFrameLaunchFlags : platformLaunchFlags[platform];
 }
 
 export function createDefaultLaunchOptions(): LaunchOptions {

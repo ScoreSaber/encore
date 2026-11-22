@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 
 import { resolveHttpsUrl, type UrlIssue } from '@/lib/http/url';
 
-export type ExternalNavigationBlockReason = 'invalid-url' | 'blocked-scheme' | 'blocked-destination' | 'open-failed';
+type ExternalNavigationBlockReason = 'invalid-url' | 'blocked-scheme' | 'blocked-destination' | 'open-failed';
 
 export type ExternalNavigationDecision = { allowed: true; url: string } | { allowed: false; reason: ExternalNavigationBlockReason };
 
@@ -24,10 +24,6 @@ function navigationReason(issue: UrlIssue): ExternalNavigationBlockReason {
    if (issue.code === 'invalid-url') return 'invalid-url';
    if (issue.code === 'unsupported-scheme') return 'blocked-scheme';
    return 'blocked-destination';
-}
-
-export function openHttpsUrl(input: string, open: (url: string) => Promise<void>) {
-   return openUrl(evaluateHttpsUrl(input), open);
 }
 
 export async function openUrl(decision: ExternalNavigationDecision, open: (url: string) => Promise<void>): Promise<ExternalNavigationDecision> {

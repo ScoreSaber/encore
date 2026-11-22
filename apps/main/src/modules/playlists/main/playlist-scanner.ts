@@ -1,11 +1,11 @@
 import { Result } from 'better-result';
 
+import { createProblem } from '@/lib/errors';
 import { scanInBatches } from '@/lib/filesystem/scan';
 import type { MapHash } from '@/modules/maps/contract';
 import type { LocalPlaylistSummary, PlaylistProblem } from '@/modules/playlists/contract';
 import { maxPlaylistBytes, parsePlaylistDocument } from '@/modules/playlists/main/playlist-file';
 import { isPlaylistFileName, playlistsPath } from '@/modules/playlists/main/playlist-paths';
-import { createPlaylistProblem } from '@/modules/playlists/main/playlist-problem';
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,16 +20,15 @@ export type PlaylistScanCacheEntry = {
    record: PlaylistRecord;
 };
 
-export type PlaylistScanCache = Map<string, PlaylistScanCacheEntry>;
+type PlaylistScanCache = Map<string, PlaylistScanCacheEntry>;
 
-export type PlaylistScanOptions = {
+type PlaylistScanOptions = {
    installPath: string;
    cache?: PlaylistScanCache;
-   signal?: AbortSignal;
    onProgress?: (progress: { scanned: number; total: number }) => void;
 };
 
-export type PlaylistScanResult = {
+type PlaylistScanResult = {
    status: 'missing' | 'ready';
    playlistsPath: string;
    records: PlaylistRecord[];
@@ -40,7 +39,7 @@ export async function scanPlaylists(options: PlaylistScanOptions): Promise<Playl
    const rootPath = playlistsPath(options.installPath);
    const entries = await Result.tryPromise({
       try: () => readdir(rootPath, { withFileTypes: true }),
-      catch: (cause) => createPlaylistProblem('playlists.root.unreadable', 'the playlists folder could not be read', { cause })
+      catch: (cause) => createProblem('playlists.root.unreadable', { cause })
    });
 
    if (Result.isError(entries)) {
@@ -67,7 +66,7 @@ async function scanPlaylistFile(rootPath: string, fileName: string, cache?: Play
    const filePath = join(rootPath, fileName);
    const stats = await Result.tryPromise({
       try: () => stat(filePath),
-      catch: (cause) => createPlaylistProblem('playlists.file.unreadable', 'this playlist could not be read', { fileName, cause })
+      catch: (cause) => createProblem('playlists.file.unreadable', { fileName, cause })
    });
    if (Result.isError(stats)) return emptyRecord(filePath, fileName, stats.error);
 
@@ -75,7 +74,7 @@ async function scanPlaylistFile(rootPath: string, fileName: string, cache?: Play
    const updatedAt = new Date(stats.value.mtimeMs).toISOString();
 
    if (sizeBytes > maxPlaylistBytes) {
-      return emptyRecord(filePath, fileName, createPlaylistProblem('playlists.file.too-large', 'this playlist is too large to read', { fileName }), {
+      return emptyRecord(filePath, fileName, createProblem('playlists.file.too-large', { fileName }), {
          sizeBytes,
          updatedAt
       });
@@ -87,7 +86,7 @@ async function scanPlaylistFile(rootPath: string, fileName: string, cache?: Play
 
    const raw = await Result.tryPromise({
       try: () => readFile(filePath, 'utf8'),
-      catch: (cause) => createPlaylistProblem('playlists.file.unreadable', 'this playlist could not be read', { fileName, cause })
+      catch: (cause) => createProblem('playlists.file.unreadable', { fileName, cause })
    });
    if (Result.isError(raw)) return emptyRecord(filePath, fileName, raw.error, { sizeBytes, updatedAt });
 

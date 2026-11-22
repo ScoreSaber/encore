@@ -1,60 +1,63 @@
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 
 import { useQuery } from '@tanstack/react-query';
 
-import type { IpcError } from '@/ipc/core';
-import type { OperationSnapshot } from '@/modules/operations/contract';
-import { useOperations } from '@/modules/operations/renderer/use-operations';
-import { localTargetId, type TargetId } from '@/modules/targets/contract';
-import { inlineIpcResult } from '@/renderer/ipc-result';
+import type { BSManagerVersion } from '@/modules/bsmanager/contract';
+import { useOperationFlow, type OperationFlowState } from '@/modules/operations/renderer/use-operation-flow';
+import type { TargetId } from '@/modules/targets/contract';
+import { targetKey } from '@/renderer/query/api-query';
 
-type CleanupState =
-   | { status: 'idle' }
-   | { status: 'confirming' }
-   | { status: 'starting' }
-   | { status: 'running'; initialOperation: OperationSnapshot }
-   | { status: 'failed'; error: IpcError };
+type CleanupReady = {
+   kind: 'cleanup';
+   rootPath: string;
+   sharedContentPath: string;
+   affectedVersions: BSManagerVersion[];
+};
 
 export type BSManagerCleanup = ReturnType<typeof useBSManagerCleanup>;
 
-export function useBSManagerCleanup(targetId: TargetId) {
+export function useBSManagerCleanup(targetId: TargetId, onChanged: () => void) {
    const bsmanager = window.encore.bsmanager;
-   const { operations, cancelOperation } = useOperations(targetId);
-   const [state, setState] = useState<CleanupState>({ status: 'idle' });
    const planned = useQuery({
-      queryKey: ['bsmanager', 'cleanup-plan', targetId],
-      queryFn: () => bsmanager.planBSManagerAdoption({ targetId }),
-      enabled: targetId === localTargetId
+      queryKey: targetKey('bsmanager', targetId, 'plan'),
+      queryFn: async () => {
+         const planned = await bsmanager.plan({ targetId });
+         return planned.status === 'ok' ? planned.value : null;
+      }
    });
+   const { refetch } = planned;
+   const onDismiss = useCallback(
+      (state: OperationFlowState<CleanupReady, never>) => {
+         if (state.status !== 'running') return;
+         void refetch();
+         onChanged();
+      },
+      [onChanged, refetch]
+   );
+   const flow = useOperationFlow<CleanupReady>(targetId, onDismiss);
    const plan = planned.data && planned.data.status === 'ok' ? planned.data : null;
    const affectedVersions = plan?.versions.filter((version) => version.folders.some((folder) => folder.state === 'foreign')) ?? [];
-   const available = affectedVersions.some((version) => version.status === 'adopted');
-   const operation =
-      state.status === 'running' ? (operations.find((candidate) => candidate.id === state.initialOperation.id) ?? state.initialOperation) : null;
 
    const open = useCallback(() => {
-      setState({ status: 'confirming' });
-   }, []);
+      if (!plan) return;
 
-   const start = useCallback(async () => {
-      if (state.status !== 'confirming' || !plan) return;
-
-      setState({ status: 'starting' });
-      const started = await inlineIpcResult(() => bsmanager.cleanupBSManagerSharedContent({ targetId, rootPath: plan.rootPath }), {
-         code: 'bsmanager.cleanup-failed',
-         message: 'the BSManager links could not be cleaned up'
+      flow.settle({
+         status: 'ready',
+         kind: 'cleanup',
+         rootPath: plan.rootPath,
+         sharedContentPath: plan.sharedContentPath,
+         affectedVersions
       });
-      setState(started.ok ? { status: 'running', initialOperation: started.value } : { status: 'failed', error: started.error });
-   }, [bsmanager, plan, state.status, targetId]);
+   }, [affectedVersions, flow.settle, plan]);
 
-   const cancel = useCallback(() => {
-      if (operation?.status === 'running') void cancelOperation(operation.id);
-   }, [cancelOperation, operation]);
+   const confirm = useCallback(
+      (ready: CleanupReady) =>
+         void flow.start(ready, () => bsmanager.cleanup({ targetId, rootPath: ready.rootPath }), {
+            code: 'bsmanager.cleanup-failed',
+            message: 'the BSManager links could not be cleaned up'
+         }),
+      [bsmanager, flow.start, targetId]
+   );
 
-   const dismiss = useCallback(() => {
-      setState({ status: 'idle' });
-      void planned.refetch();
-   }, [planned]);
-
-   return { state, plan, affectedVersions, available, operation, open, start, cancel, dismiss };
+   return { flow, plan, affectedVersions, available: affectedVersions.some((version) => version.status === 'adopted'), open, confirm };
 }

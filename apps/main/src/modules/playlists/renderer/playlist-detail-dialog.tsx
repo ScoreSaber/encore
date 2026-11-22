@@ -44,8 +44,8 @@ function OpenPlaylistDetailDialog({
    const common = useTranslations('common');
    const { targetId, installId } = request;
    const detailQuery = useQuery(playlistDetailQueryOptions({ targetId, installId, playlistId }));
-   const detail = detailQuery.data?.status === 'ok' ? detailQuery.data.value : undefined;
-   const status = detailQuery.isError || detail === null ? 'error' : detailQuery.isPending || detail === undefined ? 'loading' : 'ready';
+   const detail = detailQuery.data;
+   const status = detailQuery.isError || detail === null ? 'error' : detailQuery.isPending ? 'loading' : 'ready';
 
    return (
       <Dialog open onOpenChange={onOpenChange}>
@@ -56,10 +56,11 @@ function OpenPlaylistDetailDialog({
             </DialogHeader>
 
             <div className="flex max-h-96 min-h-0 flex-col gap-2">
-               {status === 'loading' ? <LoadingPanel /> : null}
-               {status === 'error' ? <ErrorPanel message={t('loadError')} onRetry={() => void detailQuery.refetch()} /> : null}
-
-               {detail ? (
+               {status === 'loading' ? (
+                  <LoadingPanel />
+               ) : status === 'error' || !detail ? (
+                  <ErrorPanel message={t('loadError')} onRetry={() => void detailQuery.refetch()} />
+               ) : (
                   <>
                      {detail.description ? <p className="text-muted-foreground text-sm break-words">{detail.description}</p> : null}
                      {detail.problem ? <p className="text-sm break-words">{detail.problem.message}</p> : null}
@@ -68,12 +69,12 @@ function OpenPlaylistDetailDialog({
 
                      <VirtualSongList songs={detail.songs} />
                   </>
-               ) : null}
+               )}
             </div>
 
             <DialogFooter>
-               {detail && detail.missingCount > 0 ? (
-                  <Button type="button" size="sm" className="mr-auto" onClick={() => onInstallMissing(detail.id)}>
+               {status === 'ready' && detail && detail.missingCount > 0 ? (
+                  <Button type="button" size="sm" className="mr-auto" disabled={detailQuery.isFetching} onClick={() => onInstallMissing(detail.id)}>
                      <Download data-icon="inline-start" />
                      {t('installMissing', { count: detail.missingCount })}
                   </Button>

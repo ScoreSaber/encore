@@ -1,24 +1,17 @@
 import { Result } from 'better-result';
 
-import { causeCode } from '@/lib/errors';
-import {
-   createFilesystemProblem,
-   createTempPath,
-   isSamePath,
-   resolveFilesystemPath,
-   readPathInfo,
-   type FilesystemProblem
-} from '@/lib/filesystem/path';
+import { causeCode, createProblem, type Problem } from '@/lib/errors';
+import { createTempPath, isSamePath, resolveFilesystemPath, readPathInfo, removeQuietly } from '@/lib/filesystem/path';
 import type { SharedFolderLinkState, SharedLinkMode, SharedLinkSupport } from '@/modules/shared-content/contract';
 
-import { lstat, mkdir, rm, rmdir, symlink, unlink } from 'node:fs/promises';
+import { lstat, mkdir, rmdir, symlink, unlink } from 'node:fs/promises';
 
-export type FolderLinkInfo = {
+type FolderLinkInfo = {
    state: SharedFolderLinkState;
    linkTargetPath: string | null;
 };
 
-type LinkResult = Result<void, FilesystemProblem>;
+type LinkResult = Result<void, Problem & { path: string }>;
 
 export function preferredLinkMode(platform: NodeJS.Platform, useSymlinks: boolean): SharedLinkMode {
    if (platform !== 'win32') return 'symlink';
@@ -43,7 +36,7 @@ export async function readFolderLink(folderPath: string, sharedFolderPath: strin
 export async function createFolderLink(sharedFolderPath: string, folderPath: string, mode: SharedLinkMode): Promise<LinkResult> {
    return Result.tryPromise({
       try: () => symlink(resolveFilesystemPath(sharedFolderPath), resolveFilesystemPath(folderPath), mode === 'junction' ? 'junction' : 'dir'),
-      catch: (cause) => createFilesystemProblem('filesystem.operation.copy-failed', 'failed to create the folder link', folderPath, cause)
+      catch: (cause) => createProblem('shared.link.create-failed', { path: folderPath, cause })
    });
 }
 
@@ -52,12 +45,12 @@ export async function removeFolderLink(folderPath: string): Promise<LinkResult> 
       try: () => unlink(resolveFilesystemPath(folderPath)),
       catch: (cause) => cause
    });
-   if (Result.isOk(removed)) return Result.ok<void, FilesystemProblem>(undefined);
+   if (Result.isOk(removed)) return Result.ok<void, Problem & { path: string }>(undefined);
 
    // Windows junctions require rmdir; it removes the junction itself, not its target
    return Result.tryPromise({
       try: () => rmdir(resolveFilesystemPath(folderPath)),
-      catch: (cause) => createFilesystemProblem('filesystem.operation.delete-failed', 'failed to remove the folder link', folderPath, cause)
+      catch: (cause) => createProblem('shared.link.remove-failed', { path: folderPath, cause })
    });
 }
 
@@ -67,9 +60,9 @@ export async function probeLinkSupport(rootPath: string, requestedMode: SharedLi
 
    const prepared = await Result.tryPromise({
       try: () => mkdir(resolveFilesystemPath(rootPath), { recursive: true }),
-      catch: (cause) => createFilesystemProblem('filesystem.operation.copy-failed', 'failed to create the shared content folder', rootPath, cause)
+      catch: causeCode
    });
-   if (Result.isError(prepared)) return { supported: false, mode: requestedMode, requestedMode, detail: prepared.error.detail ?? null };
+   if (Result.isError(prepared)) return { supported: false, mode: requestedMode, requestedMode, detail: prepared.error };
 
    for (const mode of attempts) {
       const attempted = await attemptLink(rootPath, mode);
@@ -96,9 +89,7 @@ async function attemptLink(rootPath: string, mode: SharedLinkMode): Promise<Resu
    });
 
    await removeFolderLink(linkPath);
-   await rm(probePath, { recursive: true, force: true }).catch(() => undefined);
+   await removeQuietly(probePath);
 
-   return Result.andThen(linked, (stats) =>
-      stats.isSymbolicLink() ? Result.ok<void, string>(undefined) : Result.err<void, string>('the link was not created as a link')
-   );
+   return Result.andThen(linked, (stats) => (stats.isSymbolicLink() ? Result.ok<void, string>(undefined) : Result.err<void, string>('not-a-link')));
 }

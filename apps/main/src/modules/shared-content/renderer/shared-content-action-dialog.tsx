@@ -1,126 +1,59 @@
-import { CircleAlert, TriangleAlert } from 'lucide-react';
+import { useState } from 'react';
+
+import { TriangleAlert } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { ActionScopeRows } from '@/components/content/content-action-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
-import { isOperationFinished, OperationOutcome, OperationProgress } from '@/modules/operations/renderer/operation-progress';
+import { InstallScopeRows } from '@/modules/installs/renderer/install-scope-rows';
+import { OperationFlowDialog } from '@/modules/operations/renderer/operation-flow-dialog';
 import type { TargetSharedContentRequest } from '@/modules/shared-content/api';
 import {
    isContentsModeAllowed,
    sharedContentsModeSchema,
    type ReadySharedContentPreview,
+   type SharedContentAction,
    type SharedContentsMode
 } from '@/modules/shared-content/contract';
-import { sharedContentIssueKeys } from '@/modules/shared-content/renderer/shared-folder-actions';
 import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedContentActions } from '@/modules/shared-content/renderer/use-shared-content-actions';
 import { useFormatters } from '@/renderer/i18n/formatters';
 
 export function SharedContentActionDialog({ request, actions }: { request: TargetSharedContentRequest; actions: SharedContentActions }) {
    const t = useTranslations('sharedContent.actions');
-   const issues = useTranslations('sharedContent.issues');
-   const common = useTranslations('common');
-   const { state, operation } = actions;
-   const running = state.status === 'starting' || (state.status === 'running' && !isOperationFinished(operation));
-   const action = state.status === 'idle' ? 'link' : state.action;
-   const preview = state.status === 'ready' || state.status === 'starting' || state.status === 'running' ? state.preview : null;
+   const issues = useTranslations('problems.shared-content');
+   const { state } = actions.flow;
+   const [lastAction, setLastAction] = useState<SharedContentAction>('link');
+
+   if (state.status !== 'idle' && state.kind !== lastAction) setLastAction(state.kind);
+   const action = state.status === 'idle' ? lastAction : state.kind;
 
    return (
-      <Dialog
-         open={state.status !== 'idle'}
-         onOpenChange={(nextOpen) => {
-            if (nextOpen || running) return;
-
-            actions.dismiss();
-         }}
-      >
-         <DialogContent className="sm:max-w-xl">
-            <DialogHeader>
-               <DialogTitle>{t(`${action}.title`)}</DialogTitle>
-               <DialogDescription>{t(`${action}.description`)}</DialogDescription>
-               {preview ? <ActionScopeRows request={request} compact /> : null}
-            </DialogHeader>
-
-            <div className="flex flex-col gap-4 text-sm">
-               {state.status === 'previewing' ? <p className="text-muted-foreground">{common('loading')}</p> : null}
-
-               {state.status === 'invalid' ? (
-                  <Alert variant="warning">
-                     <CircleAlert />
-                     <AlertTitle>{issues(sharedContentIssueKeys[state.problem.issue])}</AlertTitle>
-                     {state.problem.detail ? <AlertDescription className="break-all">{state.problem.detail}</AlertDescription> : null}
-                  </Alert>
-               ) : null}
-
-               {state.status === 'failed' ? (
-                  <Alert variant="destructive">
-                     <CircleAlert />
-                     <AlertTitle>{t('result.failed')}</AlertTitle>
-                     <AlertDescription className="break-all">{state.error.message}</AlertDescription>
-                  </Alert>
-               ) : null}
-
-               <ActionPreview preview={preview} />
-
-               {state.status === 'ready' ? <ContentsChoice preview={state.preview} onChange={actions.setContents} /> : null}
-
-               {state.status === 'starting' || (state.status === 'running' && !operation) ? (
-                  <OperationProgress percent={0} label={common('operation.preparing')} />
-               ) : null}
-
-               {state.status === 'running' && operation ? (
-                  <OperationOutcome
-                     operation={operation}
-                     labels={{
-                        progress: (values) => common('operation.progress', values),
-                        completed: t('result.completed'),
-                        cancelled: t('result.cancelled'),
-                        failed: t('result.failed')
-                     }}
-                  />
-               ) : null}
-            </div>
-
-            <DialogFooter>
-               {state.status === 'ready' ? (
-                  <>
-                     <Button type="button" variant="outline" onClick={actions.dismiss}>
-                        {common('cancel')}
-                     </Button>
-                     <Button type="button" onClick={() => void actions.confirm()}>
-                        {t(`${action}.confirm`)}
-                     </Button>
-                  </>
-               ) : null}
-
-               {running ? (
-                  <Button type="button" variant="outline" disabled={state.status === 'starting'} onClick={actions.cancel}>
-                     {common('cancel')}
-                  </Button>
-               ) : null}
-
-               {state.status === 'invalid' || state.status === 'failed' || (state.status === 'running' && isOperationFinished(operation)) ? (
-                  <Button type="button" onClick={actions.dismiss}>
-                     {common('close')}
-                  </Button>
-               ) : null}
-            </DialogFooter>
-         </DialogContent>
-      </Dialog>
+      <OperationFlowDialog
+         flow={actions.flow}
+         className="sm:max-w-xl"
+         title={t(`${action}.title`)}
+         description={t(`${action}.description`)}
+         issue={(problem) => issues(problem.issue)}
+         preview={(ready, editable) => (
+            <>
+               <InstallScopeRows request={request} compact />
+               <ActionPreview preview={ready.preview} />
+               {editable ? <ContentsChoice preview={ready.preview} onChange={actions.setContents} /> : null}
+            </>
+         )}
+         labels={{ failed: t('result.failed'), completed: t('result.completed'), cancelled: t('result.cancelled') }}
+         confirm={{ label: t(`${action}.confirm`), run: actions.confirm }}
+      />
    );
 }
 
-function ActionPreview({ preview }: { preview: ReadySharedContentPreview | null }) {
+function ActionPreview({ preview }: { preview: ReadySharedContentPreview }) {
    const t = useTranslations('sharedContent.actions');
    const warnings = useTranslations('sharedContent.warnings');
    const folderLabel = useSharedFolderLabel();
    const format = useFormatters();
-
-   if (!preview) return null;
 
    const notices = [
       preview.conflictCount > 0 ? t('conflictsValue', { count: preview.conflictCount }) : null,

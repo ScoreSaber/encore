@@ -1,4 +1,3 @@
-import type { ApiModule, TargetDispatcher } from '@/lib/api';
 import type { AppInfo } from '@/modules/app/contract';
 import { supportApi } from '@/modules/support/api';
 import {
@@ -12,6 +11,7 @@ import {
 import { redactSupportText } from '@/modules/support/main/log-redaction';
 import type { SupportLogService } from '@/modules/support/main/support-logs';
 import type { TargetId, TargetRequest } from '@/modules/targets/contract';
+import type { TargetRegistry } from '@/modules/targets/main/target-registry';
 
 export type SupportService = ReturnType<typeof createSupportService>;
 
@@ -20,13 +20,12 @@ type SupportReadInput = TargetRequest<SupportLogReadRequest>;
 
 export function createSupportService(options: {
    logs: SupportLogService;
-   installLogs: ApiModule<typeof supportApi>;
-   callTarget: TargetDispatcher;
+   callTarget: TargetRegistry['callTarget'];
    homePath: string;
    getAppInfo: () => AppInfo;
 }) {
    async function getInstallLogs(request: SupportTargetInput): Promise<SupportInstallLogGroup> {
-      const installResult = await options.callTarget(options.installLogs, 'listInstallLogs', request.targetId, {});
+      const installResult = await options.callTarget(supportApi, 'listInstallLogs', request.targetId, {});
 
       if (installResult.status === 'ok') return installResult.value;
 
@@ -53,7 +52,7 @@ export function createSupportService(options: {
    async function readLog(request: SupportReadInput): Promise<SupportLogExcerpt> {
       if (request.source === 'app') return options.logs.readLog(request);
 
-      const result = await options.callTarget(options.installLogs, 'readInstallLog', request.targetId, {
+      const result = await options.callTarget(supportApi, 'readInstallLog', request.targetId, {
          installId: request.installId,
          fileId: request.fileId
       });

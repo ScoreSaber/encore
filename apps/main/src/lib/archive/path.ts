@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 
 import { extname } from 'node:path';
 
-type ArchivePathRejection = 'empty' | 'absolute' | 'drive' | 'traversal' | 'reserved-name' | 'invalid-character';
+type ArchivePathRejection = 'empty' | 'absolute' | 'drive' | 'traversal' | 'reservedName' | 'invalidCharacter';
 
 type ArchiveEntryPath = {
    path: string;
@@ -21,39 +21,35 @@ const reservedWindowsNames = new Set([
 ]);
 const invalidWindowsCharacters = /[<>:"|?*]/;
 
-export function parseArchiveEntryPath(rawName: string) {
-   if (!rawName.trim()) return Result.err<ArchiveEntryPath, ArchivePathRejection>('empty');
-   if (hasControlCharacter(rawName)) return Result.err<ArchiveEntryPath, ArchivePathRejection>('invalid-character');
+export function parseArchiveEntryPath(rawName: string): Result<ArchiveEntryPath, ArchivePathRejection> {
+   if (!rawName.trim()) return Result.err('empty');
+   if (/\p{Cc}/u.test(rawName)) return Result.err('invalidCharacter');
 
    const unified = rawName.replaceAll('\\', '/');
-   if (unified.startsWith('/')) return Result.err<ArchiveEntryPath, ArchivePathRejection>('absolute');
-   if (/^[a-zA-Z]:/.test(unified)) return Result.err<ArchiveEntryPath, ArchivePathRejection>('drive');
-   if (invalidWindowsCharacters.test(unified)) return Result.err<ArchiveEntryPath, ArchivePathRejection>('invalid-character');
+   if (unified.startsWith('/')) return Result.err('absolute');
+   if (/^[a-zA-Z]:/.test(unified)) return Result.err('drive');
+   if (invalidWindowsCharacters.test(unified)) return Result.err('invalidCharacter');
 
    const segments: string[] = [];
    for (const rawSegment of unified.split('/')) {
       const segment = rawSegment.normalize('NFC');
       if (segment === '' || segment === '.') continue;
-      if (segment === '..') return Result.err<ArchiveEntryPath, ArchivePathRejection>('traversal');
-      if (segment.endsWith('.') || segment.endsWith(' ')) return Result.err<ArchiveEntryPath, ArchivePathRejection>('reserved-name');
+      if (segment === '..') return Result.err('traversal');
+      if (segment.endsWith('.') || segment.endsWith(' ')) return Result.err('reservedName');
       if (reservedWindowsNames.has(segment.split('.')[0]?.toUpperCase() ?? '')) {
-         return Result.err<ArchiveEntryPath, ArchivePathRejection>('reserved-name');
+         return Result.err('reservedName');
       }
 
       segments.push(segment);
    }
 
-   if (segments.length === 0) return Result.err<ArchiveEntryPath, ArchivePathRejection>('empty');
+   if (segments.length === 0) return Result.err('empty');
 
-   return Result.ok<ArchiveEntryPath, ArchivePathRejection>({
+   return Result.ok({
       path: segments.join('/'),
       segments,
       endsWithSeparator: unified.endsWith('/')
    });
-}
-
-export function archivePathKey(path: string) {
-   return path.toLowerCase();
 }
 
 export function claimUniqueArchiveEntryName(name: string, usedNames: Set<string>) {
@@ -62,38 +58,12 @@ export function claimUniqueArchiveEntryName(name: string, usedNames: Set<string>
    let candidate = name;
    let attempt = 1;
 
-   while (usedNames.has(archivePathKey(candidate))) {
+   while (usedNames.has(candidate.toLowerCase())) {
       attempt += 1;
       candidate = `${base} (${attempt})${extension}`;
    }
 
-   usedNames.add(archivePathKey(candidate));
+   usedNames.add(candidate.toLowerCase());
 
    return candidate;
-}
-
-export function describeArchivePathRejection(rejection: ArchivePathRejection) {
-   switch (rejection) {
-      case 'empty':
-         return 'an archive entry has no usable name';
-      case 'absolute':
-         return 'an archive entry uses an absolute path';
-      case 'drive':
-         return 'an archive entry uses a drive letter path';
-      case 'traversal':
-         return 'an archive entry points outside the archive';
-      case 'reserved-name':
-         return 'an archive entry uses a name Windows reserves';
-      case 'invalid-character':
-         return 'an archive entry name uses characters a path cannot hold';
-   }
-}
-
-function hasControlCharacter(rawName: string) {
-   for (let index = 0; index < rawName.length; index += 1) {
-      const code = rawName.charCodeAt(index);
-      if (code < 0x20 || code === 0x7f) return true;
-   }
-
-   return false;
 }

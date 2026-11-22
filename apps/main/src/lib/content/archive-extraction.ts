@@ -1,20 +1,19 @@
 import { Result } from 'better-result';
 import { buf as crc32 } from 'crc-32';
-import { z } from 'zod';
 
+import { openZipArchive, type ZipArchive } from '@/lib/archive/zip-read';
 import type { ArchiveInspection, InspectedArchiveEntry } from '@/lib/content/archive-inspection';
-import type { ContentResult } from '@/lib/content/content-errors';
 import { resolveContentLimits, type ContentLimits } from '@/lib/content/content-limits';
 import type { ContentProblem } from '@/lib/content/contract';
-import { openZipArchive, type ZipArchive } from '@/lib/content/zip-archive';
-import { isPathInside, resolveFilesystemPath } from '@/lib/filesystem/path';
+import { createProblem } from '@/lib/errors';
+import { isPathInside, removeQuietly, resolveFilesystemPath } from '@/lib/filesystem/path';
+import { bytesProgress, throttleReports } from '@/lib/progress';
 import type { OperationProgress } from '@/modules/operations/contract';
-import { createThrottledProgress } from '@/modules/operations/main/progress';
 
-import { mkdir, open, readdir, rm } from 'node:fs/promises';
+import { mkdir, open, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-export type ExtractArchiveOptions = {
+type ExtractArchiveOptions = {
    inspection: ArchiveInspection;
    destinationPath: string;
    limits?: Partial<ContentLimits>;
@@ -22,14 +21,14 @@ export type ExtractArchiveOptions = {
    onProgress?: (progress: OperationProgress) => void;
 };
 
-export type ArchiveExtraction = {
+type ArchiveExtraction = {
    path: string;
    files: number;
    directories: number;
    bytes: number;
 };
 
-export async function extractZipArchive(options: ExtractArchiveOptions): Promise<ContentResult<ArchiveExtraction>> {
+export async function extractZipArchive(options: ExtractArchiveOptions): Promise<Result<ArchiveExtraction, ContentProblem>> {
    const limits = resolveContentLimits(options.limits);
    const destinationPath = resolveFilesystemPath(options.destinationPath);
 
@@ -38,23 +37,18 @@ export async function extractZipArchive(options: ExtractArchiveOptions): Promise
 
    const archive = await openZipArchive(options.inspection.archivePath, { maxEntries: limits.maxEntries });
    if (Result.isError(archive)) {
-      await discardPath(destinationPath);
+      await removeQuietly(destinationPath);
       return Result.err<ArchiveExtraction, ContentProblem>(archive.error);
    }
 
    const extraction = await Result.tryPromise({
       try: () => writeEntries({ ...options, limits, destinationPath }, archive.value),
-      catch: (cause): ContentProblem => ({
-         code: 'content.extract.write-failed',
-         message: 'the archive could not be unpacked',
-         path: destinationPath,
-         detail: String(cause)
-      })
+      catch: (cause): ContentProblem => createProblem('content.extract.write-failed', { path: destinationPath, cause })
    });
    archive.value.close();
 
-   const result = Result.isOk(extraction) ? extraction.value : Result.err<ArchiveExtraction, ContentProblem>(extraction.error);
-   if (Result.isError(result)) await discardPath(destinationPath);
+   const result = Result.flatten(extraction);
+   if (Result.isError(result)) await removeQuietly(destinationPath);
 
    return result;
 }
@@ -62,8 +56,8 @@ export async function extractZipArchive(options: ExtractArchiveOptions): Promise
 async function writeEntries(
    options: ExtractArchiveOptions & { limits: ContentLimits; destinationPath: string },
    archive: ZipArchive
-): Promise<ContentResult<ArchiveExtraction>> {
-   const report = createThrottledProgress(options.onProgress);
+): Promise<Result<ArchiveExtraction, ContentProblem>> {
+   const report = throttleReports(options.onProgress);
    const totalBytes = options.inspection.manifest.totalBytes;
    const totalFiles = options.inspection.manifest.fileCount;
    let bytes = 0;
@@ -71,7 +65,7 @@ async function writeEntries(
    let directories = 0;
 
    for (const entry of options.inspection.entries) {
-      if (options.signal?.aborted) return Result.err<ArchiveExtraction, ContentProblem>(cancelled());
+      if (options.signal?.aborted) return Result.err<ArchiveExtraction, ContentProblem>(createProblem('content.extract.cancelled'));
 
       const target = resolveEntryPath(options.destinationPath, entry);
       if (Result.isError(target)) return Result.err<ArchiveExtraction, ContentProblem>(target.error);
@@ -92,20 +86,10 @@ async function writeEntries(
 
       bytes += written.value;
       files += 1;
-      report({
-         phase: 'extracting',
-         current: bytes,
-         total: totalBytes,
-         percent: totalBytes > 0 ? Math.min(100, Math.round((bytes / totalBytes) * 100)) : 100,
-         unit: 'bytes',
-         label: `${files}/${totalFiles} files`
-      });
+      report(bytesProgress('extracting', bytes, totalBytes, `${files}/${totalFiles} files`));
    }
 
-   report(
-      { phase: 'extracting', current: bytes, total: totalBytes, percent: 100, unit: 'bytes', label: `${files}/${totalFiles} files` },
-      { force: true }
-   );
+   report({ ...bytesProgress('extracting', bytes, totalBytes, `${files}/${totalFiles} files`), percent: 100 }, true);
 
    return Result.ok<ArchiveExtraction, ContentProblem>({ path: options.destinationPath, files, directories, bytes });
 }
@@ -118,19 +102,14 @@ async function writeEntryFile(
       targetPath: string;
       archive: ZipArchive;
    }
-): Promise<ContentResult<number>> {
+): Promise<Result<number, ContentProblem>> {
    const source = await options.archive.openEntryStream(options.entry.record);
    if (Result.isError(source)) return Result.err<number, ContentProblem>(source.error);
 
    const file = await Result.tryPromise({
       try: () => open(options.targetPath, 'wx'),
-      catch: (cause): ContentProblem => ({
-         code: 'content.extract.write-failed',
-         message: 'an archive entry could not be written',
-         entry: options.entry.path,
-         path: options.targetPath,
-         detail: String(cause)
-      })
+      catch: (cause): ContentProblem =>
+         createProblem('content.extract.entry-write-failed', { entry: options.entry.path, path: options.targetPath, cause })
    });
    if (Result.isError(file)) {
       source.value.destroy();
@@ -140,120 +119,74 @@ async function writeEntryFile(
    const declaredBytes = options.entry.record.uncompressedBytes;
    let bytes = 0;
    let checksum = 0;
-   let failure: ContentProblem | null = null;
 
-   try {
-      for await (const chunk of source.value) {
-         if (options.signal?.aborted) {
-            failure = cancelled();
-            break;
+   const streamed = await Result.tryPromise({
+      try: async () => {
+         for await (const chunk of source.value) {
+            if (options.signal?.aborted) return Result.err<void, ContentProblem>(createProblem('content.extract.cancelled'));
+            if (!(chunk instanceof Uint8Array)) throw new TypeError('Expected binary chunk');
+
+            bytes += chunk.byteLength;
+            if (bytes > declaredBytes || bytes > options.limits.maxEntryBytes) {
+               return Result.err<void, ContentProblem>(createProblem('content.extract.size-mismatch', { entry: options.entry.path }));
+            }
+
+            checksum = crc32(chunk, checksum);
+            await file.value.write(chunk);
          }
 
-         const payload = z.instanceof(Uint8Array).parse(chunk);
-         bytes += payload.byteLength;
-         if (bytes > declaredBytes || bytes > options.limits.maxEntryBytes) {
-            failure = sizeMismatch(options.entry.path);
-            break;
-         }
+         return Result.ok<void, ContentProblem>(undefined);
+      },
+      catch: (cause): ContentProblem => createProblem('content.archive.entry-corrupt', { entry: options.entry.path, cause })
+   });
+   source.value.destroy();
+   await file.value.close();
 
-         checksum = crc32(payload, checksum);
-         await file.value.write(payload);
+   return Result.flatten(streamed).andThen(() => {
+      if (bytes !== declaredBytes) {
+         return Result.err<number, ContentProblem>(createProblem('content.extract.size-mismatch', { entry: options.entry.path }));
       }
-   } catch (cause) {
-      failure = {
-         code: 'content.archive.corrupt',
-         message: 'an archive entry could not be unpacked',
-         entry: options.entry.path,
-         detail: String(cause)
-      };
-   } finally {
-      source.value.destroy();
-      await file.value.close();
-   }
+      if (checksum >>> 0 !== options.entry.record.crc32) {
+         return Result.err<number, ContentProblem>(createProblem('content.extract.checksum-mismatch', { entry: options.entry.path }));
+      }
 
-   if (!failure && bytes !== declaredBytes) failure = sizeMismatch(options.entry.path);
-   if (!failure && checksum >>> 0 !== options.entry.record.crc32) {
-      failure = {
-         code: 'content.extract.checksum-mismatch',
-         message: 'an archive entry did not match its checksum',
-         entry: options.entry.path
-      };
-   }
-
-   return failure ? Result.err<number, ContentProblem>(failure) : Result.ok<number, ContentProblem>(bytes);
+      return Result.ok<number, ContentProblem>(bytes);
+   });
 }
 
-function resolveEntryPath(destinationPath: string, entry: InspectedArchiveEntry): ContentResult<string> {
+function resolveEntryPath(destinationPath: string, entry: InspectedArchiveEntry): Result<string, ContentProblem> {
    // archive paths are rechecked at the write boundary so no entry can escape staging
    const targetPath = resolveFilesystemPath(join(destinationPath, ...entry.path.split('/')));
 
    if (!isPathInside(destinationPath, targetPath)) {
-      return Result.err<string, ContentProblem>({
-         code: 'content.extract.escaped-root',
-         message: 'an archive entry tried to write outside the staging folder',
-         entry: entry.path,
-         path: targetPath
-      });
+      return Result.err<string, ContentProblem>(createProblem('content.extract.escaped-root', { entry: entry.path, path: targetPath }));
    }
 
    return Result.ok<string, ContentProblem>(targetPath);
 }
 
-async function prepareDestination(destinationPath: string): Promise<ContentResult<void>> {
+async function prepareDestination(destinationPath: string): Promise<Result<void, ContentProblem>> {
    const created = await Result.tryPromise({
       try: async () => {
          await mkdir(destinationPath, { recursive: true });
          return readdir(destinationPath);
       },
-      catch: (cause): ContentProblem => ({
-         code: 'content.extract.write-failed',
-         message: 'the staging folder for the archive could not be created',
-         path: destinationPath,
-         detail: String(cause)
-      })
+      catch: (cause): ContentProblem => createProblem('content.extract.staging-failed', { path: destinationPath, cause })
    });
    if (Result.isError(created)) return Result.err<void, ContentProblem>(created.error);
 
    if (created.value.length > 0) {
-      return Result.err<void, ContentProblem>({
-         code: 'content.extract.destination-not-empty',
-         message: 'archives only unpack into an empty staging folder',
-         path: destinationPath
-      });
+      return Result.err<void, ContentProblem>(createProblem('content.extract.destination-not-empty', { path: destinationPath }));
    }
 
    return Result.ok<void, ContentProblem>(undefined);
 }
 
-async function createDirectory(directoryPath: string): Promise<ContentResult<void>> {
+async function createDirectory(directoryPath: string): Promise<Result<void, ContentProblem>> {
    const created = await Result.tryPromise({
       try: () => mkdir(directoryPath, { recursive: true }),
-      catch: (cause): ContentProblem => ({
-         code: 'content.extract.write-failed',
-         message: 'an archive folder could not be created',
-         path: directoryPath,
-         detail: String(cause)
-      })
+      catch: (cause): ContentProblem => createProblem('content.extract.folder-failed', { path: directoryPath, cause })
    });
 
    return Result.isError(created) ? Result.err<void, ContentProblem>(created.error) : Result.ok<void, ContentProblem>(undefined);
-}
-
-async function discardPath(targetPath: string) {
-   await Result.tryPromise({
-      try: () => rm(targetPath, { recursive: true, force: true }),
-      catch: (cause) => String(cause)
-   });
-}
-
-function cancelled(): ContentProblem {
-   return { code: 'content.extract.cancelled', message: 'unpacking was cancelled' };
-}
-
-function sizeMismatch(entryPath: string): ContentProblem {
-   return {
-      code: 'content.extract.size-mismatch',
-      message: 'an archive entry unpacked to a different size than it declared',
-      entry: entryPath
-   };
 }

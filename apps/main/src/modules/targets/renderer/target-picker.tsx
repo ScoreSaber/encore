@@ -1,7 +1,7 @@
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 import type { Target, TargetId } from '@/modules/targets/contract';
-import type { TargetsLoadStatus } from '@/modules/targets/renderer/use-targets';
+import { useTargetName, type TargetsLoadStatus } from '@/modules/targets/renderer/use-targets';
 
 export function TargetPicker({
    id,
@@ -20,6 +20,7 @@ export function TargetPicker({
    value: TargetId;
    onChange: (targetId: TargetId) => void;
 }) {
+   const targetName = useTargetName();
    if (targets.length < 2) return null;
 
    return (
@@ -31,7 +32,7 @@ export function TargetPicker({
             <SelectGroup>
                {targets.map((target) => (
                   <SelectItem key={target.id} value={target.id}>
-                     {target.name}
+                     {targetName(target)}
                   </SelectItem>
                ))}
             </SelectGroup>

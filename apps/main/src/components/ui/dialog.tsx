@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 
+import { cva, type VariantProps } from 'class-variance-authority';
 import { XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useTranslations } from 'use-intl';
@@ -112,8 +113,25 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
    return <DialogPrimitive.Title data-slot="dialog-title" className={cn('text-lg leading-none font-semibold', className)} {...props} />;
 }
 
-function DialogDescription({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Description>) {
-   return <DialogPrimitive.Description data-slot="dialog-description" className={cn('sr-only', className)} {...props} />;
+const dialogDescriptionVariants = cva('', {
+   variants: {
+      variant: {
+         hidden: 'sr-only',
+         visible: 'text-sm leading-normal',
+         muted: 'text-muted-foreground text-sm leading-relaxed'
+      }
+   },
+   defaultVariants: {
+      variant: 'hidden'
+   }
+});
+
+function DialogDescription({
+   className,
+   variant,
+   ...props
+}: React.ComponentProps<typeof DialogPrimitive.Description> & VariantProps<typeof dialogDescriptionVariants>) {
+   return <DialogPrimitive.Description data-slot="dialog-description" className={cn(dialogDescriptionVariants({ variant }), className)} {...props} />;
 }
 
 export { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogOverlay, DialogPortal, DialogTitle, DialogTrigger };

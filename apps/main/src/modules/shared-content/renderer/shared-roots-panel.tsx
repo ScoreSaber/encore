@@ -1,17 +1,13 @@
-import { useState } from 'react';
-
 import { Check, ChevronDown, FolderOpen, FolderPlus, MoreHorizontal, Plus, Star, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { WarningLine } from '@/components/state/state-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group';
 
-import type { SharedRootOverview } from '@/modules/shared-content/contract';
+import type { SharedRootCandidate, SharedRootOverview } from '@/modules/shared-content/contract';
 import { useSharedFolderLabel } from '@/modules/shared-content/renderer/shared-folder-label';
 import type { SharedRoots } from '@/modules/shared-content/renderer/use-shared-roots';
 
@@ -20,7 +16,6 @@ export function SharedRootsPanel({
    manager,
    selectedRootPath,
    onSelectRoot,
-   canManage,
    isLocal,
    bsmanagerSharedPath
 }: {
@@ -28,12 +23,11 @@ export function SharedRootsPanel({
    manager: SharedRoots;
    selectedRootPath: string | null;
    onSelectRoot: (path: string) => void;
-   canManage: boolean;
    isLocal: boolean;
    bsmanagerSharedPath: string | null;
 }) {
    const t = useTranslations('sharedContent.roots');
-   const busy = manager.state.status === 'saving' || manager.state.status === 'choosing';
+   const busy = manager.state.status === 'saving-root' || manager.state.status === 'saving-action' || manager.state.status === 'choosing';
    const selectedRoot = roots.find((root) => root.path === selectedRootPath) ?? null;
    const bsmanagerNudgePath = bsmanagerSharedPath && !roots.some((root) => root.path === bsmanagerSharedPath) ? bsmanagerSharedPath : null;
 
@@ -41,7 +35,7 @@ export function SharedRootsPanel({
       <section className="flex flex-col gap-3">
          <h2 className="font-semibold">{t('title')}</h2>
 
-         <ButtonGroup className="w-full" aria-label={t('title')}>
+         <div className="flex w-full gap-2">
             <DropdownMenu>
                <DropdownMenuTrigger asChild>
                   <Button type="button" variant="outline" className="h-auto min-w-0 flex-1 justify-between py-2 text-left" disabled={busy}>
@@ -57,7 +51,7 @@ export function SharedRootsPanel({
                      </DropdownMenuItem>
                   ))}
 
-                  {bsmanagerNudgePath && canManage ? (
+                  {bsmanagerNudgePath ? (
                      <DropdownMenuItem className="items-start py-2" disabled={busy} onSelect={() => void manager.add(bsmanagerNudgePath, false)}>
                         <div className="min-w-0 flex-1">
                            <div className="flex flex-wrap items-center gap-2">
@@ -69,27 +63,18 @@ export function SharedRootsPanel({
                      </DropdownMenuItem>
                   ) : null}
 
-                  {canManage ? (
-                     <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                           className="justify-center"
-                           aria-label={t('add')}
-                           disabled={busy}
-                           onSelect={() => (isLocal ? void manager.choose() : manager.enter())}
-                        >
-                           <Plus />
-                           <span className="sr-only">{t('add')}</span>
-                        </DropdownMenuItem>
-                     </>
-                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="justify-center" aria-label={t('add')} disabled={busy} onSelect={() => void manager.choose()}>
+                     <Plus />
+                     <span className="sr-only">{t('add')}</span>
+                  </DropdownMenuItem>
                </DropdownMenuContent>
             </DropdownMenu>
 
-            {selectedRoot && canManage && (isLocal || !selectedRoot.active) ? (
+            {selectedRoot && (isLocal || !selectedRoot.active) ? (
                <LibraryActions root={selectedRoot} manager={manager} isLocal={isLocal} busy={busy} />
             ) : null}
-         </ButtonGroup>
+         </div>
 
          {manager.state.status === 'invalid' ? (
             <WarningLine className="text-sm">
@@ -99,6 +84,7 @@ export function SharedRootsPanel({
          ) : null}
 
          <AddRootDialog manager={manager} />
+         {manager.dialog}
       </section>
    );
 }
@@ -111,7 +97,7 @@ function LibraryLabel({ root }: { root: SharedRootOverview }) {
       <div className="min-w-0 flex-1">
          <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium break-all">{basename === 'SharedContent' ? t('sharedContentName') : basename}</span>
-            {root.active ? <Badge className="px-1.5 py-0 text-[10px] leading-4">{t('active')}</Badge> : null}
+            {root.active ? <Badge size="sm">{t('active')}</Badge> : null}
             {!root.exists ? <Badge variant="destructive">{t('missing')}</Badge> : null}
          </div>
          <div className="text-muted-foreground text-xs break-all">{root.path}</div>
@@ -156,28 +142,21 @@ function LibraryActions({ root, manager, isLocal, busy }: { root: SharedRootOver
 
 function AddRootDialog({ manager }: { manager: SharedRoots }) {
    const { state } = manager;
-   const candidate = state.status === 'confirming' ? state.candidate : state.status === 'saving' ? state.candidate : null;
-   const open = state.status === 'entering' || candidate !== null;
+   if (state.status !== 'confirming' && state.status !== 'saving-root') return null;
 
-   return open ? <OpenAddRootDialog manager={manager} /> : null;
+   return <OpenAddRootDialog manager={manager} candidate={state.candidate} saving={state.status === 'saving-root'} />;
 }
 
-function OpenAddRootDialog({ manager }: { manager: SharedRoots }) {
+function OpenAddRootDialog({ manager, candidate, saving }: { manager: SharedRoots; candidate: SharedRootCandidate; saving: boolean }) {
    const t = useTranslations('sharedContent.roots');
    const common = useTranslations('common');
    const folderLabel = useSharedFolderLabel();
-   const [path, setPath] = useState('');
-   const { state } = manager;
-   const candidate = state.status === 'confirming' ? state.candidate : state.status === 'saving' ? state.candidate : null;
-   const saving = state.status === 'saving';
-   const entering = state.status === 'entering';
-   const checking = state.status === 'entering' && state.checking === true;
 
    return (
       <Dialog
          open
          onOpenChange={(nextOpen) => {
-            if (nextOpen || saving || checking) return;
+            if (nextOpen || saving) return;
 
             manager.dismiss();
          }}
@@ -185,67 +164,40 @@ function OpenAddRootDialog({ manager }: { manager: SharedRoots }) {
          <DialogContent>
             <DialogHeader>
                <DialogTitle>{t('addTitle')}</DialogTitle>
-               <DialogDescription>{entering ? t('enterDescription') : t('addDescription')}</DialogDescription>
+               <DialogDescription>{t('addDescription')}</DialogDescription>
             </DialogHeader>
 
-            {entering ? (
-               <div className="flex flex-col gap-2 text-sm">
-                  <InputGroup>
-                     <InputGroupInput
-                        value={path}
-                        placeholder={t('enterPlaceholder')}
-                        disabled={checking}
-                        onChange={(event) => setPath(event.target.value)}
-                        onKeyDown={(event) => {
-                           if (event.key === 'Enter' && path.trim() && !checking) void manager.describe(path.trim());
-                        }}
-                     />
-                     <InputGroupAddon align="inline-end">
-                        <InputGroupButton size="sm" disabled={checking || !path.trim()} onClick={() => void manager.describe(path.trim())}>
-                           <Check data-icon="inline-start" />
-                           {t('check')}
-                        </InputGroupButton>
-                     </InputGroupAddon>
-                  </InputGroup>
-                  {state.status === 'entering' && state.failed ? <p className="text-destructive text-xs">{t('checkFailed')}</p> : null}
-               </div>
-            ) : candidate ? (
-               <div className="flex flex-col gap-2 text-sm">
-                  <div className="break-all">{candidate.path}</div>
-                  {candidate.alreadyKnown ? <p className="text-muted-foreground text-xs">{t('alreadyKnown')}</p> : null}
-                  {!candidate.exists ? <p className="text-muted-foreground text-xs">{t('willCreate')}</p> : null}
-                  {candidate.foldersFound.length > 0 ? (
-                     <p className="text-muted-foreground text-xs">
-                        {t('foundFolders', {
-                           folders: candidate.foldersFound.map((folder) => folderLabel(folder.id, folder.relativePath)).join(', ')
-                        })}
-                     </p>
-                  ) : null}
-               </div>
-            ) : null}
+            <div className="flex flex-col gap-2 text-sm">
+               <div className="break-all">{candidate.path}</div>
+               {candidate.alreadyKnown ? <p className="text-muted-foreground text-xs">{t('alreadyKnown')}</p> : null}
+               {!candidate.exists ? <p className="text-muted-foreground text-xs">{t('willCreate')}</p> : null}
+               {candidate.foldersFound.length > 0 ? (
+                  <p className="text-muted-foreground text-xs">
+                     {t('foundFolders', {
+                        folders: candidate.foldersFound.map((folder) => folderLabel(folder.id, folder.relativePath)).join(', ')
+                     })}
+                  </p>
+               ) : null}
+            </div>
 
             <DialogFooter>
-               <Button type="button" variant="outline" size="sm" disabled={saving || checking} onClick={manager.dismiss}>
+               <Button type="button" variant="outline" size="sm" disabled={saving} onClick={manager.dismiss}>
                   {common('cancel')}
                </Button>
-               {candidate ? (
-                  <>
-                     <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={saving || candidate.alreadyKnown}
-                        onClick={() => void manager.add(candidate.path, false)}
-                     >
-                        <FolderPlus data-icon="inline-start" />
-                        {t('addAction')}
-                     </Button>
-                     <Button type="button" size="sm" disabled={saving} onClick={() => void manager.add(candidate.path, true)}>
-                        <Check data-icon="inline-start" />
-                        {t('addAndActivate')}
-                     </Button>
-                  </>
-               ) : null}
+               <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={saving || candidate.alreadyKnown}
+                  onClick={() => void manager.add(candidate.path, false)}
+               >
+                  <FolderPlus data-icon="inline-start" />
+                  {t('addAction')}
+               </Button>
+               <Button type="button" size="sm" disabled={saving} onClick={() => void manager.add(candidate.path, true)}>
+                  <Check data-icon="inline-start" />
+                  {t('addAndActivate')}
+               </Button>
             </DialogFooter>
          </DialogContent>
       </Dialog>

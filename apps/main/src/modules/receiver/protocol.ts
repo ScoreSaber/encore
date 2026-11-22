@@ -1,18 +1,37 @@
 import { z } from 'zod';
 
-import { targetSchema, type TargetCapability } from '@/modules/targets/contract';
+import type { IpcTransportValue } from '@/ipc/core';
+import { targetCapabilitySchema, targetSchema, type TargetCapability } from '@/modules/targets/contract';
 
-export const receiverProtocolVersion = 13;
+export const receiverProtocolVersion = 15;
 export const receiverSupportedProtocolVersions = [receiverProtocolVersion];
 export const receiverProtocolVersionHeader = 'x-encore-protocol-version';
+export const receiverTargetIdHeader = 'x-encore-target-id';
+
+export function receiverProcedurePath(namespace: string, method: string): `/rpc/${string}/${string}` {
+   return `/rpc/${namespace}/${method}`;
+}
+
+export function receiverUploadPath(namespace: string, method: string): `/upload/${string}/${string}` {
+   return `/upload/${namespace}/${method}`;
+}
+
+export function receiverDownloadPath(namespace: string, method: string): `/download/${string}/${string}` {
+   return `/download/${namespace}/${method}`;
+}
+
+export const receiverProcedureEnvelopeSchema = z.object({
+   protocolVersion: z.int().positive(),
+   value: z.json()
+});
 
 export const receiverDeviceNameSchema = z.string().trim().min(1).max(80);
 export const receiverPairingCodeSchema = z
    .string()
    .trim()
    .regex(/^\d{6}$/);
-export const receiverTokenSchema = z.string().trim().min(32);
-export const receiverProtocolVersionSchema = z.int().positive();
+const receiverTokenSchema = z.string().trim().min(32);
+const receiverProtocolVersionSchema = z.int().positive();
 
 function receiverResponseSchema<Fields extends Parameters<typeof z.object>[0]>(fields: Fields) {
    return z.object({ protocolVersion: receiverProtocolVersionSchema, ...fields });
@@ -46,23 +65,20 @@ export const receiverPairCompleteRequestSchema = z.object({
    deviceName: receiverDeviceNameSchema
 });
 
-export const receiverRemoteTargetSchema = targetSchema.extend({
+const receiverRemoteTargetSchema = targetSchema.extend({
    kind: z.literal('remote')
 });
+export const receiverAttachedTargetIdSchema = z.string().regex(/^quest:[\w.:-]{1,128}$/);
+const receiverAttachedTargetSchema = targetSchema.extend({
+   id: receiverAttachedTargetIdSchema,
+   kind: z.literal('quest')
+});
+const receiverTargetsFields = {
+   target: receiverRemoteTargetSchema,
+   attached: z.array(receiverAttachedTargetSchema)
+};
 
-export const receiverTargetCapabilities: TargetCapability[] = [
-   'download-install',
-   'launch-install',
-   'list-installs',
-   'manage-installs',
-   'manage-maps',
-   'manage-models',
-   'manage-mods',
-   'manage-playlists',
-   'read-logs',
-   'run-operations',
-   'share-content'
-];
+export const receiverTargetCapabilities: TargetCapability[] = [...targetCapabilitySchema.options];
 
 export const receiverPairCompleteResponseSchema = receiverResponseSchema({
    token: receiverTokenSchema,
@@ -72,12 +88,10 @@ export const receiverPairCompleteResponseSchema = receiverResponseSchema({
       pairedAt: z.string(),
       lastSeenAt: z.string().optional()
    }),
-   target: receiverRemoteTargetSchema
+   ...receiverTargetsFields
 });
 
-export const receiverCapabilitiesResponseSchema = receiverResponseSchema({
-   target: receiverRemoteTargetSchema
-});
+export const receiverCapabilitiesResponseSchema = receiverResponseSchema(receiverTargetsFields);
 
 export const receiverStreamEventSchema = z.discriminatedUnion('type', [
    z.object({
@@ -86,11 +100,12 @@ export const receiverStreamEventSchema = z.discriminatedUnion('type', [
    }),
    z.object({
       type: z.literal('target'),
-      target: receiverRemoteTargetSchema
+      ...receiverTargetsFields
    }),
    z.object({
       type: z.literal('snapshot'),
       namespace: z.string().min(1),
+      targetId: receiverAttachedTargetIdSchema.optional(),
       value: z.json()
    })
 ]);
@@ -103,13 +118,11 @@ export const receiverErrorResponseSchema = z.object({
 });
 
 export type ReceiverStreamEvent = z.infer<typeof receiverStreamEventSchema>;
-export type ReceiverStreamInput = Exclude<ReceiverStreamEvent, { type: 'snapshot' }> | { type: 'snapshot'; namespace: string; value: unknown };
-
-export function isSupportedReceiverProtocolVersion(version: number) {
-   return receiverSupportedProtocolVersions.includes(version);
-}
+export type ReceiverStreamInput =
+   | Exclude<ReceiverStreamEvent, { type: 'snapshot' }>
+   | { type: 'snapshot'; namespace: string; targetId?: string; value: IpcTransportValue };
 
 export function negotiateReceiverProtocolVersion(supported: readonly number[]) {
-   const shared = supported.filter((version) => isSupportedReceiverProtocolVersion(version));
+   const shared = supported.filter((version) => receiverSupportedProtocolVersions.includes(version));
    return shared.length > 0 ? Math.max(...shared) : null;
 }

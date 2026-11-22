@@ -6,7 +6,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { createRoot } from 'react-dom/client';
 
 import { getRouter } from '@/renderer/router';
-import { applyInitialTheme } from '@/renderer/theme/theme-init';
+import { applyInitialTheme } from '@/renderer/theme/theme';
 
 const rootElement = document.getElementById('root');
 

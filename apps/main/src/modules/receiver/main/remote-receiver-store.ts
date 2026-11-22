@@ -7,7 +7,7 @@ import type { TargetId } from '@/modules/targets/contract';
 
 const tokenKeyPrefix = 'receiver:remote-token:';
 
-export type RemoteTokenState = {
+type RemoteTokenState = {
    token: string | null;
    persisted: boolean;
 };
@@ -29,17 +29,20 @@ export function createRemoteTargetStore(options: { settingsStore: SettingsStore;
    }
 
    async function removeRecord(targetId: TargetId) {
-      memoryTokens.delete(targetId);
-      await options.secretStore.remove(`${tokenKeyPrefix}${targetId}`);
-
-      return options.settingsStore.updateAppSettingsWith((current) => ({
+      const removed = await options.settingsStore.updateAppSettingsWith((current) => ({
          receiver: { remoteTargets: current.receiver.remoteTargets.filter((candidate) => candidate.id !== targetId) }
       }));
+      if (!removed.ok) return removed;
+
+      memoryTokens.delete(targetId);
+      await options.secretStore.remove(`${tokenKeyPrefix}${targetId}`);
+      return removed;
    }
 
    async function saveToken(targetId: TargetId, token: string): Promise<RemoteTokenState> {
       const written = await options.secretStore.write(`${tokenKeyPrefix}${targetId}`, token);
       if (Result.isError(written)) {
+         await options.secretStore.remove(`${tokenKeyPrefix}${targetId}`);
          memoryTokens.set(targetId, token);
          return { token, persisted: false };
       }
@@ -63,7 +66,6 @@ export function createRemoteTargetStore(options: { settingsStore: SettingsStore;
       saveRecord,
       removeRecord,
       saveToken,
-      readToken,
-      isSecureStorageAvailable: () => options.secretStore.getAvailability().available
+      readToken
    };
 }

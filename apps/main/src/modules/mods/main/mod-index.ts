@@ -5,7 +5,6 @@ import { evaluateHttpsUrl } from '@/lib/security/external-url';
 import {
    beatModsHost,
    bsipaModName,
-   isRequiredModCategory,
    officialModSourceId,
    officialModSourceName,
    type ModCatalogSource,
@@ -13,10 +12,11 @@ import {
    type ModLink,
    type ModLinkKind,
    type ModPlatform,
+   type ModSourceKind,
    type ModSourceResolutionSettings,
+   type ModSourceStatus,
    type ModSummary
 } from '@/modules/mods/contract';
-import type { ModSourceKind, ModSourceStatus } from '@/modules/mods/contract';
 import { beatModsDownloadUrl, beatModsIconUrl, beatModsModUrl, type BeatModsEntry } from '@/modules/mods/main/beatmods-api';
 
 export type ModIndexFile = {
@@ -50,7 +50,7 @@ export type ModIndexEntry = {
    dependencies: string[];
    downloadUrl: string;
    downloadHost: string;
-   archiveHash: ContentHash;
+   archiveHash: ContentHash | null;
    files: ModIndexFile[];
 };
 
@@ -74,7 +74,35 @@ export function fileHashKey(hash: ContentHash) {
    return `${hash.algorithm}:${hash.value.toLowerCase()}`;
 }
 
-export function resolveModIdentities(input: { entries: ModIndexEntry[]; fileMatches: ModIndexFileMatch[] }, settings: ModSourceResolutionSettings) {
+export type RepositoryModEntries = {
+   sources: ModSourceStatus[];
+   entries: ModIndexEntry[];
+   fileMatches: ModIndexFileMatch[];
+   resolution: ModSourceResolutionSettings;
+};
+
+export function composeModIndex(
+   request: { gameVersion: string; platform: ModPlatform; source: ModCatalogSource; fetchedAt: number },
+   official: { sources: ModSourceStatus[]; entries: ModIndexEntry[] },
+   repositories: RepositoryModEntries
+) {
+   const resolved = resolveModIdentities(
+      { entries: [...official.entries, ...repositories.entries], fileMatches: repositories.fileMatches },
+      repositories.resolution
+   );
+
+   return buildModIndex({
+      gameVersion: request.gameVersion,
+      platform: request.platform,
+      source: request.source,
+      updatedAt: new Date(request.fetchedAt).toISOString(),
+      sources: [...official.sources, ...repositories.sources],
+      entries: resolved.entries,
+      fileMatches: resolved.fileMatches
+   });
+}
+
+function resolveModIdentities(input: { entries: ModIndexEntry[]; fileMatches: ModIndexFileMatch[] }, settings: ModSourceResolutionSettings) {
    if (!settings.combine) return input;
 
    const candidatesByIdentity = new Map<string, ModIndexEntry[]>();
@@ -203,7 +231,7 @@ export function toModSummary(entry: ModIndexEntry, installedVersion: string | nu
       installedVersion,
       sizeBytes: entry.sizeBytes,
       isBsipa: entry.isBsipa,
-      isRequired: isRequiredModCategory(entry.category),
+      isRequired: entry.category === 'core' || entry.category === 'essential' || entry.category === 'library',
       dependencyIds: entry.dependencies,
       claimedIdentity: entry.claimedIdentity
    };
@@ -243,7 +271,7 @@ function selectIdentityCandidate(candidates: ModIndexEntry[], strategy: ModSourc
    }, first);
 }
 
-function compareVersions(first: string, second: string) {
+export function compareVersions(first: string, second: string) {
    const parsedFirst = semver.coerce(first);
    const parsedSecond = semver.coerce(second);
    if (parsedFirst && parsedSecond) return semver.compare(parsedFirst, parsedSecond);

@@ -1,46 +1,34 @@
-import { detectOfficialStores } from '@/modules/stores/main/detect-stores';
-import { localTargetId, type Target, type TargetCapability, type TargetHealth } from '@/modules/targets/contract';
+import { isSteamFrame } from '@/lib/platform/steam-frame';
+import { findOculusInstalls } from '@/modules/stores/main/oculus';
+import { findSteamInstalls } from '@/modules/stores/main/steam';
+import { localTargetId, type Target, type TargetCapability } from '@/modules/targets/contract';
 
 import { hostname } from 'node:os';
 
-export function getLocalTarget(platform: NodeJS.Platform = process.platform): Target {
-   const capabilities: TargetCapability[] = ['read-logs', 'run-operations'];
+export function getLocalTarget(): Target {
+   const capabilities: TargetCapability[] = [
+      'browse-files',
+      'import-install',
+      'list-installs',
+      'manage-installs',
+      'manage-maps',
+      'manage-models',
+      'manage-mods',
+      'manage-playlists',
+      'read-logs',
+      'run-operations',
+      'share-content',
+      'update-app'
+   ];
 
-   if (platform === 'win32' || platform === 'linux') {
-      capabilities.push(
-         'adopt-bsmanager',
-         'import-install',
-         'launch-install',
-         'list-installs',
-         'manage-installs',
-         'manage-maps',
-         'manage-models',
-         'manage-mods',
-         'manage-playlists',
-         'share-content'
-      );
-   }
+   if (process.platform === 'win32' || process.platform === 'linux')
+      capabilities.push('adopt-bsmanager', 'download-install', 'launch-install', 'mirror-install');
 
-   if (platform === 'win32') capabilities.push('download-install');
-
-   return {
-      id: localTargetId,
-      kind: 'local',
-      name: hostname(),
-      status: 'ready',
-      capabilities
-   };
+   const target: Target = { id: localTargetId, kind: 'local', name: hostname(), status: 'ready', capabilities };
+   if (isSteamFrame()) target.hardware = 'steam-frame';
+   return target;
 }
 
-export function getLocalTargetHealth(): TargetHealth {
-   const target = getLocalTarget();
-
-   return {
-      status: target.status,
-      capabilities: target.capabilities
-   };
-}
-
-export function detectLocalStores() {
-   return detectOfficialStores(localTargetId);
+export async function detectLocalStores() {
+   return (await Promise.all([findSteamInstalls(), findOculusInstalls()])).flat();
 }

@@ -12,6 +12,13 @@ import { Route as rootRouteImport } from './routes/__root';
 import { Route as SharedRouteImport } from './routes/shared';
 import { Route as SettingsRouteImport } from './routes/settings';
 import { Route as IndexRouteImport } from './routes/index';
+import { Route as SettingsRemoteRouteImport } from './routes/settings.remote';
+import { Route as SettingsQuestRouteImport } from './routes/settings.quest';
+import { Route as SettingsModsRouteImport } from './routes/settings.mods';
+import { Route as SettingsLinksRouteImport } from './routes/settings.links';
+import { Route as SettingsLibraryRouteImport } from './routes/settings.library';
+import { Route as SettingsGeneralRouteImport } from './routes/settings.general';
+import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance';
 import { Route as InstallsInstallIdRouteImport } from './routes/installs_.$installId';
 
 const SharedRoute = SharedRouteImport.update({
@@ -29,6 +36,41 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any);
+const SettingsRemoteRoute = SettingsRemoteRouteImport.update({
+  id: '/remote',
+  path: '/remote',
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsQuestRoute = SettingsQuestRouteImport.update({
+  id: '/quest',
+  path: '/quest',
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsModsRoute = SettingsModsRouteImport.update({
+  id: '/mods',
+  path: '/mods',
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsLinksRoute = SettingsLinksRouteImport.update({
+  id: '/links',
+  path: '/links',
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsLibraryRoute = SettingsLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => SettingsRoute,
+} as any);
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: '/appearance',
+  path: '/appearance',
+  getParentRoute: () => SettingsRoute,
+} as any);
 const InstallsInstallIdRoute = InstallsInstallIdRouteImport.update({
   id: '/installs_/$installId',
   path: '/installs/$installId',
@@ -37,34 +79,89 @@ const InstallsInstallIdRoute = InstallsInstallIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute;
-  '/settings': typeof SettingsRoute;
+  '/settings': typeof SettingsRouteWithChildren;
   '/shared': typeof SharedRoute;
   '/installs/$installId': typeof InstallsInstallIdRoute;
+  '/settings/appearance': typeof SettingsAppearanceRoute;
+  '/settings/general': typeof SettingsGeneralRoute;
+  '/settings/library': typeof SettingsLibraryRoute;
+  '/settings/links': typeof SettingsLinksRoute;
+  '/settings/mods': typeof SettingsModsRoute;
+  '/settings/quest': typeof SettingsQuestRoute;
+  '/settings/remote': typeof SettingsRemoteRoute;
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute;
-  '/settings': typeof SettingsRoute;
+  '/settings': typeof SettingsRouteWithChildren;
   '/shared': typeof SharedRoute;
   '/installs/$installId': typeof InstallsInstallIdRoute;
+  '/settings/appearance': typeof SettingsAppearanceRoute;
+  '/settings/general': typeof SettingsGeneralRoute;
+  '/settings/library': typeof SettingsLibraryRoute;
+  '/settings/links': typeof SettingsLinksRoute;
+  '/settings/mods': typeof SettingsModsRoute;
+  '/settings/quest': typeof SettingsQuestRoute;
+  '/settings/remote': typeof SettingsRemoteRoute;
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   '/': typeof IndexRoute;
-  '/settings': typeof SettingsRoute;
+  '/settings': typeof SettingsRouteWithChildren;
   '/shared': typeof SharedRoute;
   '/installs_/$installId': typeof InstallsInstallIdRoute;
+  '/settings/appearance': typeof SettingsAppearanceRoute;
+  '/settings/general': typeof SettingsGeneralRoute;
+  '/settings/library': typeof SettingsLibraryRoute;
+  '/settings/links': typeof SettingsLinksRoute;
+  '/settings/mods': typeof SettingsModsRoute;
+  '/settings/quest': typeof SettingsQuestRoute;
+  '/settings/remote': typeof SettingsRemoteRoute;
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath;
-  fullPaths: '/' | '/settings' | '/shared' | '/installs/$installId';
+  fullPaths:
+    | '/'
+    | '/settings'
+    | '/shared'
+    | '/installs/$installId'
+    | '/settings/appearance'
+    | '/settings/general'
+    | '/settings/library'
+    | '/settings/links'
+    | '/settings/mods'
+    | '/settings/quest'
+    | '/settings/remote';
   fileRoutesByTo: FileRoutesByTo;
-  to: '/' | '/settings' | '/shared' | '/installs/$installId';
-  id: '__root__' | '/' | '/settings' | '/shared' | '/installs_/$installId';
+  to:
+    | '/'
+    | '/settings'
+    | '/shared'
+    | '/installs/$installId'
+    | '/settings/appearance'
+    | '/settings/general'
+    | '/settings/library'
+    | '/settings/links'
+    | '/settings/mods'
+    | '/settings/quest'
+    | '/settings/remote';
+  id:
+    | '__root__'
+    | '/'
+    | '/settings'
+    | '/shared'
+    | '/installs_/$installId'
+    | '/settings/appearance'
+    | '/settings/general'
+    | '/settings/library'
+    | '/settings/links'
+    | '/settings/mods'
+    | '/settings/quest'
+    | '/settings/remote';
   fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute;
-  SettingsRoute: typeof SettingsRoute;
+  SettingsRoute: typeof SettingsRouteWithChildren;
   SharedRoute: typeof SharedRoute;
   InstallsInstallIdRoute: typeof InstallsInstallIdRoute;
 }
@@ -92,6 +189,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    '/settings/remote': {
+      id: '/settings/remote';
+      path: '/remote';
+      fullPath: '/settings/remote';
+      preLoaderRoute: typeof SettingsRemoteRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    '/settings/quest': {
+      id: '/settings/quest';
+      path: '/quest';
+      fullPath: '/settings/quest';
+      preLoaderRoute: typeof SettingsQuestRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    '/settings/mods': {
+      id: '/settings/mods';
+      path: '/mods';
+      fullPath: '/settings/mods';
+      preLoaderRoute: typeof SettingsModsRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    '/settings/links': {
+      id: '/settings/links';
+      path: '/links';
+      fullPath: '/settings/links';
+      preLoaderRoute: typeof SettingsLinksRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    '/settings/library': {
+      id: '/settings/library';
+      path: '/library';
+      fullPath: '/settings/library';
+      preLoaderRoute: typeof SettingsLibraryRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    '/settings/general': {
+      id: '/settings/general';
+      path: '/general';
+      fullPath: '/settings/general';
+      preLoaderRoute: typeof SettingsGeneralRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
+    '/settings/appearance': {
+      id: '/settings/appearance';
+      path: '/appearance';
+      fullPath: '/settings/appearance';
+      preLoaderRoute: typeof SettingsAppearanceRouteImport;
+      parentRoute: typeof SettingsRoute;
+    };
     '/installs_/$installId': {
       id: '/installs_/$installId';
       path: '/installs/$installId';
@@ -102,9 +248,33 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface SettingsRouteChildren {
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute;
+  SettingsGeneralRoute: typeof SettingsGeneralRoute;
+  SettingsLibraryRoute: typeof SettingsLibraryRoute;
+  SettingsLinksRoute: typeof SettingsLinksRoute;
+  SettingsModsRoute: typeof SettingsModsRoute;
+  SettingsQuestRoute: typeof SettingsQuestRoute;
+  SettingsRemoteRoute: typeof SettingsRemoteRoute;
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsLibraryRoute: SettingsLibraryRoute,
+  SettingsLinksRoute: SettingsLinksRoute,
+  SettingsModsRoute: SettingsModsRoute,
+  SettingsQuestRoute: SettingsQuestRoute,
+  SettingsRemoteRoute: SettingsRemoteRoute,
+};
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+);
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   SharedRoute: SharedRoute,
   InstallsInstallIdRoute: InstallsInstallIdRoute,
 };

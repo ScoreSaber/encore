@@ -6,43 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-import { formatLaunchArgs, type LaunchIssue, type LaunchWarning } from '@/modules/launch/contract';
+import { formatLaunchArgs } from '@/modules/launch/contract';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { LaunchLinkIssue } from '@/modules/shortcuts/contract';
-import { useDeepLinkLaunch } from '@/modules/shortcuts/renderer/use-deep-link-launch';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const linkIssueKeys: MessageKeyMap<LaunchLinkIssue, 'shortcuts.link.issues'> = {
-   'invalid-request': 'invalidRequest',
-   'unknown-action': 'unknownAction',
-   'unknown-install': 'unknownInstall',
-   'unsupported-link': 'unsupportedLink'
-};
-
-const issueKeys: MessageKeyMap<LaunchIssue, 'launch.issues'> = {
-   'executable-missing': 'executableMissing',
-   'inspect-failed': 'inspectFailed',
-   'invalid-options': 'invalidOptions',
-   'not-found': 'notFound',
-   'proton-not-found': 'protonNotFound',
-   'proton-not-set': 'protonNotSet',
-   'store-client-missing': 'storeClientMissing',
-   'unsupported-platform': 'unsupportedPlatform',
-   'unsupported-target': 'unsupportedTarget'
-};
-
-const warningKeys: MessageKeyMap<LaunchWarning, 'launch.warnings'> = {
-   'admin-prompt': 'adminPrompt',
-   'admin-unsupported': 'adminUnsupported',
-   'oculus-client-starts': 'oculusClientStarts',
-   'proton-logs': 'protonLogs',
-   'steam-client-starts': 'steamClientStarts',
-   'steam-skipped': 'steamSkipped'
-};
+import { canLaunchWithoutAsking, useDeepLinkLaunch } from '@/modules/shortcuts/renderer/use-deep-link-launch';
 
 export function DeepLinkLaunchDialog() {
    const t = useTranslations('shortcuts.link');
    const launch = useTranslations('launch');
+   const launchProblems = useTranslations('problems.launch');
    const common = useTranslations('common');
    const { state, remember, setRemember, confirm, dismiss } = useDeepLinkLaunch();
    const hidden =
@@ -66,7 +37,7 @@ export function DeepLinkLaunchDialog() {
             <div className="flex flex-col gap-3 text-sm">
                {state.status === 'rejected' ? (
                   <>
-                     <p>{t(`issues.${linkIssueKeys[state.issue]}`)}</p>
+                     <p>{t(`issues.${state.issue}`)}</p>
                      {state.detail ? <p className="text-muted-foreground text-xs break-all">{state.detail}</p> : null}
                   </>
                ) : null}
@@ -76,7 +47,7 @@ export function DeepLinkLaunchDialog() {
                {state.status === 'unavailable' ? (
                   <>
                      <PreviewRow label={t('install')} value={state.installName} />
-                     <p>{launch(`issues.${issueKeys[state.preview.issue]}`)}</p>
+                     <p>{launchProblems(state.preview.issue)}</p>
                      {state.preview.detail ? <p className="text-muted-foreground text-xs break-all">{state.preview.detail}</p> : null}
                   </>
                ) : null}
@@ -98,10 +69,10 @@ export function DeepLinkLaunchDialog() {
                      />
 
                      {state.preview.warnings.map((warning) => (
-                        <WarningLine key={warning}>{launch(`warnings.${warningKeys[warning]}`)}</WarningLine>
+                        <WarningLine key={warning}>{launch(`warnings.${warning}`)}</WarningLine>
                      ))}
-                     {state.preview.options.closeEncore ? <WarningLine>{launch('closeEncore.description')}</WarningLine> : null}
-                     {state.status === 'ready' ? (
+                     {state.preview.options.closeEncore ? <WarningLine>{launch('flags.close-encore.description')}</WarningLine> : null}
+                     {state.status === 'ready' && canLaunchWithoutAsking(state.request) ? (
                         <label className="flex items-start gap-2">
                            <Checkbox checked={remember} onCheckedChange={(checked) => setRemember(checked === true)} />
                            <span className="min-w-0 break-words">{t('remember')}</span>

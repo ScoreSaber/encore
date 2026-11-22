@@ -1,17 +1,8 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { readRecent, setRecent } from '@/lib/content/content-cache';
-import { createPersistentCache } from '@/lib/content/content-cache';
-import {
-   defaultModSourceResolutionSettings,
-   officialModSourceId,
-   officialModSourceName,
-   type ModCatalogSource,
-   type ModPlatform,
-   type ModSourceResolutionSettings
-} from '@/modules/mods/contract';
-import type { ModSourceStatus } from '@/modules/mods/contract';
+import { createPersistentCache, readRecent, setRecent } from '@/lib/content/content-cache';
+import { officialModSourceId, officialModSourceName, type ModCatalogSource, type ModPlatform, type ModSourceStatus } from '@/modules/mods/contract';
 import {
    beatModsModSchema,
    beatModsVersionSchema,
@@ -21,45 +12,40 @@ import {
    type BeatModsProblem
 } from '@/modules/mods/main/beatmods-api';
 import {
-   buildModIndex,
+   composeModIndex,
    modIndexKey,
-   resolveModIdentities,
    toModIndexEntries,
    type ModIndex,
    type ModIndexEntry,
-   type ModIndexFileMatch
+   type RepositoryModEntries
 } from '@/modules/mods/main/mod-index';
+import type { AppLogWriter } from '@/modules/support/main/app-log';
 
-const defaultTtlMs = 10 * 60 * 1000;
+const ttlMs = 10 * 60 * 1000;
 const maxHashLookups = 80;
 const maxCachedCatalogs = 4;
 const maxCachedHashLookups = maxHashLookups * 2;
 const beatModsEntrySchema = z.object({ mod: beatModsModSchema, version: beatModsVersionSchema });
 const catalogCacheValueSchema = z.object({ entries: z.array(beatModsEntrySchema), fetchedAt: z.int().nonnegative() });
 
-export type ModCatalogRequest = {
+type ModCatalogRequest = {
    gameVersion: string;
    platform: ModPlatform;
 };
 
-export type ModRepositoryEntries = {
-   listEntries: (request: ModCatalogRequest) => Promise<{
-      sources: ModSourceStatus[];
-      entries: ModIndexEntry[];
-      fileMatches: ModIndexFileMatch[];
-      resolution: ModSourceResolutionSettings;
-   }>;
+type ModRepositoryEntries = {
+   listEntries: (request: ModCatalogRequest) => Promise<RepositoryModEntries>;
    isBeatModsEnabled: () => Promise<boolean>;
 };
 
-export type ModCatalogOptions = {
+type ModCatalogOptions = {
    dataPath: string;
+   log: AppLogWriter;
    api?: BeatModsApi;
-   repositories?: ModRepositoryEntries;
-   ttlMs?: number;
+   repositories: ModRepositoryEntries;
 };
 
-export type ModHashMatch = {
+type ModHashMatch = {
    modId: string;
    version: string;
 };
@@ -68,25 +54,27 @@ export type ModCatalogService = ReturnType<typeof createModCatalogService>;
 
 export function createModCatalogService(options: ModCatalogOptions) {
    const api = options.api ?? createBeatModsApi();
-   const ttlMs = options.ttlMs ?? defaultTtlMs;
    const catalogs = new Map<string, { entries: BeatModsEntry[]; fetchedAt: number }>();
    const refreshes = new Map<string, Promise<Result<ModIndex, BeatModsProblem>>>();
    const hashLookups = new Map<string, ModHashMatch | null>();
+   const hashInFlight = new Map<string, Promise<ModHashMatch | null>>();
    const persisted = createPersistentCache({
       dataPath: options.dataPath,
+      log: options.log,
       name: 'mods-catalog',
       valueSchema: catalogCacheValueSchema,
       maxEntries: maxCachedCatalogs
    });
    let lookupBudget = maxHashLookups;
+   let budgetResetAt = Date.now() + ttlMs;
 
    async function get(request: ModCatalogRequest): Promise<Result<ModIndex, BeatModsProblem>> {
-      if (!((await options.repositories?.isBeatModsEnabled()) ?? true)) return build(request, [], [], 'remote', Date.now());
+      if (!(await options.repositories.isBeatModsEnabled())) return build(request, [], [], 'remote', Date.now());
 
       const key = `${request.platform}::${request.gameVersion}`;
       let cached = readRecent(catalogs, key);
       if (!cached) {
-         const stored = await persisted.get(key, key);
+         const stored = await persisted.get(key);
          if (stored) {
             cached = stored;
             setRecent(catalogs, key, stored, maxCachedCatalogs);
@@ -115,27 +103,27 @@ export function createModCatalogService(options: ModCatalogOptions) {
    }
 
    async function runRefresh(request: ModCatalogRequest, key: string): Promise<Result<ModIndex, BeatModsProblem>> {
-      if (!((await options.repositories?.isBeatModsEnabled()) ?? true)) return build(request, [], [], 'remote', Date.now());
+      if (!(await options.repositories.isBeatModsEnabled())) return build(request, [], [], 'remote', Date.now());
 
-      const status = await api.checkStatus();
-      if (Result.isError(status)) return Result.err<ModIndex, BeatModsProblem>(status.error);
-
-      const listed = await api.listMods(request);
-      if (Result.isError(listed)) return Result.err<ModIndex, BeatModsProblem>(listed.error);
+      const [status, listed, repositories] = await Promise.all([api.checkStatus(), api.listMods(request), options.repositories.listEntries(request)]);
+      if (Result.isError(status)) return Result.err(status.error);
+      if (Result.isError(listed)) return Result.err(listed.error);
 
       const fetchedAt = Date.now();
       setRecent(catalogs, key, { entries: listed.value, fetchedAt }, maxCachedCatalogs);
-      await persisted.set(key, key, { entries: listed.value, fetchedAt });
+      await persisted.set(key, { entries: listed.value, fetchedAt });
       lookupBudget = maxHashLookups;
+      budgetResetAt = fetchedAt + ttlMs;
 
-      return compose(request, listed.value, 'remote', fetchedAt);
+      return compose(request, listed.value, 'remote', fetchedAt, repositories);
    }
 
    async function compose(
       request: ModCatalogRequest,
       entries: BeatModsEntry[],
       source: ModCatalogSource,
-      fetchedAt: number
+      fetchedAt: number,
+      repositories?: RepositoryModEntries
    ): Promise<Result<ModIndex, BeatModsProblem>> {
       const official = toModIndexEntries(entries);
 
@@ -144,7 +132,8 @@ export function createModCatalogService(options: ModCatalogOptions) {
          official,
          [{ id: officialModSourceId, name: officialModSourceName, kind: 'official', state: 'ready', modCount: official.length }],
          source,
-         fetchedAt
+         fetchedAt,
+         repositories
       );
    }
 
@@ -153,29 +142,15 @@ export function createModCatalogService(options: ModCatalogOptions) {
       official: ModIndexEntry[],
       officialSources: ModSourceStatus[],
       source: ModCatalogSource,
-      fetchedAt: number
+      fetchedAt: number,
+      repositories?: RepositoryModEntries
    ): Promise<Result<ModIndex, BeatModsProblem>> {
-      const repositories = (await options.repositories?.listEntries(request)) ?? {
-         sources: [],
-         entries: [],
-         fileMatches: [],
-         resolution: defaultModSourceResolutionSettings
-      };
-      const resolved = resolveModIdentities(
-         { entries: [...official, ...repositories.entries], fileMatches: repositories.fileMatches },
-         repositories.resolution
-      );
-
-      return Result.ok<ModIndex, BeatModsProblem>(
-         buildModIndex({
-            gameVersion: request.gameVersion,
-            platform: request.platform,
-            source,
-            updatedAt: new Date(fetchedAt).toISOString(),
-            sources: [...officialSources, ...repositories.sources],
-            entries: resolved.entries,
-            fileMatches: resolved.fileMatches
-         })
+      return Result.ok(
+         composeModIndex(
+            { ...request, source, fetchedAt },
+            { sources: officialSources, entries: official },
+            repositories ?? (await options.repositories.listEntries(request))
+         )
       );
    }
 
@@ -186,15 +161,30 @@ export function createModCatalogService(options: ModCatalogOptions) {
          return cached;
       }
 
-      if (lookupBudget <= 0 || !((await options.repositories?.isBeatModsEnabled()) ?? true)) return null;
+      const pending = hashInFlight.get(key);
+      if (pending) return pending;
+
+      const currentTime = Date.now();
+      if (currentTime >= budgetResetAt) {
+         lookupBudget = maxHashLookups;
+         budgetResetAt = currentTime + ttlMs;
+      }
+
+      if (lookupBudget <= 0 || !(await options.repositories.isBeatModsEnabled())) return null;
       lookupBudget -= 1;
 
-      const looked = await api.lookupHash(key);
-      const version = Result.isOk(looked) ? looked.value : null;
-      const match = version ? { modId: modIndexKey(officialModSourceId, String(version.modId)), version: version.modVersion } : null;
-      setRecent(hashLookups, key, match, maxCachedHashLookups);
+      const started = (async () => {
+         const looked = await api.lookupHash(key);
+         const version = Result.isOk(looked) ? looked.value : null;
+         const match = version ? { modId: modIndexKey(officialModSourceId, String(version.modId)), version: version.modVersion } : null;
+         setRecent(hashLookups, key, match, maxCachedHashLookups);
+         return match;
+      })().finally(() => {
+         if (hashInFlight.get(key) === started) hashInFlight.delete(key);
+      });
+      hashInFlight.set(key, started);
 
-      return match;
+      return started;
    }
 
    return { get, refresh, lookupHash };

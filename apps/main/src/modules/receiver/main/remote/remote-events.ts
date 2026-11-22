@@ -1,18 +1,16 @@
-import { z } from 'zod';
-
-import type { DomainApi, TargetSnapshot } from '@/lib/api';
-import { insecureStorageMessage, type RemoteSession } from '@/modules/receiver/main/remote/remote-session';
+import type { ApiJsonValue, DomainApi, TargetSnapshot } from '@/lib/api';
+import { insecureStorageMessage, relayedTargetId, type RemoteSession } from '@/modules/receiver/main/remote/remote-session';
 import type { ReceiverStreamEvent } from '@/modules/receiver/protocol';
+import { targetApis } from '@/modules/targets/api';
 import type { Target, TargetEvent } from '@/modules/targets/contract';
 
-export function createRemoteEvents(apis: readonly DomainApi[]) {
-   type SnapshotValue = Extract<ReceiverStreamEvent, { type: 'snapshot' }>['value'];
+export function createRemoteEvents() {
    const snapshots = new Map<string, NonNullable<DomainApi['snapshot']>>();
-   for (const api of apis) {
+   for (const api of Object.values(targetApis)) {
       if (api.snapshot) snapshots.set(api.namespace, api.snapshot);
    }
    const targetListeners = new Set<(event: TargetEvent) => void>();
-   const snapshotListeners = new Map<string, Set<(event: TargetSnapshot<SnapshotValue>) => void>>();
+   const snapshotListeners = new Map<string, Set<(event: TargetSnapshot<ApiJsonValue>) => void>>();
 
    function emit(event: TargetEvent) {
       for (const listener of targetListeners) listener(event);
@@ -25,6 +23,26 @@ export function createRemoteEvents(apis: readonly DomainApi[]) {
    function updateTarget(session: RemoteSession, update: Partial<Target>) {
       session.target = { ...session.target, ...update };
       emitTarget(session);
+      if (session.target.status !== 'ready') updateAttached(session, []);
+   }
+
+   function updateAttached(session: RemoteSession, hosted: readonly Target[]) {
+      const previous = new Map(session.attached.map((target) => [target.id, target]));
+      session.attached = hosted.map((target) => ({
+         id: relayedTargetId(session.record.id, target.id),
+         kind: target.kind,
+         name: target.name,
+         status: target.status,
+         capabilities: target.capabilities,
+         message: target.message,
+         via: session.target.name
+      }));
+
+      for (const target of session.attached) {
+         if (JSON.stringify(previous.get(target.id)) !== JSON.stringify(target)) emit({ type: 'target-updated', target });
+         previous.delete(target.id);
+      }
+      for (const targetId of previous.keys()) emit({ type: 'target-removed', targetId });
    }
 
    function handleStreamEvent(session: RemoteSession, event: ReceiverStreamEvent) {
@@ -32,20 +50,18 @@ export function createRemoteEvents(apis: readonly DomainApi[]) {
 
       if (event.type === 'target') {
          updateTarget(session, {
-            status: 'ready',
+            status: event.target.status,
             capabilities: event.target.capabilities,
-            message: session.tokenPersisted ? undefined : insecureStorageMessage
+            message: event.target.message ?? (session.tokenPersisted ? undefined : insecureStorageMessage)
          });
+         if (session.target.status === 'ready') updateAttached(session, event.attached);
          return;
       }
 
-      const snapshot = snapshots.get(event.namespace)?.safeParse(event.value);
-      if (!snapshot?.success) return;
-      const value = z.json().safeParse(snapshot.data);
-      if (!value.success) return;
-
+      if (!snapshots.get(event.namespace)?.safeParse(event.value).success) return;
+      const targetId = event.targetId === undefined ? session.record.id : relayedTargetId(session.record.id, event.targetId);
       for (const listener of snapshotListeners.get(event.namespace) ?? []) {
-         listener({ targetId: session.record.id, snapshot: value.data });
+         listener({ targetId, snapshot: event.value });
       }
    }
 
@@ -56,25 +72,18 @@ export function createRemoteEvents(apis: readonly DomainApi[]) {
       };
    }
 
-   function subscribeSnapshots<Snapshot extends z.ZodType>(
-      api: { namespace: string; snapshot: Snapshot },
-      listener: (event: TargetSnapshot<z.output<Snapshot>>) => void
-   ) {
-      const listeners = snapshotListeners.get(api.namespace) ?? new Set<(event: TargetSnapshot<SnapshotValue>) => void>();
-      const parsedListener = (event: TargetSnapshot<SnapshotValue>) => {
-         const snapshot = z.safeParse(api.snapshot, event.snapshot);
-         if (snapshot.success) listener({ targetId: event.targetId, snapshot: snapshot.data });
-      };
-      listeners.add(parsedListener);
-      snapshotListeners.set(api.namespace, listeners);
+   function subscribeSnapshots(namespace: string, listener: (event: TargetSnapshot<ApiJsonValue>) => void) {
+      const listeners = snapshotListeners.get(namespace) ?? new Set();
+      listeners.add(listener);
+      snapshotListeners.set(namespace, listeners);
 
       return () => {
-         listeners.delete(parsedListener);
-         if (listeners.size === 0) snapshotListeners.delete(api.namespace);
+         listeners.delete(listener);
+         if (listeners.size === 0) snapshotListeners.delete(namespace);
       };
    }
 
-   return { emit, emitTarget, updateTarget, handleStreamEvent, subscribe, subscribeSnapshots };
+   return { emit, emitTarget, updateTarget, updateAttached, handleStreamEvent, subscribe, subscribeSnapshots };
 }
 
 export type RemoteEvents = ReturnType<typeof createRemoteEvents>;

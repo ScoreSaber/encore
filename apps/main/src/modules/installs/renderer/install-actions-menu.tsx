@@ -1,4 +1,4 @@
-import { EyeOff, FolderOpen, MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
+import { Copy, EyeOff, FolderOpen, MoreHorizontal, Pencil, PackageX, Trash2 } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
@@ -18,7 +18,10 @@ export function InstallActionsMenu({
    editor,
    actions,
    shortcuts,
-   onOpenFolder
+   onOpenFolder,
+   onUnmod,
+   onForget,
+   mirror
 }: {
    detail: InstallDetail;
    targetId: TargetId;
@@ -27,10 +30,14 @@ export function InstallActionsMenu({
    actions: InstallActions;
    shortcuts: InstallShortcuts;
    onOpenFolder: () => void;
+   onUnmod?: () => void;
+   onForget?: () => void;
+   mirror?: { label: string; onSelect: () => void };
 }) {
    const t = useTranslations('installs');
+   const quest = useTranslations('quest');
    const common = useTranslations('common');
-   const busy = actions.state.status !== 'idle' || editor.state.status !== 'closed';
+   const busy = actions.flow.state.status !== 'idle' || editor.state.status !== 'closed';
    const local = targetId === localTargetId;
    const canManageFiles = supportsManagement && detail.source !== 'store';
 
@@ -47,25 +54,40 @@ export function InstallActionsMenu({
                   <ActionItem icon={Pencil} label={t('manage.edit.action')} disabled={busy} onSelect={() => editor.open(detail)} />
                ) : null}
                {local ? <ActionItem icon={FolderOpen} label={common('openFolder.action')} onSelect={onOpenFolder} /> : null}
-               <CreateShortcutSubmenu shortcuts={shortcuts} />
+               {window.encore.runtime === 'desktop' ? <CreateShortcutSubmenu shortcuts={shortcuts} /> : null}
+               {mirror ? <ActionItem icon={Copy} label={mirror.label} disabled={busy} onSelect={mirror.onSelect} /> : null}
 
                {canManageFiles ? (
                   <>
-                     <DropdownMenuSeparator />
+                     <DropdownMenuSeparator className="first:hidden" />
                      <ActionItem
                         icon={Trash2}
                         destructive
                         label={t('manage.delete.action')}
                         disabled={busy}
-                        onSelect={() => void actions.preview('delete')}
+                        onSelect={() => void actions.previewDelete()}
                      />
                      <ActionItem
                         icon={EyeOff}
                         destructive
                         label={t('manage.forget.action')}
                         disabled={busy}
-                        onSelect={() => void actions.preview('forget')}
+                        onSelect={() => void actions.previewForget()}
                      />
+                  </>
+               ) : null}
+
+               {onUnmod ? (
+                  <>
+                     <DropdownMenuSeparator className="first:hidden" />
+                     <ActionItem icon={PackageX} destructive label={quest('unmod.action')} disabled={busy} onSelect={onUnmod} />
+                  </>
+               ) : null}
+
+               {onForget ? (
+                  <>
+                     <DropdownMenuSeparator className="first:hidden" />
+                     <ActionItem icon={Trash2} label={quest('forget')} disabled={busy} onSelect={onForget} />
                   </>
                ) : null}
             </DropdownMenuContent>

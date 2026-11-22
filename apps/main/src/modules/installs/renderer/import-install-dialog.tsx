@@ -3,33 +3,22 @@ import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
-import type { InstallImportIssue } from '@/modules/installs/contract';
 import type { InstallImporter } from '@/modules/installs/renderer/use-install-import';
 import { PreviewRow } from '@/modules/operations/renderer/operation-progress';
-import type { MessageKeyMap } from '@/renderer/i18n/keys';
-
-const issueKeys: MessageKeyMap<InstallImportIssue, 'installs.import.issues'> = {
-   'already-registered': 'alreadyRegistered',
-   'inspect-failed': 'inspectFailed',
-   'missing-executable': 'missingExecutable',
-   'missing-game-data': 'missingGameData',
-   'not-a-directory': 'notADirectory',
-   'not-absolute': 'notAbsolute',
-   'not-found': 'notFound',
-   'unknown-version': 'unknownVersion'
-};
 
 export function ImportInstallDialog({ importer }: { importer: InstallImporter }) {
    const t = useTranslations('installs');
    const common = useTranslations('common');
+   const problems = useTranslations('problems.installs.import');
    const { state } = importer;
    const open = state.status !== 'idle' && state.status !== 'choosing';
+   const busy = state.status === 'registering';
 
    return (
       <Dialog
          open={open}
          onOpenChange={(nextOpen) => {
-            if (nextOpen) return;
+            if (nextOpen || busy) return;
 
             importer.dismiss();
          }}
@@ -41,11 +30,11 @@ export function ImportInstallDialog({ importer }: { importer: InstallImporter })
             </DialogHeader>
 
             <div className="flex flex-col gap-3 text-sm">
-               {state.status === 'unsupported' ? <p>{t('import.unsupportedTarget')}</p> : null}
+               {state.status === 'previewing' ? <p className="text-muted-foreground">{common('loading')}</p> : null}
 
                {state.status === 'invalid' ? (
                   <>
-                     <p>{t(`import.issues.${issueKeys[state.preview.issue]}`)}</p>
+                     <p>{problems(state.preview.issue)}</p>
                      <p className="text-muted-foreground text-xs break-all">{state.preview.sourcePath}</p>
                   </>
                ) : null}
@@ -89,13 +78,13 @@ export function ImportInstallDialog({ importer }: { importer: InstallImporter })
                      <Button type="button" variant="outline" size="sm" onClick={importer.dismiss}>
                         {common('close')}
                      </Button>
-                     <Button type="button" size="sm" onClick={() => void importer.choose()}>
+                     <Button type="button" size="sm" onClick={() => void importer.choose(state.targetId)}>
                         {t('import.chooseAnother')}
                      </Button>
                   </>
                ) : null}
 
-               {state.status === 'unsupported' || state.status === 'failed' || state.status === 'registered' ? (
+               {state.status === 'failed' || state.status === 'registered' ? (
                   <Button type="button" size="sm" onClick={importer.dismiss}>
                      {common('close')}
                   </Button>

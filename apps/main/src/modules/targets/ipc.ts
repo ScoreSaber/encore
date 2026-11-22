@@ -1,22 +1,7 @@
-import { z } from 'zod';
+import { defineIpc, request, event } from '@/ipc/core';
+import type { Target, TargetEvent } from '@/modules/targets/contract';
 
-import { defineIpcDescriptor, defineIpcEvent, defineIpcQuery } from '@/ipc/core';
-import { installIdSchema } from '@/modules/installs/contract';
-import { receiverOperations } from '@/modules/receiver/operations';
-import { targetIdSchema, type Target, type TargetEvent, type TargetHealth } from '@/modules/targets/contract';
-
-export const targetIdRequestSchema = z.object({
-   targetId: targetIdSchema
-});
-
-export const targetInstallRequestSchema = targetIdRequestSchema.extend({
-   installId: installIdSchema
-});
-
-export type TargetIdRequest = z.infer<typeof targetIdRequestSchema>;
-
-export const targetsIpc = defineIpcDescriptor({
-   list: defineIpcQuery<Target[]>('targets:list'),
-   getHealth: defineIpcQuery<TargetHealth | null, TargetIdRequest>(receiverOperations.capabilities.id, targetIdRequestSchema),
-   onEvent: defineIpcEvent<TargetEvent>('targets:changed')
+export const targetsIpc = defineIpc('targets', {
+   list: request().returns<Target[]>(),
+   onEvent: event<TargetEvent>()
 });

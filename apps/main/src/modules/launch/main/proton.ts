@@ -1,12 +1,13 @@
 import { Result } from 'better-result';
 
-import { causeCode } from '@/lib/errors';
-import { createFilesystemProblem, resolveFilesystemPath, pathExists } from '@/lib/filesystem/path';
-import { invalidProtonFolder, type ProtonValidation } from '@/modules/launch/contract';
-import { getSteamClientRoots } from '@/modules/stores/main/steam';
+import { causeCode, createProblem } from '@/lib/errors';
+import { resolveFilesystemPath, pathExists } from '@/lib/filesystem/path';
+import { isSteamFrame } from '@/lib/platform/steam-frame';
+import type { ProtonIssue, ProtonValidation } from '@/modules/launch/contract';
+import { findSteamClientRoot, openSteamLink } from '@/modules/stores/main/steam-client';
 
 import { constants } from 'node:fs';
-import { access, mkdir, stat } from 'node:fs/promises';
+import { access, mkdir, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
 const protonBinaryName = 'proton';
@@ -15,7 +16,23 @@ export type LinuxLaunchHost = {
    steamClientPath: string | null;
    nixOs: boolean;
    flatpak: boolean;
+   steamFrame: boolean;
 };
+
+export async function findInstalledProton(steamClientPath: string, arch: string) {
+   const commonPath = join(steamClientPath, 'steamapps', 'common');
+   const listed = await Result.tryPromise(() => readdir(commonPath, { withFileTypes: true }));
+   if (Result.isError(listed)) return null;
+
+   const candidates = listed.value.filter((entry) => entry.isDirectory() && entry.name.startsWith('Proton')).map((entry) => entry.name);
+   const rank = (name: string) => (arch === 'arm64' && name.includes('ARM64') ? 2 : 0) + (name.includes('Experimental') ? 1 : 0);
+   const ordered = candidates.toSorted((first, second) => rank(second) - rank(first) || second.localeCompare(first, undefined, { numeric: true }));
+   for (const name of ordered) {
+      const validation = await validateProtonFolder(join(commonPath, name));
+      if (validation.status === 'ok') return validation.path;
+   }
+   return null;
+}
 
 export async function validateProtonFolder(input: string): Promise<ProtonValidation> {
    const trimmed = input.trim();
@@ -50,28 +67,27 @@ export async function validateProtonFolder(input: string): Promise<ProtonValidat
    return { status: 'ok', path, protonBinaryPath };
 }
 
+function invalidProtonFolder(path: string, issue: ProtonIssue): ProtonValidation {
+   return { status: 'invalid', path, issue };
+}
+
 export function ensureProtonCompatData(compatDataPath: string) {
    return Result.tryPromise({
       try: async () => {
          await mkdir(compatDataPath, { recursive: true });
       },
-      catch: (cause) =>
-         createFilesystemProblem('filesystem.operation.copy-failed', 'failed to prepare the Proton compatibility folder', compatDataPath, cause)
+      catch: (cause) => createProblem('filesystem.operation.create-failed', { path: compatDataPath, cause })
    });
 }
 
 export async function readLinuxLaunchHost(): Promise<LinuxLaunchHost> {
-   const [steamClientPath, nixOs, flatpak] = await Promise.all([findSteamClientPath(), isNixOs(), isFlatpak()]);
-   return { steamClientPath, nixOs, flatpak };
-}
-
-async function findSteamClientPath() {
-   for (const root of await getSteamClientRoots()) {
-      const exists = await pathExists(root);
-      if (Result.isOk(exists) && exists.value) return root;
-   }
-
-   return null;
+   const [steamClientPath, nixOs, flatpak, steamFrame] = await Promise.all([
+      findSteamClientRoot(),
+      isNixOs(),
+      isFlatpak(),
+      Promise.resolve(isSteamFrame())
+   ]);
+   return { steamClientPath, nixOs, flatpak, steamFrame };
 }
 
 async function isNixOs() {
@@ -88,4 +104,18 @@ async function isFlatpak() {
 
    const exists = await pathExists('/.flatpak-info');
    return Result.isOk(exists) && exists.value;
+}
+
+const steamProtonAppIds = { arm64: '4628740', other: '1493710' };
+
+export function requestSteamProton(arch: string) {
+   return openSteamLink(`steam://install/${arch === 'arm64' ? steamProtonAppIds.arm64 : steamProtonAppIds.other}`);
+}
+
+export async function ensureSteamProton(protonPath: string | null, arch: string) {
+   if (process.platform !== 'linux') return false;
+   if (protonPath && (await validateProtonFolder(protonPath)).status === 'ok') return false;
+   const host = await readLinuxLaunchHost();
+   if (!host.steamFrame || !host.steamClientPath || (await findInstalledProton(host.steamClientPath, arch))) return false;
+   return requestSteamProton(arch);
 }

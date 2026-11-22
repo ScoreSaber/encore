@@ -18,6 +18,7 @@ import { operationResultSchema } from '@/modules/operations/contract';
 
 const install = z.object({ installId: z.string().min(1) });
 const selection = install.extend({ modIds: z.array(z.string().min(1)) });
+const uninstall = selection.extend({ scope: modUninstallScopeSchema, externalIds: z.array(z.string().min(1)).max(4_000).default([]) });
 const changes = install.extend({ installModIds: z.array(z.string().min(1)), removeModIds: z.array(z.string().min(1)) });
 
 export const modsApi = defineDomainApi(
@@ -40,12 +41,12 @@ export const modsApi = defineDomainApi(
       applyChanges: targetProcedure({ capability: 'manage-mods', input: changes, output: operationResultSchema }),
       previewUninstall: targetProcedure({
          capability: 'manage-mods',
-         input: selection.extend({ scope: modUninstallScopeSchema }),
+         input: uninstall,
          output: modUninstallPreviewSchema
       }),
       uninstallMods: targetProcedure({
          capability: 'manage-mods',
-         input: selection.extend({ scope: modUninstallScopeSchema }),
+         input: uninstall,
          output: operationResultSchema
       })
    },
@@ -57,5 +58,3 @@ export const modsApi = defineDomainApi(
 );
 
 export type TargetModRequest = TargetCall<typeof modsApi.procedures.getMods>;
-export type TargetModSelectionRequest = TargetCall<typeof modsApi.procedures.previewInstall>;
-export type TargetModUninstallRequest = TargetCall<typeof modsApi.procedures.previewUninstall>;

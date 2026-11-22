@@ -1,6 +1,4 @@
-import { z } from 'zod';
-
-import { BlockList } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import { networkInterfaces } from 'node:os';
 
 export type LanAddress = {
@@ -8,43 +6,47 @@ export type LanAddress = {
    interfaceName: string;
 };
 
-type NetworkInterfaceEntry = {
-   address: string;
-   family: string | number;
-   internal: boolean;
-};
+const wildcardInterfaceName = '*';
+const wildcardIpv6InterfaceName = '*6';
 
-export const wildcardInterfaceName = '*';
+const privateAddresses = new BlockList();
+privateAddresses.addSubnet('10.0.0.0', 8, 'ipv4');
+privateAddresses.addSubnet('172.16.0.0', 12, 'ipv4');
+privateAddresses.addSubnet('192.168.0.0', 16, 'ipv4');
+privateAddresses.addSubnet('100.64.0.0', 10, 'ipv4');
+privateAddresses.addSubnet('fc00::', 7, 'ipv6');
 
-const privateIpv4Addresses = new BlockList();
-privateIpv4Addresses.addSubnet('10.0.0.0', 8, 'ipv4');
-privateIpv4Addresses.addSubnet('172.16.0.0', 12, 'ipv4');
-privateIpv4Addresses.addSubnet('192.168.0.0', 16, 'ipv4');
-const tailscaleIpv4Addresses = new BlockList();
-tailscaleIpv4Addresses.addSubnet('100.64.0.0', 10, 'ipv4');
-export const receiverIpv4AddressSchema = z
-   .ipv4()
-   .refine(
-      (address) => tailscaleIpv4Addresses.check(address, 'ipv4') || (!/\.(?:0|255)$/.test(address) && privateIpv4Addresses.check(address, 'ipv4'))
-   );
+export function isPrivateAddress(host: string) {
+   const family = isIP(host);
+   return family !== 0 && privateAddresses.check(host, family === 6 ? 'ipv6' : 'ipv4');
+}
 
-export function listLanAddresses(interfaces: Record<string, readonly NetworkInterfaceEntry[] | undefined> = networkInterfaces()) {
+export function listLanAddresses() {
    const addresses: LanAddress[] = [];
 
-   for (const [interfaceName, entries] of Object.entries(interfaces)) {
+   for (const [interfaceName, entries] of Object.entries(networkInterfaces())) {
       for (const entry of entries ?? []) {
-         if (entry.internal || (entry.family !== 'IPv4' && entry.family !== 4) || !receiverIpv4AddressSchema.safeParse(entry.address).success)
-            continue;
+         const family = isIP(entry.address);
+         if (!family || (family === 6 && /^(fe80:|ff)/i.test(entry.address))) continue;
 
          addresses.push({
             host: entry.address,
-            interfaceName
+            interfaceName: family === 6 ? `${interfaceName} (IPv6)` : interfaceName
          });
       }
    }
 
-   addresses.sort((first, second) => lanInterfaceRank(first.interfaceName) - lanInterfaceRank(second.interfaceName));
+   addresses.sort((first, second) => {
+      const firstLoopback = first.host === '::1' || first.host.startsWith('127.');
+      const secondLoopback = second.host === '::1' || second.host.startsWith('127.');
+      return (
+         Number(firstLoopback) - Number(secondLoopback) ||
+         isIP(first.host) - isIP(second.host) ||
+         lanInterfaceRank(first.interfaceName) - lanInterfaceRank(second.interfaceName)
+      );
+   });
    addresses.push({ host: '0.0.0.0', interfaceName: wildcardInterfaceName });
+   addresses.push({ host: '::', interfaceName: wildcardIpv6InterfaceName });
 
    return addresses;
 }

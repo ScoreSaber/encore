@@ -1,5 +1,4 @@
 import { Result } from 'better-result';
-import semver from 'semver';
 import { z } from 'zod';
 
 import { parseArchiveEntryPath } from '@/lib/archive/path';
@@ -7,9 +6,19 @@ import { causeMessage } from '@/lib/errors';
 import { fetchJsonDocument, type JsonDocumentFetch } from '@/lib/http/json';
 import { resolveHttpsUrl } from '@/lib/http/url';
 import { evaluateHttpsUrl } from '@/lib/security/external-url';
-import { modCategorySchema, modPlatformSchema, officialModSourceId, type ModPlatform, type ModSourceKind } from '@/modules/mods/contract';
-import { modRepositoryLimits, modRepositoryListingSchemaVersion, modRepositoryProblem, type ModRepositoryProblem } from '@/modules/mods/contract';
-import { modIndexKey, toModLinks, type ModIndexEntry, type ModIndexFileMatch } from '@/modules/mods/main/mod-index';
+import {
+   modCategorySchema,
+   modPlatformSchema,
+   modRepositoryLimits,
+   modRepositoryListingSchemaVersion,
+   modRepositoryProblem,
+   officialModSourceId,
+   questModSourceId,
+   type ModPlatform,
+   type ModRepositoryProblem,
+   type ModSourceKind
+} from '@/modules/mods/contract';
+import { compareVersions, modIndexKey, toModLinks, type ModIndexEntry, type ModIndexFileMatch } from '@/modules/mods/main/mod-index';
 import { modFolders } from '@/modules/mods/main/mod-paths';
 
 import { readFile, stat } from 'node:fs/promises';
@@ -37,18 +46,23 @@ const listingDependencySchema = z
 const listingIdentitySchema = z
    .string()
    .trim()
-   .regex(/^beatmods:[1-9]\d*$/, 'an identity must use beatmods:<mod id>');
+   .regex(/^(?:beatmods:[1-9]\d*|bsquest:[\w.-]+)$/, 'an identity must use beatmods:<mod id> or bsquest:<mod id>');
 
-const listingVersionSchema = z.object({
-   version: z.string().trim().min(1).max(64),
-   gameVersions: z.array(z.string().trim().min(1)).max(64).default([]),
-   platforms: z.array(modPlatformSchema).max(8).default([]),
-   downloadUrl: z.string().trim().min(1).max(2048),
-   fileSizeBytes: z.int().nonnegative().optional(),
-   hash: listingHashSchema,
-   dependencies: z.array(listingDependencySchema).max(64).default([]),
-   files: z.array(listingFileSchema).min(1).max(modRepositoryLimits.maxFilesPerVersion)
-});
+const listingVersionSchema = z
+   .object({
+      version: z.string().trim().min(1).max(64),
+      gameVersions: z.array(z.string().trim().min(1)).max(64).default([]),
+      platforms: z.array(modPlatformSchema).max(8).default([]),
+      downloadUrl: z.string().trim().min(1).max(2048),
+      fileSizeBytes: z.int().nonnegative().optional(),
+      hash: listingHashSchema,
+      dependencies: z.array(listingDependencySchema).max(64).default([]),
+      files: z.array(listingFileSchema).max(modRepositoryLimits.maxFilesPerVersion).default([])
+   })
+   .refine((version) => version.files.length > 0 || (version.platforms.length === 1 && version.platforms[0] === 'quest'), {
+      message: 'PC versions must list their installed files',
+      path: ['files']
+   });
 
 const listingPackageSchema = z.object({
    id: z.string().trim().min(1).max(120),
@@ -78,7 +92,7 @@ export type ModRepositoryListing = z.infer<typeof modRepositoryListingSchema>;
 export type ModRepositoryPackage = z.infer<typeof listingPackageSchema>;
 export type ModRepositoryVersion = z.infer<typeof listingVersionSchema>;
 
-export type FetchListingRequest = {
+type FetchListingRequest = {
    url: string;
    etag?: string | null;
    lastModified?: string | null;
@@ -86,9 +100,7 @@ export type FetchListingRequest = {
    fetchJson?: JsonDocumentFetch;
 };
 
-export type FetchedListing =
-   | { status: 'ok'; listing: ModRepositoryListing; etag: string | null; lastModified: string | null }
-   | { status: 'not-modified' };
+type FetchedListing = { status: 'ok'; listing: ModRepositoryListing; etag: string | null; lastModified: string | null } | { status: 'not-modified' };
 
 export async function fetchRepositoryListing(request: FetchListingRequest): Promise<Result<FetchedListing, ModRepositoryProblem>> {
    const url = URL.canParse(request.url) ? new URL(request.url) : null;
@@ -104,17 +116,15 @@ export async function fetchRepositoryListing(request: FetchListingRequest): Prom
    });
    if (Result.isError(document)) {
       const detail = document.error.detail ? `${document.error.message} (${document.error.detail})` : document.error.message;
-      return Result.err<FetchedListing, ModRepositoryProblem>(
-         modRepositoryProblem(document.error.code === 'json.unsupported-url' ? 'invalid-url' : 'fetch-failed', detail)
-      );
+      return Result.err(modRepositoryProblem(document.error.code === 'json.unsupported-url' ? 'invalid-url' : 'fetch-failed', detail));
    }
 
-   if (document.value.status === 'not-modified') return Result.ok<FetchedListing, ModRepositoryProblem>({ status: 'not-modified' });
+   if (document.value.status === 'not-modified') return Result.ok({ status: 'not-modified' });
 
    const parsed = parseRepositoryListing(document.value.value);
-   if (Result.isError(parsed)) return Result.err<FetchedListing, ModRepositoryProblem>(parsed.error);
+   if (Result.isError(parsed)) return Result.err(parsed.error);
 
-   return Result.ok<FetchedListing, ModRepositoryProblem>({
+   return Result.ok({
       status: 'ok',
       listing: parsed.value,
       etag: document.value.etag,
@@ -127,39 +137,39 @@ async function readLocalRepositoryListing(url: URL, signal?: AbortSignal): Promi
       try: () => fileURLToPath(url),
       catch: (cause): ModRepositoryProblem => modRepositoryProblem('invalid-url', causeMessage(cause))
    });
-   if (Result.isError(resolvedPath)) return Result.err<FetchedListing, ModRepositoryProblem>(resolvedPath.error);
+   if (Result.isError(resolvedPath)) return Result.err(resolvedPath.error);
 
    const fileStats = await Result.tryPromise({
       try: () => stat(resolvedPath.value),
       catch: (cause): ModRepositoryProblem => modRepositoryProblem('fetch-failed', causeMessage(cause))
    });
-   if (Result.isError(fileStats)) return Result.err<FetchedListing, ModRepositoryProblem>(fileStats.error);
+   if (Result.isError(fileStats)) return Result.err(fileStats.error);
    if (!fileStats.value.isFile()) {
-      return Result.err<FetchedListing, ModRepositoryProblem>(modRepositoryProblem('fetch-failed', 'the local repository listing is not a file'));
+      return Result.err(modRepositoryProblem('fetch-failed', 'the local repository listing is not a file'));
    }
    if (fileStats.value.size > modRepositoryLimits.maxListingBytes) {
-      return Result.err<FetchedListing, ModRepositoryProblem>(modRepositoryProblem('invalid-listing', 'the local repository listing is too large'));
+      return Result.err(modRepositoryProblem('invalid-listing', 'the local repository listing is too large'));
    }
 
    const contents = await Result.tryPromise({
-      try: () => (signal ? readFile(resolvedPath.value, { encoding: 'utf8', signal }) : readFile(resolvedPath.value, 'utf8')),
+      try: () => readFile(resolvedPath.value, { encoding: 'utf8', signal }),
       catch: (cause): ModRepositoryProblem => modRepositoryProblem('fetch-failed', causeMessage(cause))
    });
-   if (Result.isError(contents)) return Result.err<FetchedListing, ModRepositoryProblem>(contents.error);
+   if (Result.isError(contents)) return Result.err(contents.error);
    if (Buffer.byteLength(contents.value) > modRepositoryLimits.maxListingBytes) {
-      return Result.err<FetchedListing, ModRepositoryProblem>(modRepositoryProblem('invalid-listing', 'the local repository listing is too large'));
+      return Result.err(modRepositoryProblem('invalid-listing', 'the local repository listing is too large'));
    }
 
    const document = Result.try({
       try: () => z.json().parse(JSON.parse(contents.value)),
       catch: (cause): ModRepositoryProblem => modRepositoryProblem('invalid-listing', causeMessage(cause))
    });
-   if (Result.isError(document)) return Result.err<FetchedListing, ModRepositoryProblem>(document.error);
+   if (Result.isError(document)) return Result.err(document.error);
 
    const listing = parseRepositoryListing(document.value);
-   if (Result.isError(listing)) return Result.err<FetchedListing, ModRepositoryProblem>(listing.error);
+   if (Result.isError(listing)) return Result.err(listing.error);
 
-   return Result.ok<FetchedListing, ModRepositoryProblem>({
+   return Result.ok({
       status: 'ok',
       listing: listing.value,
       etag: null,
@@ -169,19 +179,15 @@ async function readLocalRepositoryListing(url: URL, signal?: AbortSignal): Promi
 
 export function parseRepositoryListing(value: z.infer<ReturnType<typeof z.json>>): Result<ModRepositoryListing, ModRepositoryProblem> {
    const parsed = modRepositoryListingSchema.safeParse(value);
-   if (parsed.success) return Result.ok<ModRepositoryListing, ModRepositoryProblem>(parsed.data);
+   if (parsed.success) return Result.ok(parsed.data);
 
    const wrongVersion = parsed.error.issues.some((issue) => issue.path[0] === 'schemaVersion');
 
-   return Result.err<ModRepositoryListing, ModRepositoryProblem>(
+   return Result.err(
       wrongVersion
          ? modRepositoryProblem('unsupported-schema', `Encore reads listing schema ${modRepositoryListingSchemaVersion}`)
          : modRepositoryProblem('invalid-listing', parsed.error.issues[0]?.message)
    );
-}
-
-export function listingPackageCount(listing: ModRepositoryListing) {
-   return listing.packages.filter((entry) => entry !== null).length;
 }
 
 export function selectRepositoryEntries(
@@ -191,7 +197,6 @@ export function selectRepositoryEntries(
 ) {
    const entries: ModIndexEntry[] = [];
    const fileMatches: ModIndexFileMatch[] = [];
-   const downloadHosts = new Set<string>();
 
    for (const listed of listing.packages) {
       if (!listed) continue;
@@ -199,22 +204,28 @@ export function selectRepositoryEntries(
       const versions = listed.versions
          .filter((version) => version !== null)
          .filter((version) => {
-            const fitsVersion = version.gameVersions.length === 0 || version.gameVersions.includes(request.gameVersion);
+            const fitsVersion =
+               version.gameVersions.length === 0 ||
+               version.gameVersions.includes(request.gameVersion) ||
+               (request.platform === 'quest' && version.gameVersions.includes(request.gameVersion.split('_')[0] ?? request.gameVersion));
             const fitsPlatform =
-               version.platforms.length === 0 || version.platforms.includes(request.platform) || version.platforms.includes('universalpc');
+               request.platform === 'quest'
+                  ? version.platforms.includes('quest')
+                  : version.platforms.length === 0 || version.platforms.includes(request.platform) || version.platforms.includes('universalpc');
 
-            return fitsVersion && fitsPlatform;
+            const fitsIdentity = !listed.identity || listed.identity.startsWith(request.platform === 'quest' ? 'bsquest:' : 'beatmods:');
+            return fitsVersion && fitsPlatform && fitsIdentity;
          })
          .sort((first, second) => compareVersions(first.version, second.version));
       const version = versions.at(-1);
       if (!version) continue;
 
-      const files = resolveListingFiles(version);
+      const files = request.platform === 'quest' ? [] : resolveListingFiles(version);
       const download = readDownloadUrl(version.downloadUrl);
       if (!files || !download) continue;
+      if (request.platform === 'quest' && !new URL(download.url).pathname.toLowerCase().endsWith('.qmod')) continue;
 
       const modId = modIndexKey(listing.id, listed.id);
-      downloadHosts.add(download.host);
       entries.push({
          modId,
          packageId: listed.id,
@@ -236,7 +247,9 @@ export function selectRepositoryEntries(
          isBsipa: false,
          claimedIdentity: listed.identity ?? null,
          dependencies: version.dependencies.map((dependencyId) =>
-            dependencyId.startsWith(`${officialModSourceId}:`) ? dependencyId : modIndexKey(listing.id, dependencyId)
+            dependencyId.startsWith(`${officialModSourceId}:`) || dependencyId.startsWith(`${questModSourceId}:`)
+               ? dependencyId
+               : modIndexKey(listing.id, dependencyId)
          ),
          downloadUrl: download.url,
          downloadHost: download.host,
@@ -244,7 +257,7 @@ export function selectRepositoryEntries(
          files
       });
 
-      for (const candidate of versions) {
+      for (const candidate of request.platform === 'quest' ? [] : versions) {
          const candidateFiles = resolveListingFiles(candidate);
          if (!candidateFiles || !readDownloadUrl(candidate.downloadUrl)) continue;
 
@@ -252,15 +265,7 @@ export function selectRepositoryEntries(
       }
    }
 
-   return { entries, fileMatches, downloadHosts: [...downloadHosts] };
-}
-
-function compareVersions(first: string, second: string) {
-   const parsedFirst = semver.coerce(first);
-   const parsedSecond = semver.coerce(second);
-   if (parsedFirst && parsedSecond) return semver.compare(parsedFirst, parsedSecond);
-
-   return first.localeCompare(second);
+   return { entries, fileMatches };
 }
 
 function resolveListingFiles(version: ModRepositoryVersion) {

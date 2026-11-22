@@ -1,42 +1,31 @@
 import type { ReceiverStreamInput } from '@/modules/receiver/protocol';
 
-export const receiverHeartbeatIntervalMs = 15_000;
-export const receiverBackpressureTimeoutMs = 5_000;
+import type { ServerResponse } from 'node:http';
 
-type ReceiverEventResponse = {
-   destroyed: boolean;
-   writableEnded: boolean;
-   writeHead(status: number, headers: Record<string, string>): void;
-   write(frame: string): boolean;
-   end(): void;
-   destroy(): void;
-   once(event: 'close' | 'drain' | 'error', listener: () => void): void;
-   off(event: 'close' | 'drain' | 'error', listener: () => void): void;
-};
+const receiverHeartbeatIntervalMs = 15_000;
+const receiverBackpressureTimeoutMs = 5_000;
+
+type BackpressureState = { status: 'flowing' } | { status: 'waiting'; timer: ReturnType<typeof setTimeout>; onDrain: () => void };
 
 type StreamSubscriber = {
-   response: ReceiverEventResponse;
-   backpressured: boolean;
-   backpressureTimer: ReturnType<typeof setTimeout> | null;
-   drainListener: (() => void) | null;
+   response: ServerResponse;
+   backpressure: BackpressureState;
+   detach: () => void;
 };
 
-export type ReceiverEventHub = ReturnType<typeof createReceiverEventHub>;
-
-export function createReceiverEventHub(options: { heartbeatIntervalMs?: number } = {}) {
+export function createReceiverEventHub(onConnectedChange: (deviceIds: string[]) => void) {
    const subscribers = new Map<string, StreamSubscriber>();
-   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? receiverHeartbeatIntervalMs;
    let heartbeat: ReturnType<typeof setInterval> | null = null;
-   let stopped = false;
+   let openState: 'closed' | 'open' = 'closed';
+   let connected = '';
 
    function open() {
-      stopped = false;
+      openState = 'open';
    }
 
-   function attach(response: ReceiverEventResponse, deviceId: string, initialEvents: ReceiverStreamInput[]) {
-      if (stopped || response.destroyed || response.writableEnded) {
-         if (response.destroyed || response.writableEnded) return;
-
+   function attach(response: ServerResponse, deviceId: string, initialEvents: ReceiverStreamInput[]) {
+      if (response.destroyed || response.writableEnded) return;
+      if (openState === 'closed') {
          response.writeHead(503, { 'Cache-Control': 'no-store' });
          response.end();
          return;
@@ -44,25 +33,26 @@ export function createReceiverEventHub(options: { heartbeatIntervalMs?: number }
 
       const subscriber: StreamSubscriber = {
          response,
-         backpressured: false,
-         backpressureTimer: null,
-         drainListener: null
-      };
-      const detach = () => {
-         response.off('close', detach);
-         response.off('error', detach);
-         clearBackpressure(subscriber);
-         if (subscribers.get(deviceId) !== subscriber) return;
+         backpressure: { status: 'flowing' },
+         detach: () => {
+            response.off('close', subscriber.detach);
+            response.off('error', subscriber.detach);
+            clearBackpressure(subscriber);
+            if (subscribers.get(deviceId) !== subscriber) return;
 
-         subscribers.delete(deviceId);
-         stopHeartbeatWhenIdle();
+            subscribers.delete(deviceId);
+            settle();
+         }
       };
-      response.once('close', detach);
-      response.once('error', detach);
+      response.once('close', subscriber.detach);
+      response.once('error', subscriber.detach);
 
       const existing = subscribers.get(deviceId);
       subscribers.set(deviceId, subscriber);
-      existing?.response.end();
+      if (existing) {
+         clearBackpressure(existing);
+         existing.response.end();
+      }
 
       response.writeHead(200, {
          'Content-Type': 'text/event-stream',
@@ -72,11 +62,12 @@ export function createReceiverEventHub(options: { heartbeatIntervalMs?: number }
 
       const initialFrame = [...initialEvents, heartbeatEvent()].map(encodeEvent).join('');
       if (!write(subscriber, initialFrame)) {
-         detach();
+         subscriber.detach();
          return;
       }
 
       startHeartbeat();
+      settle();
    }
 
    function broadcast(event: ReceiverStreamInput) {
@@ -84,31 +75,34 @@ export function createReceiverEventHub(options: { heartbeatIntervalMs?: number }
 
       for (const [deviceId, subscriber] of subscribers) {
          if (!write(subscriber, frame) && subscribers.get(deviceId) === subscriber) {
+            clearBackpressure(subscriber);
             subscribers.delete(deviceId);
          }
       }
 
-      stopHeartbeatWhenIdle();
+      settle();
    }
 
    function closeDevice(deviceId: string) {
       const subscriber = subscribers.get(deviceId);
       if (!subscriber) return;
 
+      clearBackpressure(subscriber);
       subscribers.delete(deviceId);
       subscriber.response.end();
-      stopHeartbeatWhenIdle();
+      settle();
    }
 
    function closeAll() {
-      stopped = true;
+      openState = 'closed';
 
       for (const subscriber of subscribers.values()) {
+         clearBackpressure(subscriber);
          subscriber.response.end();
       }
 
       subscribers.clear();
-      stopHeartbeatWhenIdle();
+      settle();
    }
 
    function startHeartbeat() {
@@ -116,11 +110,16 @@ export function createReceiverEventHub(options: { heartbeatIntervalMs?: number }
 
       heartbeat = setInterval(() => {
          broadcast(heartbeatEvent());
-      }, heartbeatIntervalMs);
-      heartbeat.unref?.();
+      }, receiverHeartbeatIntervalMs);
+      heartbeat.unref();
    }
 
-   function stopHeartbeatWhenIdle() {
+   function settle() {
+      const deviceIds = [...subscribers.keys()].sort();
+      if (deviceIds.join('\n') !== connected) {
+         connected = deviceIds.join('\n');
+         onConnectedChange(deviceIds);
+      }
       if (subscribers.size > 0 || !heartbeat) return;
 
       clearInterval(heartbeat);
@@ -132,40 +131,37 @@ export function createReceiverEventHub(options: { heartbeatIntervalMs?: number }
       attach,
       broadcast,
       closeDevice,
-      closeAll,
-      get size() {
-         return subscribers.size;
-      }
+      closeAll
    };
 }
 
 function write(subscriber: StreamSubscriber, frame: string) {
    if (subscriber.response.destroyed || subscriber.response.writableEnded) return false;
-   if (subscriber.backpressured) {
-      subscriber.response.destroy();
-      return false;
+   if (subscriber.response.write(frame)) {
+      clearBackpressure(subscriber);
+      return true;
    }
+   if (subscriber.backpressure.status === 'waiting') return true;
 
-   if (subscriber.response.write(frame)) return true;
-
-   subscriber.backpressured = true;
-   subscriber.drainListener = () => {
+   const onDrain = () => {
       clearBackpressure(subscriber);
    };
-   subscriber.response.once('drain', subscriber.drainListener);
-   subscriber.backpressureTimer = setTimeout(() => {
+   const timer = setTimeout(() => {
+      clearBackpressure(subscriber);
       subscriber.response.destroy();
    }, receiverBackpressureTimeoutMs);
-   subscriber.backpressureTimer.unref?.();
+   timer.unref();
+   subscriber.backpressure = { status: 'waiting', timer, onDrain };
+   subscriber.response.once('drain', onDrain);
    return true;
 }
 
 function clearBackpressure(subscriber: StreamSubscriber) {
-   if (subscriber.backpressureTimer) clearTimeout(subscriber.backpressureTimer);
-   if (subscriber.drainListener) subscriber.response.off('drain', subscriber.drainListener);
-   subscriber.backpressured = false;
-   subscriber.backpressureTimer = null;
-   subscriber.drainListener = null;
+   if (subscriber.backpressure.status !== 'waiting') return;
+
+   clearTimeout(subscriber.backpressure.timer);
+   subscriber.response.off('drain', subscriber.backpressure.onDrain);
+   subscriber.backpressure = { status: 'flowing' };
 }
 
 function encodeEvent(event: ReceiverStreamInput) {

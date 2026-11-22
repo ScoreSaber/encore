@@ -1,17 +1,17 @@
 import { Result } from 'better-result';
 
-import { archivePathKey, describeArchivePathRejection, parseArchiveEntryPath } from '@/lib/archive/path';
-import type { ContentResult } from '@/lib/content/content-errors';
-import { resolveContentLimits, type ContentLimits } from '@/lib/content/content-limits';
-import type { ArchiveEntry, ArchiveManifest, ContentProblem } from '@/lib/content/contract';
+import { parseArchiveEntryPath } from '@/lib/archive/path';
 import {
-   describeUnsupportedZipEntry,
    isZipDirectoryMode,
    openZipArchive,
+   unsupportedZipEntryKind,
    zipCompressionDeflate,
    zipCompressionStored,
    type ZipEntryRecord
-} from '@/lib/content/zip-archive';
+} from '@/lib/archive/zip-read';
+import { resolveContentLimits, type ContentLimits } from '@/lib/content/content-limits';
+import type { ArchiveEntry, ArchiveManifest, ContentProblem } from '@/lib/content/contract';
+import { createProblem } from '@/lib/errors';
 
 export type InspectedArchiveEntry = ArchiveEntry & {
    record: ZipEntryRecord;
@@ -24,19 +24,19 @@ export type ArchiveInspection = {
    entries: InspectedArchiveEntry[];
 };
 
-export type InspectArchiveOptions = {
+type InspectArchiveOptions = {
    archivePath: string;
    limits?: Partial<ContentLimits>;
 };
 
-export type InspectArchiveRecordsInput = {
+type InspectArchiveRecordsInput = {
    archivePath: string;
    archiveBytes: number;
    records: readonly ZipEntryRecord[];
    limits: ContentLimits;
 };
 
-export async function inspectZipArchive(options: InspectArchiveOptions): Promise<ContentResult<ArchiveInspection>> {
+export async function inspectZipArchive(options: InspectArchiveOptions): Promise<Result<ArchiveInspection, ContentProblem>> {
    const limits = resolveContentLimits(options.limits);
    const archive = await openZipArchive(options.archivePath, { maxEntries: limits.maxEntries });
    if (Result.isError(archive)) return Result.err<ArchiveInspection, ContentProblem>(archive.error);
@@ -53,24 +53,17 @@ export async function inspectZipArchive(options: InspectArchiveOptions): Promise
    }
 }
 
-export function inspectArchiveRecords(input: InspectArchiveRecordsInput): ContentResult<ArchiveInspection> {
+function inspectArchiveRecords(input: InspectArchiveRecordsInput): Result<ArchiveInspection, ContentProblem> {
    const { limits } = input;
 
    if (input.archiveBytes > limits.maxArchiveBytes) {
-      return Result.err<ArchiveInspection, ContentProblem>({
-         code: 'content.archive.too-large',
-         message: 'the archive is larger than the allowed size',
-         path: input.archivePath,
-         detail: `${limits.maxArchiveBytes} bytes`
-      });
+      return Result.err<ArchiveInspection, ContentProblem>(
+         createProblem('content.archive.too-large', { path: input.archivePath, detail: `${limits.maxArchiveBytes} bytes` })
+      );
    }
 
    if (input.records.length === 0) {
-      return Result.err<ArchiveInspection, ContentProblem>({
-         code: 'content.archive.corrupt',
-         message: 'the archive holds no entries',
-         path: input.archivePath
-      });
+      return Result.err<ArchiveInspection, ContentProblem>(createProblem('content.archive.empty', { path: input.archivePath }));
    }
 
    const entries: InspectedArchiveEntry[] = [];
@@ -90,12 +83,9 @@ export function inspectArchiveRecords(input: InspectArchiveRecordsInput): Conten
       compressedBytes += entry.compressedBytes;
 
       if (totalBytes > limits.maxTotalBytes) {
-         return Result.err<ArchiveInspection, ContentProblem>({
-            code: 'content.archive.too-large',
-            message: 'the archive expands to more than the allowed size',
-            path: input.archivePath,
-            detail: `${limits.maxTotalBytes} bytes`
-         });
+         return Result.err<ArchiveInspection, ContentProblem>(
+            createProblem('content.archive.unpacked-too-large', { path: input.archivePath, detail: `${limits.maxTotalBytes} bytes` })
+         );
       }
 
       entries.push(entry);
@@ -103,12 +93,9 @@ export function inspectArchiveRecords(input: InspectArchiveRecordsInput): Conten
 
    const ratio = compressedBytes > 0 ? totalBytes / compressedBytes : 0;
    if (compressedBytes >= limits.ratioFloorBytes && ratio > limits.maxCompressionRatio) {
-      return Result.err<ArchiveInspection, ContentProblem>({
-         code: 'content.archive.ratio-exceeded',
-         message: 'the archive expands far more than its size suggests',
-         path: input.archivePath,
-         detail: `${Math.round(ratio)}:1`
-      });
+      return Result.err<ArchiveInspection, ContentProblem>(
+         createProblem('content.archive.ratio-exceeded', { path: input.archivePath, detail: `${Math.round(ratio)}:1` })
+      );
    }
 
    return Result.ok<ArchiveInspection, ContentProblem>({
@@ -128,43 +115,32 @@ export function inspectArchiveRecords(input: InspectArchiveRecordsInput): Conten
    });
 }
 
-function inspectEntry(record: ZipEntryRecord, limits: ContentLimits): ContentResult<InspectedArchiveEntry> {
-   if (record.encrypted) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(
-         entryProblem('content.archive.encrypted', 'the archive is password protected', record)
-      );
-   }
+function inspectEntry(record: ZipEntryRecord, limits: ContentLimits): Result<InspectedArchiveEntry, ContentProblem> {
+   const entry = record.name;
+   if (record.encrypted) return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.encrypted', { entry }));
 
-   const unsupportedEntry = describeUnsupportedZipEntry(record);
-   if (unsupportedEntry) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(entryProblem('content.archive.unsupported-entry', unsupportedEntry, record));
+   const unsupportedKind = unsupportedZipEntryKind(record);
+   if (unsupportedKind) {
+      return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.unsupported-entry', { kind: unsupportedKind, entry }));
    }
 
    const parsed = parseArchiveEntryPath(record.name);
    if (Result.isError(parsed)) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(
-         entryProblem('content.archive.path-rejected', describeArchivePathRejection(parsed.error), record)
-      );
+      return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.path-rejected', { reason: parsed.error, entry }));
    }
 
    if (parsed.value.path.length > limits.maxPathLength || parsed.value.segments.length > limits.maxPathDepth) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(
-         entryProblem('content.archive.path-too-long', 'an archive entry path is longer than allowed', record)
-      );
+      return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.path-too-long', { entry }));
    }
 
    if (record.compressionMethod !== zipCompressionStored && record.compressionMethod !== zipCompressionDeflate) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(
-         entryProblem('content.archive.unsupported-compression', 'the archive uses a compression method Encore cannot read', record)
-      );
+      return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.unsupported-compression', { entry }));
    }
 
    const isDirectory = parsed.value.endsWithSeparator || isZipDirectoryMode(record.unixMode);
 
    if (!isDirectory && record.uncompressedBytes > limits.maxEntryBytes) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(
-         entryProblem('content.archive.too-large', 'an archive entry is larger than allowed', record)
-      );
+      return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.entry-too-large', { entry }));
    }
 
    if (
@@ -172,9 +148,7 @@ function inspectEntry(record: ZipEntryRecord, limits: ContentLimits): ContentRes
       record.compressedBytes >= limits.ratioFloorBytes &&
       record.uncompressedBytes / record.compressedBytes > limits.maxCompressionRatio
    ) {
-      return Result.err<InspectedArchiveEntry, ContentProblem>(
-         entryProblem('content.archive.ratio-exceeded', 'an archive entry expands far more than its size suggests', record)
-      );
+      return Result.err<InspectedArchiveEntry, ContentProblem>(createProblem('content.archive.entry-ratio-exceeded', { entry }));
    }
 
    return Result.ok<InspectedArchiveEntry, ContentProblem>({
@@ -187,25 +161,17 @@ function inspectEntry(record: ZipEntryRecord, limits: ContentLimits): ContentRes
 }
 
 function claimPath(kinds: Map<string, ArchiveEntry['kind']>, entry: InspectedArchiveEntry): ContentProblem | null {
-   const key = archivePathKey(entry.path);
+   const key = entry.path.toLowerCase();
    const claimed = kinds.get(key);
    if (claimed && (claimed !== entry.kind || entry.kind === 'file')) {
-      return {
-         code: 'content.archive.duplicate-entry',
-         message: 'the archive holds two entries that would write to the same path',
-         entry: entry.path
-      };
+      return createProblem('content.archive.duplicate-entry', { entry: entry.path });
    }
 
    const segments = entry.path.split('/');
    for (let depth = 1; depth < segments.length; depth += 1) {
-      const ancestorKey = archivePathKey(segments.slice(0, depth).join('/'));
+      const ancestorKey = segments.slice(0, depth).join('/').toLowerCase();
       if (kinds.get(ancestorKey) === 'file') {
-         return {
-            code: 'content.archive.duplicate-entry',
-            message: 'the archive holds a folder and a file with the same path',
-            entry: entry.path
-         };
+         return createProblem('content.archive.path-clash', { entry: entry.path });
       }
 
       kinds.set(ancestorKey, 'directory');
@@ -213,8 +179,4 @@ function claimPath(kinds: Map<string, ArchiveEntry['kind']>, entry: InspectedArc
 
    kinds.set(key, entry.kind);
    return null;
-}
-
-function entryProblem(code: ContentProblem['code'], message: string, record: ZipEntryRecord): ContentProblem {
-   return { code, message, entry: record.name };
 }

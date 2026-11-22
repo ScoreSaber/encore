@@ -24,7 +24,7 @@ const bsmanagerVersionSchema = z.object({
    metadata: bsmanagerMetadataSchema.optional().catch(undefined)
 });
 
-export const bsmanagerConfigSchema = z
+const bsmanagerConfigSchema = z
    .looseObject({
       'custom-versions': z
          .array(bsmanagerVersionSchema.nullable().catch(null))
@@ -64,8 +64,7 @@ export async function readBSManagerVersionStore(installPath: string) {
 
 export function writeBSManagerAppConfig(configPath: string, config: z.output<typeof bsmanagerAppConfigSchema>) {
    return writeJsonFileAtomic(configPath, config, bsmanagerAppConfigSchema, {
-      root: dirname(configPath),
-      scope: 'settings'
+      root: dirname(configPath)
    });
 }
 
@@ -78,6 +77,5 @@ export function bsmanagerStoreKind(version: BSManagerConfigVersion | null, metad
    if (version?.oculus) return 'oculus';
    if (version?.steam) return 'steam';
 
-   // BSManager assigns Steam when migrating versions without metadata.
    return metadataStore ?? 'steam';
 }

@@ -10,7 +10,7 @@ export type OperationSerializable =
    | readonly OperationSerializable[]
    | { readonly [key: string]: OperationSerializable | undefined };
 
-export const operationSerializableSchema: z.ZodType<OperationSerializable> = z.lazy(() =>
+const operationSerializableSchema: z.ZodType<OperationSerializable> = z.lazy(() =>
    z.union([
       z.string(),
       z.number(),
@@ -21,15 +21,16 @@ export const operationSerializableSchema: z.ZodType<OperationSerializable> = z.l
    ])
 );
 
-export const operationKindSchema = z.enum(['import', 'download', 'copy', 'delete', 'verification', 'launch-preparation', 'receiver-command']);
-export const operationStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']);
+const operationKindSchema = z.enum(['import', 'download', 'copy', 'delete', 'verification', 'launch-preparation', 'receiver-command', 'patch']);
+const operationStatusSchema = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled']);
 
-export const operationProgressSchema = z.object({
+const operationProgressSchema = z.object({
    phase: z.string().optional(),
    label: z.string().optional(),
    current: z.number().optional(),
    total: z.number().optional(),
    percent: z.number().optional(),
+   perSecond: z.number().optional(),
    unit: z.enum(['bytes', 'files', 'items', 'steps']).optional()
 });
 
@@ -89,11 +90,7 @@ export type OperationError = z.infer<typeof operationErrorSchema>;
 export type OperationSnapshot = z.infer<typeof operationSnapshotSchema>;
 export type OperationCancelResult = z.infer<typeof operationCancelResultSchema>;
 
-export type OperationCancelRequest = {
-   id: OperationId;
-};
-
-export const terminalOperationStatuses: readonly OperationStatus[] = ['completed', 'failed', 'cancelled'];
+const terminalOperationStatuses: readonly OperationStatus[] = ['completed', 'failed', 'cancelled'];
 
 export function isOperationTerminalStatus(status: OperationStatus) {
    return terminalOperationStatuses.includes(status);

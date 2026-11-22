@@ -1,10 +1,12 @@
 import { Result } from 'better-result';
 
-import type { ContentResult } from '@/lib/content/content-errors';
 import { hashFile } from '@/lib/content/content-hash';
 import type { ContentIngestionService } from '@/lib/content/content-ingestion';
 import type { ArchiveManifest, ContentProblem } from '@/lib/content/contract';
+import { createProblem } from '@/lib/errors';
 import { copyPathWithProgress } from '@/lib/filesystem/operations';
+import { downloadHostsFor } from '@/lib/http/url';
+import type { ReadyModImportPreview } from '@/modules/mods/contract';
 import type { ModIndexEntry, ModIndexFile } from '@/modules/mods/main/mod-index';
 import { modFileExtensions, modFolders, resolveModContentPath } from '@/modules/mods/main/mod-paths';
 import type { OperationProgress } from '@/modules/operations/contract';
@@ -12,8 +14,6 @@ import type { OperationProgress } from '@/modules/operations/contract';
 import { extname } from 'node:path';
 
 export const maxModArchiveBytes = 128 * 1024 * 1024;
-const githubHost = 'github.com';
-const githubReleaseAssetsHost = 'release-assets.githubusercontent.com';
 
 export const modContentLimits = {
    maxDownloadBytes: maxModArchiveBytes,
@@ -23,12 +23,12 @@ export const modContentLimits = {
    maxTotalBytes: 256 * 1024 * 1024
 };
 
-export type ModWriteSummary = {
+type ModWriteSummary = {
    files: number;
    bytes: number;
 };
 
-export type InstallModVersionRequest = {
+type InstallModVersionRequest = {
    ingestion: ContentIngestionService;
    installPath: string;
    entry: ModIndexEntry;
@@ -36,29 +36,27 @@ export type InstallModVersionRequest = {
    onProgress?: (progress: OperationProgress) => void;
 };
 
-export type ImportModArchiveRequest = {
+type ImportModRequest = {
    ingestion: ContentIngestionService;
    installPath: string;
    sourcePath: string;
+   kind: ReadyModImportPreview['kind'];
+   name: string;
    signal?: AbortSignal;
    onProgress?: (progress: OperationProgress) => void;
 };
 
-export async function installModVersion(request: InstallModVersionRequest): Promise<ContentResult<ModWriteSummary>> {
+export async function installModVersion(request: InstallModVersionRequest): Promise<Result<ModWriteSummary, ContentProblem>> {
    const staged = await request.ingestion.ingestArchive({
       source: { kind: 'url', url: request.entry.downloadUrl },
-      targetKind: 'local',
-      expectedHash: request.entry.archiveHash,
+      expectedHash: request.entry.archiveHash ?? undefined,
       limits: modContentLimits,
-      urlPolicy: {
-         allowedHosts:
-            request.entry.downloadHost === githubHost ? [request.entry.downloadHost, githubReleaseAssetsHost] : [request.entry.downloadHost]
-      },
+      urlPolicy: { allowedHosts: downloadHostsFor(request.entry.downloadHost) },
       signal: request.signal,
       onProgress: request.onProgress,
       validate: ({ extractedPath }) => verifyModContents(extractedPath, request.entry.files)
    });
-   if (Result.isError(staged)) return Result.err<ModWriteSummary, ContentProblem>(staged.error);
+   if (Result.isError(staged)) return Result.err(staged.error);
 
    const placed = await placeModFiles(staged.value.extractedPath, request);
    await staged.value.dispose();
@@ -66,18 +64,21 @@ export async function installModVersion(request: InstallModVersionRequest): Prom
    return placed;
 }
 
-export async function importModArchive(request: ImportModArchiveRequest): Promise<ContentResult<ModWriteSummary>> {
+export function importMod(request: ImportModRequest) {
+   return request.kind === 'zip' ? importModArchive(request) : importModFile(request);
+}
+
+async function importModArchive(request: ImportModRequest): Promise<Result<ModWriteSummary, ContentProblem>> {
    const staged = await request.ingestion.ingestArchive({
       source: { kind: 'file', path: request.sourcePath },
-      targetKind: 'local',
       limits: modContentLimits,
       signal: request.signal,
       onProgress: request.onProgress,
       validate: ({ manifest }) => validateImportLayout(manifest)
    });
-   if (Result.isError(staged)) return Result.err<ModWriteSummary, ContentProblem>(staged.error);
+   if (Result.isError(staged)) return Result.err(staged.error);
 
-   const paths = importedModPaths(staged.value.manifest);
+   const paths = staged.value.manifest.entries.filter((entry) => entry.kind === 'file').map((entry) => entry.path);
    const placed = await copyModFiles(
       paths.map((path) => ({ contentPath: path, destinationPath: modImportDestination(path) ?? path })),
       staged.value.extractedPath,
@@ -89,67 +90,61 @@ export async function importModArchive(request: ImportModArchiveRequest): Promis
    return placed;
 }
 
-async function verifyModContents(extractedPath: string, files: ModIndexFile[]): Promise<ContentResult<void>> {
+async function importModFile(request: ImportModRequest): Promise<Result<ModWriteSummary, ContentProblem>> {
+   const destination = resolveModContentPath(request.installPath, `${modFolders.pluginsPending}/${request.name}`);
+   if (!destination) {
+      return Result.err(createProblem('content.ingest.mod-file-name', { entry: request.name }));
+   }
+
+   const copied = await copyPathWithProgress({
+      sourcePath: request.sourcePath,
+      destinationPath: destination.absolutePath,
+      destinationRoot: request.installPath,
+      overwrite: true,
+      signal: request.signal
+   });
+
+   return Result.isError(copied)
+      ? Result.err(createProblem('content.commit.failed', { path: destination.relativePath, detail: copied.error.code }))
+      : Result.ok({ files: copied.value.files, bytes: copied.value.bytes });
+}
+
+async function verifyModContents(extractedPath: string, files: ModIndexFile[]): Promise<Result<void, ContentProblem>> {
    for (const file of files) {
       const source = resolveModContentPath(extractedPath, file.path);
       if (!source) {
-         return Result.err<void, ContentProblem>({
-            code: 'content.ingest.layout-rejected',
-            message: 'the mod lists a file path Encore will not write',
-            entry: file.path
-         });
+         return Result.err(createProblem('content.ingest.mod-path-rejected', { entry: file.path }));
       }
 
       const digest = await hashFile(source.absolutePath, file.hash.algorithm);
       if (Result.isError(digest)) {
-         return Result.err<void, ContentProblem>({
-            code: 'content.ingest.layout-rejected',
-            message: 'a file the mod lists is missing from its archive',
-            entry: file.path
-         });
+         return Result.err(createProblem('content.ingest.mod-file-missing', { entry: file.path }));
       }
 
       if (digest.value.toLowerCase() !== file.hash.value.toLowerCase()) {
-         return Result.err<void, ContentProblem>({
-            code: 'content.extract.checksum-mismatch',
-            message: 'a file in the mod archive does not match the hash its source published',
-            entry: file.path
-         });
+         return Result.err(createProblem('content.extract.checksum-mismatch', { entry: file.path }));
       }
    }
 
-   return Result.ok<void, ContentProblem>(undefined);
+   return Result.ok();
 }
 
-function validateImportLayout(manifest: ArchiveManifest): ContentResult<void> {
-   const paths = importedModPaths(manifest);
+function validateImportLayout(manifest: ArchiveManifest): Result<void, ContentProblem> {
+   const paths = manifest.entries.filter((entry) => entry.kind === 'file').map((entry) => entry.path);
    if (paths.length === 0) {
-      return Result.err<void, ContentProblem>({
-         code: 'content.ingest.layout-rejected',
-         message: 'the archive has no mod files in it'
-      });
+      return Result.err(createProblem('content.ingest.mod-empty'));
    }
 
    for (const path of paths) {
       if (modImportDestination(path)) continue;
 
-      return Result.err<void, ContentProblem>({
-         code: 'content.ingest.layout-rejected',
-         message: 'the archive holds files outside the Plugins and Libs folders',
-         entry: path
-      });
+      return Result.err(createProblem('content.ingest.mod-outside-folders', { entry: path }));
    }
 
-   return paths.some((path) => extname(path).toLowerCase() === '.dll')
-      ? Result.ok<void, ContentProblem>(undefined)
-      : Result.err<void, ContentProblem>({ code: 'content.ingest.layout-rejected', message: 'the archive has no plugin in it' });
+   return paths.some((path) => extname(path).toLowerCase() === '.dll') ? Result.ok() : Result.err(createProblem('content.ingest.mod-no-plugin'));
 }
 
-function importedModPaths(manifest: ArchiveManifest) {
-   return manifest.entries.filter((entry) => entry.kind === 'file').map((entry) => entry.path);
-}
-
-export function modImportDestination(contentPath: string) {
+function modImportDestination(contentPath: string) {
    const segments = contentPath.split('/');
    if (!modFileExtensions.includes(extname(contentPath).toLowerCase())) return null;
 
@@ -173,7 +168,7 @@ async function copyModFiles(
    extractedPath: string,
    installPath: string,
    signal?: AbortSignal
-): Promise<ContentResult<ModWriteSummary>> {
+): Promise<Result<ModWriteSummary, ContentProblem>> {
    let count = 0;
    let bytes = 0;
 
@@ -181,11 +176,7 @@ async function copyModFiles(
       const source = resolveModContentPath(extractedPath, file.contentPath);
       const destination = resolveModContentPath(installPath, file.destinationPath);
       if (!source || !destination) {
-         return Result.err<ModWriteSummary, ContentProblem>({
-            code: 'content.ingest.layout-rejected',
-            message: 'the mod lists a file path Encore will not write',
-            entry: file.contentPath
-         });
+         return Result.err(createProblem('content.ingest.mod-path-rejected', { entry: file.contentPath }));
       }
 
       const copied = await copyPathWithProgress({
@@ -193,21 +184,15 @@ async function copyModFiles(
          destinationPath: destination.absolutePath,
          destinationRoot: installPath,
          overwrite: true,
-         scope: 'content',
          signal
       });
       if (Result.isError(copied)) {
-         return Result.err<ModWriteSummary, ContentProblem>({
-            code: 'content.commit.failed',
-            message: 'a mod file could not be written into the install',
-            path: destination.relativePath,
-            detail: copied.error.code
-         });
+         return Result.err(createProblem('content.commit.failed', { path: destination.relativePath, detail: copied.error.code }));
       }
 
       count += copied.value.files;
       bytes += copied.value.bytes;
    }
 
-   return Result.ok<ModWriteSummary, ContentProblem>({ files: count, bytes });
+   return Result.ok({ files: count, bytes });
 }

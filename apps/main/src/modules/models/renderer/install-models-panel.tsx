@@ -1,60 +1,119 @@
 import { useMemo, useState } from 'react';
 
+import { useQuery } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Download, FolderOpen, MoreHorizontal, Search, Trash2, Upload } from 'lucide-react';
+import { Result } from 'better-result';
+import { FolderOpen, Search, Upload } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
-import { CollectionToolbar } from '@/components/collection/collection-toolbar';
+import { CollectionPanel } from '@/components/collection/collection-panel';
 import { DateCell } from '@/components/collection/date-cell';
+import { matchesQuery, selectionState, useCollectionSelection, type CollectionSelection } from '@/components/collection/selection';
 import { CopyPathContextMenu } from '@/components/copy-path-context-menu';
-import { EmptyPanel, ErrorPanel, LoadingPanel, WarningLine } from '@/components/state/state-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { RemoteImage } from '@/components/ui/remote-image';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import type { TargetModelCollectionRequest } from '@/modules/models/api';
-import { isCatalogModelType, modelSharedFolderIds, modelTypeSchema, modelTypes, type LocalModelSummary } from '@/modules/models/contract';
+import {
+   createEmptyModelCollectionSnapshot,
+   isCatalogModelType,
+   modelSharedFolderIds,
+   modelTypeSchema,
+   modelTypes,
+   type LocalModelSummary,
+   type ModelCollectionSnapshot,
+   type ModelType
+} from '@/modules/models/contract';
 import { ModelActionDialog } from '@/modules/models/renderer/model-action-dialog';
+import { modelListQueryOptions } from '@/modules/models/renderer/model-queries';
 import { ModelSearchDialog } from '@/modules/models/renderer/model-search-dialog';
-import type { InstallModels } from '@/modules/models/renderer/use-install-models';
-import { useModelActions } from '@/modules/models/renderer/use-model-actions';
+import { useModelActions, type ModelActions } from '@/modules/models/renderer/use-model-actions';
 import { SharedFolderNotice, useSharedFolder } from '@/modules/shared-content/renderer/shared-folder-menu';
 import { localTargetId } from '@/modules/targets/contract';
-import { matchesQuery, selectionState } from '@/renderer/collection/view';
 import { useFormatters } from '@/renderer/i18n/formatters';
+import { unwrapTarget } from '@/renderer/ipc-result';
+import { queryStatus, type QueryStatus, useSnapshotMutation } from '@/renderer/query/api-query';
 
-export function InstallModelsPanel({ request, models }: { request: TargetModelCollectionRequest; models: InstallModels }) {
+export function InstallModelsTab({ request, active }: { request: TargetModelCollectionRequest; active: boolean }) {
+   const query = useQuery(modelListQueryOptions(request));
+   const rescan = useSnapshotMutation(modelListQueryOptions(request).queryKey, async () => unwrapTarget(await window.encore.models.rescan(request)));
+   const [type, setType] = useState<ModelType>('saber');
+   const selection = useCollectionSelection(`${request.targetId}\0${request.installId}\0${type}`);
+   const actions = useModelActions(request, selection.clear);
+   const status = rescan.isPending ? 'loading' : queryStatus(query);
+   const snapshot = query.data ?? createEmptyModelCollectionSnapshot(request);
+
+   return (
+      <>
+         {active ? (
+            <InstallModelsPanel
+               request={request}
+               snapshot={snapshot}
+               status={status}
+               type={type}
+               selection={selection}
+               actions={actions}
+               onTypeChange={setType}
+               onRescan={() => rescan.mutate()}
+            />
+         ) : null}
+         <ModelActionDialog request={request} actions={actions} />
+      </>
+   );
+}
+
+function InstallModelsPanel({
+   request,
+   snapshot,
+   status,
+   type,
+   selection,
+   actions,
+   onTypeChange,
+   onRescan
+}: {
+   request: TargetModelCollectionRequest;
+   snapshot: ModelCollectionSnapshot;
+   status: QueryStatus;
+   type: ModelType;
+   selection: CollectionSelection;
+   actions: ModelActions;
+   onTypeChange: (type: ModelType) => void;
+   onRescan: () => void;
+}) {
    const t = useTranslations('models');
+   const problems = useTranslations('problems.models');
    const tabs = useTranslations('models.tabs');
    const common = useTranslations('common');
    const format = useFormatters();
-   const actions = useModelActions(request, models.clearSelection);
-   const { snapshot, status, selected, type } = models;
    const shared = useSharedFolder(request, modelSharedFolderIds[type]);
    const local = request.targetId === localTargetId;
-   const [folderResult, setFolderResult] = useState<'failed' | 'unsupported' | null>(null);
+   const [folderResult, setFolderResult] = useState<{ type: ModelType; status: 'failed' | 'unsupported' } | null>(null);
    const [searchOpen, setSearchOpen] = useState(false);
    const [query, setQuery] = useState('');
-   const busy = status === 'loading' || snapshot.status === 'scanning';
+   const { selected } = selection;
+   const models = useMemo(() => snapshot.models.filter((model) => model.type === type), [snapshot.models, type]);
+   const busy = status === 'loading' || snapshot.status === 'scanning' || actions.flow.busy;
    const filterText = query.trim().toLowerCase();
    const visible = useMemo(
-      () => models.models.filter((model) => matchesQuery(filterText, [model.name, model.author, model.fileName])),
-      [models.models, filterText]
+      () => models.filter((model) => matchesQuery(filterText, [model.name, model.author, model.fileName])),
+      [models, filterText]
    );
    const visibleIds = visible.map((model) => model.id);
    const searchable = isCatalogModelType(type);
    const selectedVisible = visibleIds.filter((modelId) => selected.has(modelId)).length;
    const scanning = snapshot.status === 'scanning' ? snapshot.progress : null;
-   const note = scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null;
+   const activeFolderResult = folderResult?.type === type ? folderResult.status : null;
 
    const openFolder = async (modelId: string) => {
-      const opened = await actions.openFolder(modelId).catch(() => null);
-      setFolderResult(!opened || opened.status === 'failed' ? 'failed' : opened.status === 'unsupported' ? 'unsupported' : null);
+      const opened = await Result.tryPromise(() => actions.openFolder(modelId));
+      setFolderResult(
+         Result.isError(opened) ? { type, status: 'failed' } : opened.value.status === 'opened' ? null : { type, status: opened.value.status }
+      );
    };
 
    const columns: ColumnDef<LocalModelSummary>[] = [
@@ -66,12 +125,18 @@ export function InstallModelsPanel({ request, models }: { request: TargetModelCo
          header: () => (
             <Checkbox
                aria-label={t('selectAll')}
+               disabled={busy}
                checked={selectionState(selectedVisible, visible.length)}
-               onCheckedChange={() => models.toggleAll(visibleIds)}
+               onCheckedChange={() => selection.toggleAll(visibleIds)}
             />
          ),
          cell: ({ row }) => (
-            <Checkbox aria-label={row.original.name} checked={selected.has(row.original.id)} onCheckedChange={() => models.toggle(row.original.id)} />
+            <Checkbox
+               aria-label={row.original.name}
+               disabled={busy}
+               checked={selected.has(row.original.id)}
+               onCheckedChange={() => selection.toggle(row.original.id)}
+            />
          )
       },
       {
@@ -144,111 +209,89 @@ export function InstallModelsPanel({ request, models }: { request: TargetModelCo
       }
    ];
 
-   if (status === 'loading' && models.models.length === 0) return <LoadingPanel />;
-   if (snapshot.status === 'unsupported') return <EmptyPanel description={t('unsupportedTarget')} />;
-
    return (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 text-sm">
-         <Tabs
-            value={type}
-            onValueChange={(value) => {
-               const nextType = modelTypeSchema.safeParse(value);
-               if (nextType.success) models.selectType(nextType.data);
-            }}
-            className="shrink-0"
-         >
-            <TabsList variant="line">
-               {modelTypes.map((modelType) => (
-                  <TabsTrigger key={modelType} value={modelType}>
-                     {tabs(modelType)}
-                  </TabsTrigger>
-               ))}
-            </TabsList>
-         </Tabs>
-
-         <CollectionToolbar
-            filter={{ value: query, label: common('search'), onChange: setQuery }}
-            note={note}
-            rescan={{ label: common('rescan'), busy, onClick: models.rescan }}
-            menu={
-               local ? (
-                  <DropdownMenu>
-                     <DropdownMenuTrigger asChild>
-                        <Button type="button" variant="ghost" size="icon-sm" aria-label={common('more')}>
-                           <MoreHorizontal />
-                        </Button>
-                     </DropdownMenuTrigger>
-                     <DropdownMenuContent align="end">
-                        <DropdownMenuItem disabled={busy} onSelect={() => void actions.importModels()}>
-                           <Upload />
-                           {common('import')}
-                        </DropdownMenuItem>
-                     </DropdownMenuContent>
-                  </DropdownMenu>
-               ) : undefined
-            }
-            action={
-               <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  disabled={!searchable}
-                  aria-description={searchable ? undefined : t('issues.unsupportedType')}
-                  onClick={() => setSearchOpen(true)}
-               >
-                  <Search data-icon="inline-start" />
-                  {t('findMore')}
-               </Button>
-            }
-         >
-            {selected.size > 0 ? (
-               <ButtonGroup aria-label={t('title')}>
-                  {local ? (
-                     <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void actions.exportModels([...selected])}>
-                        <Download data-icon="inline-start" />
-                        {t('export', { count: selected.size })}
-                     </Button>
-                  ) : null}
-                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void actions.previewDelete([...selected])}>
-                     <Trash2 data-icon="inline-start" />
-                     {t('deleteSelected', { count: selected.size })}
-                  </Button>
-               </ButtonGroup>
-            ) : null}
-         </CollectionToolbar>
-
-         <SharedFolderNotice shared={shared} />
-
-         {snapshot.problems.map((problem) => (
-            <WarningLine key={`${problem.code}:${problem.type ?? ''}`}>{problem.message}</WarningLine>
-         ))}
-
-         {folderResult ? <p className="text-muted-foreground text-xs">{common(`openFolder.${folderResult}`)}</p> : null}
-
-         {status === 'error' ? <ErrorPanel message={t('loadError')} onRetry={models.rescan} /> : null}
-
-         {snapshot.status === 'missing' ? <EmptyPanel description={t('missing')} /> : null}
-
-         {!busy && snapshot.status === 'ready' && models.models.length === 0 ? <EmptyPanel description={t('empty', { type: tabs(type) })} /> : null}
-
-         {visible.length > 0 ? (
-            <DataTable columns={columns} data={visible} getRowId={(model) => model.id} label={t('title')} tableId="models" />
-         ) : null}
-
-         {models.models.length > 0 && visible.length === 0 ? <EmptyPanel description={t('noMatches')} /> : null}
-
-         <ModelActionDialog request={request} actions={actions} />
-         {searchOpen ? (
-            <ModelSearchDialog
-               request={request}
-               type={type}
-               onOpenChange={setSearchOpen}
-               onDownload={(id) => {
-                  setSearchOpen(false);
-                  void actions.downloadModel({ kind: 'modelsaber', id });
+      <CollectionPanel
+         status={status}
+         snapshotStatus={snapshot.status}
+         total={models.length}
+         visible={visible.length}
+         query={query}
+         onQueryChange={setQuery}
+         onRescan={onRescan}
+         labels={{
+            unsupported: problems('unsupported-target'),
+            missing: t('missing'),
+            empty: t('empty', { type }),
+            noMatches: t('noMatches'),
+            loadError: t('loadError'),
+            note: scanning ? t('scanning', { scanned: scanning.scanned, total: scanning.total }) : null
+         }}
+         header={
+            <Tabs
+               value={type}
+               onValueChange={(value) => {
+                  const nextType = modelTypeSchema.safeParse(value);
+                  if (nextType.success) {
+                     setQuery('');
+                     onTypeChange(nextType.data);
+                  }
                }}
-            />
-         ) : null}
-      </div>
+               className="shrink-0"
+            >
+               <TabsList variant="line">
+                  {modelTypes.map((modelType) => (
+                     <TabsTrigger key={modelType} value={modelType}>
+                        {tabs(modelType)}
+                     </TabsTrigger>
+                  ))}
+               </TabsList>
+            </Tabs>
+         }
+         menu={local ? { label: common('import'), icon: <Upload />, disabled: busy, onSelect: () => void actions.importModels() } : null}
+         action={
+            <Button
+               type="button"
+               variant="outline"
+               size="sm"
+               disabled={!searchable}
+               aria-description={searchable ? undefined : t('search.issues.unsupported-type')}
+               onClick={() => setSearchOpen(true)}
+            >
+               <Search data-icon="inline-start" />
+               {t('findMore')}
+            </Button>
+         }
+         selection={{
+            count: selected.size,
+            exportLabel: t('export', { count: selected.size }),
+            deleteLabel: t('deleteSelected', { count: selected.size }),
+            onExport: local ? () => void actions.exportModels([...selected]) : null,
+            onDelete: () => void actions.previewDelete([...selected])
+         }}
+         notices={
+            <>
+               <SharedFolderNotice shared={shared} />
+               {activeFolderResult ? <p className="text-muted-foreground text-xs">{common(`openFolder.${activeFolderResult}`)}</p> : null}
+            </>
+         }
+         problems={snapshot.problems.map((problem) => ({ key: `${problem.code}:${problem.type ?? ''}`, message: problem.message }))}
+         dialogs={
+            <>
+               {searchOpen ? (
+                  <ModelSearchDialog
+                     request={request}
+                     type={type}
+                     onOpenChange={setSearchOpen}
+                     onDownload={(id) => {
+                        setSearchOpen(false);
+                        void actions.downloadModel({ kind: 'modelsaber', id });
+                     }}
+                  />
+               ) : null}
+            </>
+         }
+      >
+         <DataTable columns={columns} data={visible} getRowId={(model) => model.id} label={t('title')} tableId="models" />
+      </CollectionPanel>
    );
 }

@@ -85,6 +85,15 @@ export default {
                         {
                            group: ['electron', 'electron/**', 'node:*'],
                            message: 'renderer code must use the typed preload bridge'
+                        },
+                        {
+                           group: ['@/main', '@/ipc/main', '@/modules/*/main', '@/modules/*/main/**'],
+                           message: 'renderer code cannot reach main-process modules'
+                        },
+                        {
+                           group: ['@/ipc/api', '@/ipc/target-api', '@/lib/api', '@/modules/*/api', '@/modules/*/ipc'],
+                           allowTypeImports: true,
+                           message: 'renderer code reaches transports through window.encore and only imports their types'
                         }
                      ]
                   }
@@ -101,7 +110,7 @@ export default {
    },
    test: {
       root: fileURLToPath(new URL('.', import.meta.url)),
-      include: ['apps/main/src/**/*.test.ts'],
+      include: ['apps/main/src/**/*.test.ts', 'apps/daemon/src/**/*.test.ts', 'apps/mobile/src/**/*.test.ts'],
       testTimeout: 20_000
    },
    staged: {
@@ -127,6 +136,8 @@ export default {
             env: ['VITE_POSTHOG_HOST', 'VITE_POSTHOG_PROJECT_TOKEN']
          },
          'build:web': 'pnpm --filter @encore/web build',
+         'build:daemon': { command: 'vp -C apps/daemon run build', cache: false },
+         'build:mobile': { command: 'vp -C apps/mobile run build', cache: false },
          'build:all': {
             command: ['vp run build', 'vp run build:web']
          },

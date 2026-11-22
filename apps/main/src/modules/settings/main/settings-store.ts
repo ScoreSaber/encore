@@ -1,8 +1,9 @@
 import { Result } from 'better-result';
 import { z } from 'zod';
 
-import { causeCode } from '@/lib/errors';
+import { createProblem } from '@/lib/errors';
 import { writeJsonFileAtomic } from '@/lib/filesystem/json';
+import { createSerialQueue } from '@/lib/state/machine';
 import { createDefaultInstallRoot } from '@/modules/installs/main/install-root';
 import {
    applyAppSettingsPatch,
@@ -18,9 +19,9 @@ import {
    type SettingsSnapshot
 } from '@/modules/settings/contract';
 import type { SettingsWriteResult } from '@/modules/settings/ipc';
-import { createRecoverableStoredSettingsFileSchema, storedSettingsFileSchema, type StoredSettingsFile } from '@/modules/settings/main/settings-file';
+import { readStoredSettings, storedSettingsFileSchema, type StoredSettingsFile } from '@/modules/settings/main/settings-file';
 
-import { readFile } from 'node:fs/promises';
+import { constants, copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const settingsFileName = 'settings.json';
@@ -49,7 +50,8 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       userDataPath: options.dataPath
    });
    let loadedSettings: Promise<LoadedSettings> | null = null;
-   let writeQueue = Promise.resolve();
+   let corruptBackedUp = false;
+   const writeQueue = createSerialQueue();
    const listeners = new Set<SettingsListener>();
 
    async function getSnapshot() {
@@ -57,20 +59,8 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       return createSnapshot(settings);
    }
 
-   async function updateAppSettings(patch: AppSettingsPatch) {
-      return enqueueWrite(async () => {
-         const settings = await loadSettings();
-         const nextSettings: LoadedSettings = {
-            app: applyAppSettingsPatch(settings.app, patch),
-            library: settings.library
-         };
-
-         return writeSettings(nextSettings);
-      });
-   }
-
    async function updateAppSettingsWith(update: (current: AppSettings) => AppSettingsPatch) {
-      return enqueueWrite(async () => {
+      return writeQueue.run(async () => {
          const settings = await loadSettings();
          const nextSettings: LoadedSettings = {
             app: applyAppSettingsPatch(settings.app, update(settings.app)),
@@ -81,26 +71,16 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       });
    }
 
-   async function updateLibrarySettings(patch: LibrarySettingsPatch) {
-      return enqueueWrite(async () => {
+   async function updateLibrarySettingsWith(update: (current: LibrarySettings) => LibrarySettingsPatch) {
+      return writeQueue.run(async () => {
          const settings = await loadSettings();
          const nextSettings: LoadedSettings = {
             app: settings.app,
-            library: applyLibrarySettingsPatch(settings.library, patch)
+            library: applyLibrarySettingsPatch(settings.library, update(settings.library))
          };
 
          return writeSettings(nextSettings);
       });
-   }
-
-   async function enqueueWrite(task: () => Promise<Awaited<ReturnType<typeof writeSettings>>>) {
-      const writeTask = writeQueue.then(task);
-      writeQueue = writeTask.then(
-         () => {},
-         () => {}
-      );
-
-      return writeTask;
    }
 
    function loadSettings(): Promise<LoadedSettings> {
@@ -111,44 +91,34 @@ export function createSettingsStore(options: SettingsStoreOptions) {
    async function readSettings(): Promise<LoadedSettings> {
       const readResult = await Result.tryPromise({
          try: () => readFile(settingsPath, 'utf8'),
-         catch: (cause) => createSettingsProblem('settings.read.failed', 'failed to read settings', causeCode(cause))
+         catch: (cause) => createProblem('settings.read.failed', { path: settingsPath, cause })
       });
 
       if (Result.isError(readResult)) {
          return createDefaultSettings(readResult.error.detail === 'ENOENT' ? undefined : readResult.error);
       }
 
-      const settings = parseSettingsFile(readResult.value);
-      return settings;
+      return parseSettingsFile(readResult.value);
    }
 
    async function writeSettings(settings: LoadedSettings): Promise<SettingsWriteResult> {
+      const kept = await keepUnreadableSettings();
+      if (Result.isError(kept)) return { ok: false, error: kept.error };
+
       const file: StoredSettingsFile = {
          app: settings.app,
          library: settings.library
       };
       const writeResult = await writeJsonFileAtomic(settingsPath, file, storedSettingsFileSchema, {
-         root: options.dataPath,
-         scope: 'settings'
+         root: options.dataPath
       });
 
       if (Result.isError(writeResult)) {
-         const problem = createSettingsProblem('settings.write.failed', 'failed to write settings', writeResult.error.detail);
-
-         return {
-            ok: false,
-            error: {
-               code: problem.code,
-               message: problem.message,
-               details: {
-                  path: problem.path,
-                  detail: problem.detail ?? null
-               }
-            }
-         };
+         return { ok: false, error: createProblem('settings.write.failed', { path: settingsPath, detail: writeResult.error.detail }) };
       }
 
       loadedSettings = Promise.resolve(settings);
+      corruptBackedUp = false;
       const snapshot = createSnapshot(settings);
       emit(snapshot);
 
@@ -158,34 +128,34 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       };
    }
 
+   async function keepUnreadableSettings() {
+      if (corruptBackedUp || !(await loadSettings()).problem) return Result.ok();
+
+      const backupPath = join(options.dataPath, `settings.invalid-${Date.now()}.json`);
+      const copied = await Result.tryPromise({
+         try: () => copyFile(settingsPath, backupPath, constants.COPYFILE_EXCL),
+         catch: (cause) => createProblem('settings.write.failed', { path: backupPath, cause })
+      });
+      if (Result.isOk(copied)) corruptBackedUp = true;
+      return copied;
+   }
+
    function parseSettingsFile(contents: string): LoadedSettings {
       const parseResult = Result.try({
          try: () => z.json().parse(JSON.parse(contents)),
-         catch: (cause) => createSettingsProblem('settings.read.corrupt', 'settings file contains invalid JSON', causeCode(cause))
+         catch: (cause) => createProblem('settings.read.corrupt', { path: settingsPath, cause })
       });
 
       if (Result.isError(parseResult)) {
          return createDefaultSettings(parseResult.error);
       }
 
-      const parsed = storedSettingsFileSchema.safeParse(parseResult.value);
-      if (parsed.success) {
-         return {
-            app: parsed.data.app,
-            library: parsed.data.library
-         };
-      }
-
-      const defaults = {
-         app: createDefaultAppSettings(),
-         library: createDefaultLibrarySettings(defaultInstallRoot)
-      };
-      const recovered = createRecoverableStoredSettingsFileSchema(defaults).parse(parseResult.value);
+      const read = readStoredSettings(parseResult.value, createDefaultSettings());
+      if (read.invalidFields.length === 0) return read.settings;
 
       return {
-         app: recovered.app,
-         library: recovered.library,
-         problem: createSettingsProblem('settings.read.invalid', 'settings file contained invalid values', parsed.error.message)
+         ...read.settings,
+         problem: createProblem('settings.read.invalid', { path: settingsPath, detail: read.invalidFields.join(', ') })
       };
    }
 
@@ -218,12 +188,6 @@ export function createSettingsStore(options: SettingsStoreOptions) {
       return settings;
    }
 
-   function createSettingsProblem(code: SettingsProblem['code'], message: string, detail?: string): SettingsProblem {
-      const problem: SettingsProblem = { code, message, path: settingsPath };
-      if (detail) problem.detail = detail;
-      return problem;
-   }
-
    function subscribe(listener: SettingsListener) {
       listeners.add(listener);
 
@@ -240,9 +204,10 @@ export function createSettingsStore(options: SettingsStoreOptions) {
 
    return {
       getSnapshot,
-      updateAppSettings,
+      updateAppSettings: (patch: AppSettingsPatch) => updateAppSettingsWith(() => patch),
       updateAppSettingsWith,
-      updateLibrarySettings,
+      updateLibrarySettings: (patch: LibrarySettingsPatch) => updateLibrarySettingsWith(() => patch),
+      updateLibrarySettingsWith,
       subscribe
    };
 }

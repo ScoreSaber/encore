@@ -2,11 +2,9 @@ import { ClipboardCopy, Save } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 import { LogPreview } from '@/modules/support/renderer/log-preview';
-import { supportLogIssueKeys } from '@/modules/support/renderer/support-log-issue-keys';
 import type { Support } from '@/modules/support/renderer/use-support';
 import { useFormatters } from '@/renderer/i18n/formatters';
 
@@ -48,7 +46,7 @@ export function DiagnosticsDialog({ support }: { support: Support }) {
                            <p key={log.fileId} className="text-muted-foreground text-xs">
                               {t('logExcluded', {
                                  file: log.fileId,
-                                 reason: logs(`issues.${supportLogIssueKeys[log.issue]}`)
+                                 reason: logs(`issues.${log.issue}`)
                               })}
                            </p>
                         )
@@ -63,16 +61,16 @@ export function DiagnosticsDialog({ support }: { support: Support }) {
                <Button type="button" variant="outline" disabled={exporting} onClick={support.closeDiagnostics}>
                   {common('cancel')}
                </Button>
-               <ButtonGroup aria-label={t('title')}>
-                  <Button type="button" variant="outline" disabled={!bundle || exporting} onClick={() => void support.exportDiagnostics('clipboard')}>
-                     <ClipboardCopy data-icon="inline-start" />
-                     {t('copy')}
-                  </Button>
+               <Button type="button" variant="outline" disabled={!bundle || exporting} onClick={() => void support.exportDiagnostics('clipboard')}>
+                  <ClipboardCopy data-icon="inline-start" />
+                  {t('copy')}
+               </Button>
+               {window.encore.runtime === 'desktop' ? (
                   <Button type="button" disabled={!bundle || exporting} onClick={() => void support.exportDiagnostics('file')}>
                      <Save data-icon="inline-start" />
                      {t('save')}
                   </Button>
-               </ButtonGroup>
+               ) : null}
             </DialogFooter>
          </DialogContent>
       </Dialog>

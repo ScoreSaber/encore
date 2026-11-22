@@ -88,7 +88,3 @@ export function PreviewList({ items }: { items: { id: string; label: string; det
       </ul>
    );
 }
-
-export function isOperationFinished(operation: OperationSnapshot | null) {
-   return operation !== null && operation.status !== 'queued' && operation.status !== 'running';
-}

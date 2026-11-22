@@ -1,0 +1,5 @@
+include ':capacitor-android'
+project(':capacitor-android').projectDir = new File('../../../node_modules/.pnpm/@capacitor+android@8.5.2_@capacitor+core@8.5.2/node_modules/@capacitor/android/capacitor')
+
+include ':capawesome-capacitor-nodejs'
+project(':capawesome-capacitor-nodejs').projectDir = new File('../../../node_modules/.pnpm/@capawesome+capacitor-nodejs@0.2.0_@capacitor+core@8.5.2/node_modules/@capawesome/capacitor-nodejs/android')

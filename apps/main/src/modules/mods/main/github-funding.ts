@@ -1,13 +1,21 @@
 import { Result } from 'better-result';
 
-import type { ModFundingResult, ModLinkRequest } from '@/modules/mods/contract';
-import { githubRepositoryFromUrl, type GitHubRepository } from '@/modules/mods/contract';
+import { readRecent, setRecent } from '@/lib/content/content-cache';
+import { githubRepositoryFromUrl, type GitHubRepository, type ModFundingResult, type ModLinkRequest } from '@/modules/mods/contract';
 
-export type GitHubFundingFetch = (url: string, init: { method: 'HEAD'; signal: AbortSignal; headers: Record<string, string> }) => Promise<Response>;
+const fundingTimeoutMs = 5_000;
+const availableTtlMs = 60 * 60 * 1_000;
+const unavailableTtlMs = 5 * 60 * 1_000;
+const maxCachedFunding = 200;
 
-export function createGitHubFundingService(options: { fetchFunding?: GitHubFundingFetch; timeoutMs?: number } = {}) {
-   const fetchFunding = options.fetchFunding ?? fetch;
-   const cache = new Map<string, Promise<ModFundingResult>>();
+type CachedFunding = {
+   result: ModFundingResult;
+   expiresAt: number;
+};
+
+export function createGitHubFundingService() {
+   const cache = new Map<string, CachedFunding>();
+   const inFlight = new Map<string, Promise<ModFundingResult>>();
 
    return {
       async get(request: ModLinkRequest): Promise<ModFundingResult> {
@@ -15,26 +23,38 @@ export function createGitHubFundingService(options: { fetchFunding?: GitHubFundi
          if (!repository) return { status: 'unavailable' };
 
          const key = `${repository.owner.toLowerCase()}/${repository.repo.toLowerCase()}`;
-         const cached = cache.get(key);
-         if (cached) return cached;
+         const cached = readRecent(cache, key);
+         if (cached && cached.expiresAt > Date.now()) return cached.result;
+         if (cached) cache.delete(key);
 
-         const pending = checkFundingFile(repository, fetchFunding, options.timeoutMs);
-         cache.set(key, pending);
+         const existing = inFlight.get(key);
+         if (existing) return existing;
+
+         const pending = checkFundingFile(repository)
+            .then((result) => {
+               const ttl = result.status === 'available' ? availableTtlMs : unavailableTtlMs;
+               setRecent(cache, key, { result, expiresAt: Date.now() + ttl }, maxCachedFunding);
+               return result;
+            })
+            .finally(() => {
+               if (inFlight.get(key) === pending) inFlight.delete(key);
+            });
+         inFlight.set(key, pending);
          return pending;
       }
    };
 }
 
-async function checkFundingFile(repository: GitHubRepository, fetchFunding: GitHubFundingFetch, timeoutMs = 5_000): Promise<ModFundingResult> {
+async function checkFundingFile(repository: GitHubRepository): Promise<ModFundingResult> {
    const owner = encodeURIComponent(repository.owner);
    const repo = encodeURIComponent(repository.repo);
 
    for (const fileName of ['FUNDING.yml', 'FUNDING.yaml']) {
       const response = await Result.tryPromise({
          try: () =>
-            fetchFunding(`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/.github/${fileName}`, {
+            fetch(`https://raw.githubusercontent.com/${owner}/${repo}/HEAD/.github/${fileName}`, {
                method: 'HEAD',
-               signal: AbortSignal.timeout(timeoutMs),
+               signal: AbortSignal.timeout(fundingTimeoutMs),
                headers: { accept: 'text/plain' }
             }),
          catch: () => undefined

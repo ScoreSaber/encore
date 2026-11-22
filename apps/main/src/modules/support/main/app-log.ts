@@ -3,16 +3,15 @@ import { redactSupportText } from '@/modules/support/main/log-redaction';
 import { appendFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export type AppLogLevel = 'error' | 'info' | 'warn';
+type AppLogLevel = 'error' | 'info' | 'warn';
 
 export type AppLogWriter = ReturnType<typeof createAppLogWriter>;
 
-export function createAppLogWriter(options: { logsPath: string; homePath?: string; now?: () => Date }) {
-   const now = options.now ?? (() => new Date());
+export function createAppLogWriter(options: { logsPath: string; homePath?: string }) {
    let queue: Promise<void> = Promise.resolve();
 
    function record(level: AppLogLevel, message: string) {
-      const timestamp = now();
+      const timestamp = new Date();
       const line = `${timestamp.toISOString()} ${level.toUpperCase()} ${redactSupportText(message, { homePath: options.homePath })}\n`;
 
       queue = queue.then(async () => {

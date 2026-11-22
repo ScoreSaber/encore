@@ -12,25 +12,20 @@ export type BSManagerLocations = {
    homePath: string;
    documentsPath: string;
    appDataPath: string;
-   dataHomePath?: string;
 };
 
 export function bsmanagerAppConfigPath(locations: BSManagerLocations) {
    return join(locations.appDataPath, bsmanagerAppConfigFolderName, bsmanagerAppConfigFileName);
 }
 
-export function bsmanagerRootPath(parentPath: string) {
-   return join(parentPath, bsmanagerFolderName);
-}
-
 export function bsmanagerRootCandidates(locations: BSManagerLocations, configuredParentPath?: string) {
    const parents = [
       ...(configuredParentPath ? [configuredParentPath] : []),
       locations.documentsPath,
-      ...(locations.platform === 'linux' ? [locations.dataHomePath ?? join(locations.homePath, '.local', 'share')] : [locations.homePath])
+      ...(locations.platform === 'linux' ? [join(locations.homePath, '.local', 'share')] : [locations.homePath])
    ];
 
-   return [...new Set(parents.filter(Boolean).map((parent) => bsmanagerRootPath(parent)))];
+   return [...new Set(parents.filter(Boolean).map((parent) => join(parent, bsmanagerFolderName)))];
 }
 
 export function bsmanagerVersionsPath(rootPath: string) {

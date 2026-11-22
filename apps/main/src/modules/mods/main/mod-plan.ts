@@ -1,6 +1,6 @@
 import semver from 'semver';
 
-import type { ModPlanEntry, ModSummary } from '@/modules/mods/contract';
+import type { ModPlanEntry, ModSummary, ModWarning } from '@/modules/mods/contract';
 import { toModSummary, type ModIndex, type ModIndexEntry } from '@/modules/mods/main/mod-index';
 import type { ModScan } from '@/modules/mods/main/mod-scan';
 import type { OperationProgress } from '@/modules/operations/contract';
@@ -57,6 +57,23 @@ export function buildInstallPlan(index: ModIndex, scan: ModScan, selectedIds: st
    return { mods: orderInstallPlan(planned), missingDependencies };
 }
 
+export function describeInstallPlan(plan: ReturnType<typeof buildInstallPlan>, scan: ModScan, patcherSupported: boolean) {
+   const entries = plan.mods.map((planned) => planned.entry);
+   const warnings: ModWarning[] = [];
+   if (entries.some((entry) => entry.isBsipa)) warnings.push('bsipa-first', patcherSupported ? 'patcher-runs' : 'patcher-unsupported');
+   if (plan.missingDependencies) warnings.push('missing-dependency');
+   if (entries.some((entry) => scan.installed.has(entry.modId))) warnings.push('replaces-installed');
+   if (entries.some((entry) => entry.sourceKind === 'unofficial')) warnings.push('unofficial-source');
+   if (entries.some((entry) => entry.sourceKind === 'unofficial' && entry.claimedIdentity !== null)) warnings.push('claimed-identity');
+
+   return {
+      downloadHosts: [...new Set(entries.map((entry) => entry.downloadHost))],
+      mods: plan.mods.map(toPlanEntry),
+      downloadBytes: entries.every((entry) => entry.sizeBytes !== null) ? entries.reduce((total, entry) => total + (entry.sizeBytes ?? 0), 0) : null,
+      warnings
+   };
+}
+
 function orderInstallPlan(planned: Map<string, PlannedMod>) {
    const ordered: PlannedMod[] = [];
    const visited = new Set<string>();
@@ -84,7 +101,7 @@ function orderInstallPlan(planned: Map<string, PlannedMod>) {
    return ordered;
 }
 
-export function toPlanEntry(planned: PlannedMod): ModPlanEntry {
+function toPlanEntry(planned: PlannedMod): ModPlanEntry {
    return {
       modId: planned.entry.modId,
       sourceName: planned.entry.sourceName,
@@ -113,8 +130,4 @@ export function progressFor(index: number, total: number, label: string, percent
       percent: total === 0 ? 0 : Math.min(100, Math.round(((index + percent / 100) / total) * 100)),
       unit: 'items'
    };
-}
-
-export function percentOf(current: number, total: number) {
-   return total === 0 ? 100 : Math.round((current / total) * 100);
 }

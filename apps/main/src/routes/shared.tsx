@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { BSManagerCleanupDialog } from '@/modules/bsmanager/renderer/bsmanager-cleanup-dialog';
 import { useBSManagerAdoption } from '@/modules/bsmanager/renderer/use-bsmanager-adoption';
 import { useBSManagerCleanup } from '@/modules/bsmanager/renderer/use-bsmanager-cleanup';
+import { FrameCopyCard } from '@/modules/install-mirror/renderer/frame-setup-card';
 import { SharedConnectDialog } from '@/modules/shared-content/renderer/shared-connect-dialog';
 import { sharedContentOverviewQueryOptions } from '@/modules/shared-content/renderer/shared-content-queries';
 import { SharedInstallList } from '@/modules/shared-content/renderer/shared-install-list';
@@ -19,8 +20,11 @@ import { SharedRootsPanel } from '@/modules/shared-content/renderer/shared-roots
 import { useSharedConnect } from '@/modules/shared-content/renderer/use-shared-connect';
 import { useSharedRoots } from '@/modules/shared-content/renderer/use-shared-roots';
 import { localTargetId } from '@/modules/targets/contract';
+import { runsOnSteamFrame } from '@/modules/targets/contract';
 import { TargetPicker } from '@/modules/targets/renderer/target-picker';
 import { useSelectedTarget } from '@/modules/targets/renderer/use-selected-target';
+import { useTargetName } from '@/modules/targets/renderer/use-targets';
+import { queryStatus } from '@/renderer/query/api-query';
 import { PageBody } from '@/renderer/shell/page-body';
 
 export const Route = createFileRoute('/shared')({
@@ -33,23 +37,21 @@ function SharedRoute() {
    const cleanupLabels = useTranslations('bsmanager.cleanup');
    const targetLabels = useTranslations('targets');
    const targetList = useSelectedTarget();
+   const targetName = useTargetName();
    const targets = targetList.targets.filter((target) => target.capabilities.includes('share-content'));
    const targetId = targets.some((target) => target.id === targetList.targetId) ? targetList.targetId : (targets[0]?.id ?? targetList.targetId);
    const overviewQuery = useQuery(sharedContentOverviewQueryOptions(targetId));
-   const overviewStatus =
-      overviewQuery.isError || overviewQuery.data?.status === 'unavailable' ? 'error' : overviewQuery.isPending ? 'loading' : 'ready';
+   const overviewStatus = queryStatus(overviewQuery);
    const roots = useSharedRoots(targetId);
    const connect = useSharedConnect(targetId);
    const adoption = useBSManagerAdoption(targetId);
-   const cleanup = useBSManagerCleanup(targetId);
+   const cleanup = useBSManagerCleanup(targetId, () => void overviewQuery.refetch());
    const [pickedRootPath, setPickedRootPath] = useState<string | null>(null);
 
    const selectedTarget = targetList.targets.find((target) => target.id === targetId) ?? null;
-   const supportsSharing = !selectedTarget || selectedTarget.capabilities.includes('share-content');
-   const canManage = supportsSharing;
    const isLocal = targetId === localTargetId;
-   const snapshot = overviewQuery.data?.status === 'ok' ? overviewQuery.data.value : null;
-   const unsupported = overviewQuery.data?.status === 'unsupported' || snapshot?.status === 'unsupported';
+   const snapshot = overviewQuery.data ?? null;
+   const unsupported = overviewStatus === 'unsupported' || snapshot?.status === 'unsupported';
    const rootList = snapshot?.roots ?? [];
    const selectedRootPath =
       (pickedRootPath && rootList.some((root) => root.path === pickedRootPath) ? pickedRootPath : null) ?? snapshot?.sharedRootPath ?? null;
@@ -71,10 +73,8 @@ function SharedRoute() {
                      </Button>
                   ) : null}
                </div>
+               {selectedTarget ? <p className="text-muted-foreground mt-1 text-sm">{t('on', { device: targetName(selectedTarget) })}</p> : null}
                {supportHint && !isLocal ? <p className="text-muted-foreground mt-1 text-xs">{supportHint}</p> : null}
-               {!canManage && overviewStatus === 'ready' && !unsupported ? (
-                  <p className="text-muted-foreground mt-1 text-xs">{t('readOnly')}</p>
-               ) : null}
             </div>
             <TargetPicker
                id="shared-target"
@@ -87,9 +87,11 @@ function SharedRoute() {
             />
          </div>
 
+         {selectedTarget?.kind === 'remote' && runsOnSteamFrame(targetList.targets) ? <FrameCopyCard pcId={selectedTarget.id} /> : null}
+
          {overviewStatus === 'loading' ? <LoadingPanel /> : null}
          {overviewStatus === 'error' ? <ErrorPanel message={shared('loadError')} onRetry={() => void overviewQuery.refetch()} /> : null}
-         {unsupported ? <EmptyPanel description={shared('unsupportedTarget')} /> : null}
+         {unsupported ? <EmptyPanel description={shared('issues.unsupported-target')} /> : null}
 
          {snapshot && !unsupported && overviewStatus === 'ready' ? (
             <>
@@ -104,7 +106,6 @@ function SharedRoute() {
                   manager={roots}
                   selectedRootPath={selectedRootPath}
                   onSelectRoot={setPickedRootPath}
-                  canManage={canManage}
                   isLocal={isLocal}
                   bsmanagerSharedPath={bsmanagerSharedPath}
                />
@@ -115,7 +116,6 @@ function SharedRoute() {
                      installs={snapshot.installs}
                      selectedRootPath={selectedRootPath}
                      connect={connect}
-                     canManage={canManage}
                      isLocal={isLocal}
                      // support is probed against the active root only, other roots are checked by the preview
                      linkable={selectedRootPath !== snapshot.sharedRootPath || linkSupport?.supported === true}
@@ -125,7 +125,7 @@ function SharedRoute() {
          ) : null}
 
          <SharedConnectDialog connect={connect} />
-         <BSManagerCleanupDialog cleanup={cleanup} onChanged={() => void overviewQuery.refetch()} />
+         <BSManagerCleanupDialog cleanup={cleanup} />
       </PageBody>
    );
 }
@@ -136,7 +136,7 @@ function SharedContentHelp() {
    return (
       <Dialog>
          <DialogTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" className="text-muted-foreground size-7 rounded-full" aria-label={t('label')}>
+            <Button type="button" variant="menu" size="icon" className="size-7 rounded-full" aria-label={t('label')}>
                <CircleHelp />
             </Button>
          </DialogTrigger>

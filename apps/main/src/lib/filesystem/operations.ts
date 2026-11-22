@@ -1,52 +1,35 @@
-import { Result, type Err, type Ok } from 'better-result';
+import { Result } from 'better-result';
 
 import { abortableSleep } from '@/lib/async';
-import { causeCode } from '@/lib/errors';
+import { causeCode, createProblem } from '@/lib/errors';
+import { publishFileExclusive } from '@/lib/filesystem/atomic-write';
 import {
    assertCanCopyToDestination,
-   createFilesystemProblem,
    createTempPath,
    resolveFilesystemPath,
    pathExists,
    readPathInfo,
+   removeQuietly,
    resolveManagedPath,
    type FilesystemProblem,
-   type ManagedPath
+   type ManagedPath,
+   type PathInfo
 } from '@/lib/filesystem/path';
-import type { PathInfo } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
-import {
-   createWriteAuditEntry,
-   finishWriteAuditEntry,
-   type FilesystemWriteAction,
-   type FilesystemWriteScope,
-   type WriteAuditError,
-   type WriteAuditSink
-} from '@/lib/filesystem/write-audit';
+import { bytesProgress, throttleReports } from '@/lib/progress';
+import type { OperationProgress } from '@/modules/operations/contract';
 
-import { link, copyFile, mkdir, readdir, readlink, rename, rm, symlink, unlink } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readlink, rename, rm, symlink, unlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
-export type FilesystemProgress = {
-   phase?: string;
-   label?: string;
-   current?: number;
-   total?: number;
-   percent?: number;
-   unit?: 'bytes' | 'files' | 'items' | 'steps';
-};
+type ProgressReporter = (progress: OperationProgress) => void;
 
-export type FilesystemProgressReporter = (progress: FilesystemProgress) => void;
-
-export type FilesystemWriteOptions = {
-   scope?: FilesystemWriteScope;
-   audit?: WriteAuditSink;
-   operationId?: string;
-   onProgress?: FilesystemProgressReporter;
+type FilesystemWriteOptions = {
+   onProgress?: ProgressReporter;
    signal?: AbortSignal;
 };
 
-export type CopyPathOptions = FilesystemWriteOptions & {
+type CopyPathOptions = FilesystemWriteOptions & {
    sourcePath: string;
    destinationPath: string;
    destinationRoot: string;
@@ -54,7 +37,7 @@ export type CopyPathOptions = FilesystemWriteOptions & {
    overwrite?: boolean;
 };
 
-export type MovePathOptions = FilesystemWriteOptions & {
+type MovePathOptions = FilesystemWriteOptions & {
    sourcePath: string;
    destinationPath: string;
    destinationRoot: string;
@@ -62,59 +45,37 @@ export type MovePathOptions = FilesystemWriteOptions & {
    overwrite?: boolean;
 };
 
-export type DeletePathOptions = FilesystemWriteOptions & {
+type DeletePathOptions = FilesystemWriteOptions & {
    targetPath: string;
    root: string;
    allowMissing?: boolean;
 };
 
 export type FilesystemWriteSummary = {
-   action: FilesystemWriteAction;
+   action: 'copy' | 'move' | 'delete';
    sourcePath?: string;
    targetPath: string;
    bytes: number;
    files: number;
 };
 
-type FilesystemResult<T> = Ok<T, FilesystemProblem> | Err<T, FilesystemProblem>;
-type FilesystemCountResult = FilesystemResult<{ bytes: number; files: number }>;
-type VoidFilesystemResult = FilesystemResult<void>;
+type WriteTally = { bytes: number; files: number };
 
-type CopyState = {
-   bytes: number;
-   files: number;
+type WriteState = WriteTally & {
    totalBytes: number;
    totalFiles: number;
-   report: FilesystemProgressReporter;
+   report: ProgressReporter;
    signal?: AbortSignal;
 };
 
-type DeleteState = {
-   bytes: number;
-   files: number;
-   totalBytes: number;
-   totalFiles: number;
-   report: FilesystemProgressReporter;
-   signal?: AbortSignal;
-};
-
-const progressThrottleMs = 100;
 const copyRetryDelaysMs = [100, 250, 500, 1_000, 2_000];
-const neverAbortSignal = new AbortController().signal;
 
 export async function copyPathWithProgress(options: CopyPathOptions) {
    const prepared = await prepareCopy(options);
    if (Result.isError(prepared)) return Result.err<FilesystemWriteSummary, FilesystemProblem>(prepared.error);
 
-   return runAuditedWrite(
-      {
-         action: 'copy',
-         sourcePath: prepared.value.sourcePath,
-         targetPath: prepared.value.destinationPath,
-         scope: options.scope ?? 'content',
-         operationId: options.operationId,
-         audit: options.audit
-      },
+   return guardWrite(
+      prepared.value.destinationPath,
       async () => {
          const summary = await performCopy({
             ...prepared.value,
@@ -133,8 +94,7 @@ export async function copyPathWithProgress(options: CopyPathOptions) {
             files: summary.value.files
          });
       },
-      'filesystem.operation.copy-failed',
-      'failed to copy filesystem path'
+      'filesystem.operation.copy-failed'
    );
 }
 
@@ -142,15 +102,8 @@ export async function movePathWithProgress(options: MovePathOptions) {
    const prepared = await prepareCopy(options);
    if (Result.isError(prepared)) return Result.err<FilesystemWriteSummary, FilesystemProblem>(prepared.error);
 
-   return runAuditedWrite(
-      {
-         action: 'move',
-         sourcePath: prepared.value.sourcePath,
-         targetPath: prepared.value.destinationPath,
-         scope: options.scope ?? 'content',
-         operationId: options.operationId,
-         audit: options.audit
-      },
+   return guardWrite(
+      prepared.value.destinationPath,
       async () => {
          const copySummary = await performCopy({
             ...prepared.value,
@@ -177,8 +130,7 @@ export async function movePathWithProgress(options: MovePathOptions) {
             files: Math.max(copySummary.value.files, deleteSummary.value.files)
          });
       },
-      'filesystem.operation.move-failed',
-      'failed to move filesystem path'
+      'filesystem.operation.move-failed'
    );
 }
 
@@ -203,21 +155,11 @@ export async function deletePathWithProgress(options: DeletePathOptions) {
    }
 
    if (!exists.value) {
-      return Result.err<FilesystemWriteSummary, FilesystemProblem>({
-         code: 'filesystem.path.not-found',
-         message: 'filesystem path does not exist',
-         path: target.value.path
-      });
+      return Result.err<FilesystemWriteSummary, FilesystemProblem>(createProblem('filesystem.path.not-found', { path: target.value.path }));
    }
 
-   return runAuditedWrite(
-      {
-         action: 'delete',
-         targetPath: target.value.path,
-         scope: options.scope ?? 'content',
-         operationId: options.operationId,
-         audit: options.audit
-      },
+   return guardWrite(
+      target.value.path,
       async () => {
          const summary = await performDelete({
             targetPath: target.value.path,
@@ -234,8 +176,7 @@ export async function deletePathWithProgress(options: DeletePathOptions) {
             files: summary.value.files
          });
       },
-      'filesystem.operation.delete-failed',
-      'failed to delete filesystem path'
+      'filesystem.operation.delete-failed'
    );
 }
 
@@ -260,22 +201,14 @@ async function prepareCopy(options: CopyPathOptions | MovePathOptions) {
    if (Result.isError(sourceExists)) return Result.err<PreparedCopy, FilesystemProblem>(sourceExists.error);
 
    if (!sourceExists.value) {
-      return Result.err<PreparedCopy, FilesystemProblem>({
-         code: 'filesystem.path.not-found',
-         message: 'copy source path does not exist',
-         path: source.value.path
-      });
+      return Result.err<PreparedCopy, FilesystemProblem>(createProblem('filesystem.path.not-found', { path: source.value.path }));
    }
 
    const destinationExists = await pathExists(destination.value.path);
    if (Result.isError(destinationExists)) return Result.err<PreparedCopy, FilesystemProblem>(destinationExists.error);
 
    if (destinationExists.value && !options.overwrite) {
-      return Result.err<PreparedCopy, FilesystemProblem>({
-         code: 'filesystem.operation.destination-exists',
-         message: 'destination already exists',
-         path: destination.value.path
-      });
+      return Result.err<PreparedCopy, FilesystemProblem>(createProblem('filesystem.operation.destination-exists', { path: destination.value.path }));
    }
 
    const copyCheck = await assertCanCopyToDestination(source.value.path, destination.value.path);
@@ -292,12 +225,13 @@ type PreparedCopy = {
    destinationPath: string;
 };
 
+type CopyRequest = PreparedCopy & { overwrite: boolean; report: ProgressReporter; signal?: AbortSignal };
+
+type CopyInput = CopyRequest & { sourceInfo: PathInfo };
+
 function resolveUnmanagedSourcePath(sourcePath: string) {
    if (!sourcePath.trim()) {
-      return Result.err<ManagedPath, FilesystemProblem>({
-         code: 'filesystem.path.empty',
-         message: 'copy source path is empty'
-      });
+      return Result.err<ManagedPath, FilesystemProblem>(createProblem('filesystem.path.empty'));
    }
 
    const path = resolveFilesystemPath(sourcePath);
@@ -309,73 +243,26 @@ function resolveUnmanagedSourcePath(sourcePath: string) {
    });
 }
 
-async function runAuditedWrite(
-   input: {
-      action: FilesystemWriteAction;
-      scope: FilesystemWriteScope;
-      targetPath: string;
-      sourcePath?: string;
-      operationId?: string;
-      audit?: WriteAuditSink;
-   },
-   write: () => Promise<FilesystemResult<FilesystemWriteSummary>>,
-   errorCode: FilesystemProblem['code'],
-   errorMessage: string
+async function guardWrite(
+   targetPath: string,
+   write: () => Promise<Result<FilesystemWriteSummary, FilesystemProblem>>,
+   errorCode: FilesystemProblem['code']
 ) {
-   const auditEntry = createWriteAuditEntry(input);
-   await writeAuditEntry(input.audit, auditEntry);
-
    const result = await Result.tryPromise({
       try: write,
-      catch: (cause) => createFilesystemProblem(errorCode, errorMessage, input.targetPath, cause)
+      catch: (cause) => createProblem(errorCode, { path: targetPath, cause })
    });
-   const writeResult = Result.isOk(result) ? result.value : Result.err<FilesystemWriteSummary, FilesystemProblem>(result.error);
-
-   if (Result.isError(writeResult)) {
-      await writeAuditEntry(
-         input.audit,
-         finishWriteAuditEntry(auditEntry, {
-            status: writeResult.error.code === 'filesystem.operation.cancelled' ? 'cancelled' : 'failed',
-            error: operationErrorFromProblem(writeResult.error)
-         })
-      );
-      return writeResult;
-   }
-
-   await writeAuditEntry(
-      input.audit,
-      finishWriteAuditEntry(auditEntry, {
-         status: 'completed',
-         bytes: writeResult.value.bytes,
-         files: writeResult.value.files
-      })
-   );
-
-   return writeResult;
+   return Result.flatten(result);
 }
 
-async function writeAuditEntry(audit: WriteAuditSink | undefined, entry: Parameters<WriteAuditSink>[0]) {
-   if (!audit) return;
-
-   await Result.tryPromise({
-      try: async () => {
-         await audit(entry);
-      },
-      catch: (cause: unknown) =>
-         createFilesystemProblem('filesystem.operation.copy-failed', 'failed to write filesystem audit entry', entry.targetPath, cause)
-   });
-}
-
-async function performCopy(
-   input: PreparedCopy & { overwrite: boolean; report: FilesystemProgressReporter; signal?: AbortSignal }
-): Promise<FilesystemCountResult> {
+async function performCopy(input: CopyRequest): Promise<Result<WriteTally, FilesystemProblem>> {
    const sourceInfo = await readPathInfo(input.sourcePath);
-   if (Result.isError(sourceInfo)) return Result.err<{ bytes: number; files: number }, FilesystemProblem>(sourceInfo.error);
+   if (Result.isError(sourceInfo)) return Result.err(sourceInfo.error);
 
    const size = sourceInfo.value.kind === 'directory' ? await getDirectorySize(input.sourcePath) : getSingleNodeSize(sourceInfo.value);
-   if (Result.isError(size)) return Result.err<{ bytes: number; files: number }, FilesystemProblem>(size.error);
+   if (Result.isError(size)) return Result.err(size.error);
 
-   const state: CopyState = {
+   const state: WriteState = {
       bytes: 0,
       files: 0,
       totalBytes: size.value.bytes,
@@ -385,15 +272,12 @@ async function performCopy(
    };
 
    const copyResult = await copyToDestination({ ...input, sourceInfo: sourceInfo.value }, state);
-   if (Result.isError(copyResult)) return Result.err<{ bytes: number; files: number }, FilesystemProblem>(copyResult.error);
+   if (Result.isError(copyResult)) return Result.err(copyResult.error);
 
-   return Result.ok<{ bytes: number; files: number }, FilesystemProblem>({
-      bytes: state.bytes,
-      files: state.files
-   });
+   return Result.ok({ bytes: state.bytes, files: state.files });
 }
 
-function getSingleNodeSize(sourceInfo: PathInfo): FilesystemCountResult {
+function getSingleNodeSize(sourceInfo: PathInfo): Result<WriteTally, FilesystemProblem> {
    if (sourceInfo.kind === 'file') return Result.ok({ bytes: sourceInfo.sizeBytes, files: 1 });
    if (sourceInfo.kind === 'link') return Result.ok({ bytes: 0, files: 1 });
    return Result.ok({ bytes: 0, files: 0 });
@@ -401,13 +285,13 @@ function getSingleNodeSize(sourceInfo: PathInfo): FilesystemCountResult {
 
 async function performDelete(input: {
    targetPath: string;
-   report: FilesystemProgressReporter;
+   report: ProgressReporter;
    signal?: AbortSignal;
-}): Promise<FilesystemCountResult> {
+}): Promise<Result<WriteTally, FilesystemProblem>> {
    const size = await getDirectorySize(input.targetPath);
-   if (Result.isError(size)) return Result.err<{ bytes: number; files: number }, FilesystemProblem>(size.error);
+   if (Result.isError(size)) return Result.err(size.error);
 
-   const state: DeleteState = {
+   const state: WriteState = {
       bytes: 0,
       files: 0,
       totalBytes: size.value.bytes,
@@ -417,34 +301,23 @@ async function performDelete(input: {
    };
 
    const deleteResult = await deleteNode(input.targetPath, state);
-   if (Result.isError(deleteResult)) return Result.err<{ bytes: number; files: number }, FilesystemProblem>(deleteResult.error);
+   if (Result.isError(deleteResult)) return Result.err(deleteResult.error);
 
    reportProgress(state, 'deleting');
 
-   return Result.ok<{ bytes: number; files: number }, FilesystemProblem>({
-      bytes: state.bytes,
-      files: state.files
-   });
+   return Result.ok({ bytes: state.bytes, files: state.files });
 }
 
-async function copyToDestination(
-   input: PreparedCopy & { overwrite: boolean; report: FilesystemProgressReporter; signal?: AbortSignal; sourceInfo: PathInfo },
-   state: CopyState
-): Promise<VoidFilesystemResult> {
+async function copyToDestination(input: CopyInput, state: WriteState): Promise<Result<void, FilesystemProblem>> {
    const abort = getAbortProblem(input.signal);
    if (Result.isError(abort)) return abort;
 
    const parentResult = await runFilesystemStep(
       () => mkdir(dirname(input.destinationPath), { recursive: true }),
       'filesystem.operation.copy-failed',
-      'failed to prepare copy destination',
       input.destinationPath
    );
    if (Result.isError(parentResult)) return Result.err<void, FilesystemProblem>(parentResult.error);
-
-   if (!input.overwrite && input.sourceInfo.kind === 'directory') {
-      return copyDirectoryToReservedDestination(input, state);
-   }
 
    const temporaryPath = createTempPath({
       parentPath: dirname(input.destinationPath),
@@ -452,7 +325,7 @@ async function copyToDestination(
    });
    const copyResult = await copyNode(input.sourcePath, temporaryPath, state);
    if (Result.isError(copyResult)) {
-      await cleanupPath(temporaryPath);
+      await removeQuietly(temporaryPath);
       return copyResult;
    }
 
@@ -461,85 +334,38 @@ async function copyToDestination(
       : await installTemporaryWithoutOverwrite(input, temporaryPath);
 
    if (Result.isError(installResult)) {
-      await cleanupPath(temporaryPath);
+      await removeQuietly(temporaryPath);
       return installResult;
    }
 
-   await cleanupPath(temporaryPath);
+   await removeQuietly(temporaryPath);
    reportProgress(state, 'copying');
    return Result.ok<void, FilesystemProblem>(undefined);
 }
 
-async function copyDirectoryToReservedDestination(
-   input: PreparedCopy & { overwrite: boolean; report: FilesystemProgressReporter; signal?: AbortSignal; sourceInfo: PathInfo },
-   state: CopyState
-): Promise<VoidFilesystemResult> {
-   const reserveResult = await runFilesystemStep(
-      () => mkdir(input.destinationPath),
-      'filesystem.operation.copy-failed',
-      'failed to reserve copy destination',
-      input.destinationPath
-   );
-   if (Result.isError(reserveResult)) return destinationExistsFromProblem(reserveResult.error);
-
-   const copyResult = await copyNode(input.sourcePath, input.destinationPath, state);
-   if (Result.isError(copyResult)) {
-      await cleanupPath(input.destinationPath);
-      return copyResult;
-   }
-
-   const abort = getAbortProblem(input.signal);
-   if (Result.isError(abort)) {
-      await cleanupPath(input.destinationPath);
-      return abort;
-   }
-
-   reportProgress(state, 'copying');
-   return Result.ok<void, FilesystemProblem>(undefined);
-}
-
-async function installTemporaryWithoutOverwrite(
-   input: PreparedCopy & { overwrite: boolean; report: FilesystemProgressReporter; signal?: AbortSignal; sourceInfo: PathInfo },
-   temporaryPath: string
-): Promise<VoidFilesystemResult> {
+async function installTemporaryWithoutOverwrite(input: CopyInput, temporaryPath: string): Promise<Result<void, FilesystemProblem>> {
    const abort = getAbortProblem(input.signal);
    if (Result.isError(abort)) return abort;
 
+   const publish = (task: () => Promise<void>) => runFilesystemStep(task, 'filesystem.operation.copy-failed', input.destinationPath);
+
+   if (input.sourceInfo.kind === 'directory') return withDestinationExists(await publish(() => rename(temporaryPath, input.destinationPath)));
+
    if (input.sourceInfo.kind === 'file') {
-      const linkResult = await runFilesystemStep(
-         () => link(temporaryPath, input.destinationPath),
-         'filesystem.operation.copy-failed',
-         'failed to install copied file',
-         input.destinationPath
-      );
-      return Result.isError(linkResult) ? destinationExistsFromProblem(linkResult.error) : Result.ok<void, FilesystemProblem>(undefined);
+      return withDestinationExists(await publish(() => publishFileExclusive(temporaryPath, input.destinationPath)));
    }
 
    if (input.sourceInfo.kind === 'link') {
-      const target = await runFilesystemStep(
-         () => readlink(temporaryPath),
-         'filesystem.operation.copy-failed',
-         'failed to read temporary copied link',
-         temporaryPath
-      );
+      const target = await runFilesystemStep(() => readlink(temporaryPath), 'filesystem.operation.copy-failed', temporaryPath);
       if (Result.isError(target)) return Result.err<void, FilesystemProblem>(target.error);
 
-      const linkResult = await runFilesystemStep(
-         () => symlink(target.value, input.destinationPath, symlinkTypeForTarget(input.sourceInfo)),
-         'filesystem.operation.copy-failed',
-         'failed to install copied link',
-         input.destinationPath
-      );
-      return Result.isError(linkResult) ? destinationExistsFromProblem(linkResult.error) : Result.ok<void, FilesystemProblem>(undefined);
+      return withDestinationExists(await publish(() => symlink(target.value, input.destinationPath, symlinkTypeForTarget(input.sourceInfo))));
    }
 
    return Result.ok<void, FilesystemProblem>(undefined);
 }
 
-async function replaceDestinationWithTemporary(
-   input: PreparedCopy & { overwrite: boolean; report: FilesystemProgressReporter; signal?: AbortSignal; sourceInfo: PathInfo },
-   temporaryPath: string
-): Promise<VoidFilesystemResult> {
+async function replaceDestinationWithTemporary(input: CopyInput, temporaryPath: string): Promise<Result<void, FilesystemProblem>> {
    const abort = getAbortProblem(input.signal);
    if (Result.isError(abort)) return abort;
 
@@ -558,14 +384,17 @@ async function replaceDestinationWithTemporary(
       const backupResult = await runFilesystemStep(
          () => rename(input.destinationPath, backupPath),
          'filesystem.operation.copy-failed',
-         'failed to move existing destination aside',
          input.destinationPath
       );
       if (Result.isError(backupResult)) return backupResult;
 
       const abortAfterBackup = getAbortProblem(input.signal);
       if (Result.isError(abortAfterBackup)) {
-         const restoreResult = await restoreDestinationBackup(backupPath, input.destinationPath);
+         const restoreResult = await runFilesystemStep(
+            () => rename(backupPath, input.destinationPath),
+            'filesystem.operation.copy-failed',
+            input.destinationPath
+         );
          return Result.isError(restoreResult) ? restoreResult : abortAfterBackup;
       }
    }
@@ -573,43 +402,34 @@ async function replaceDestinationWithTemporary(
    const renameResult = await runFilesystemStep(
       () => rename(temporaryPath, input.destinationPath),
       'filesystem.operation.copy-failed',
-      'failed to move copy into place',
       input.destinationPath
    );
 
    if (Result.isError(renameResult)) {
-      if (backupPath) await restoreDestinationBackup(backupPath, input.destinationPath);
+      if (backupPath) {
+         await runFilesystemStep(() => rename(backupPath, input.destinationPath), 'filesystem.operation.copy-failed', input.destinationPath);
+      }
       return renameResult;
    }
 
-   if (backupPath) await cleanupPath(backupPath);
+   if (backupPath) await removeQuietly(backupPath);
    return Result.ok<void, FilesystemProblem>(undefined);
 }
 
-async function restoreDestinationBackup(backupPath: string, destinationPath: string) {
-   return runFilesystemStep(
-      () => rename(backupPath, destinationPath),
-      'filesystem.operation.copy-failed',
-      'failed to restore replaced destination',
-      destinationPath
-   );
-}
+function withDestinationExists(result: Result<void, FilesystemProblem>): Result<void, FilesystemProblem> {
+   if (Result.isOk(result)) return result;
 
-function destinationExistsFromProblem(problem: FilesystemProblem): VoidFilesystemResult {
-   if (problem.detail !== 'EEXIST') return Result.err<void, FilesystemProblem>(problem);
+   const { detail, path } = result.error;
+   if (detail !== 'EEXIST' && detail !== 'ENOTEMPTY') return result;
 
-   return Result.err<void, FilesystemProblem>({
-      code: 'filesystem.operation.destination-exists',
-      message: 'destination already exists',
-      path: problem.path
-   });
+   return Result.err<void, FilesystemProblem>(createProblem('filesystem.operation.destination-exists', path ? { path } : {}));
 }
 
 function symlinkTypeForTarget(sourceInfo: PathInfo) {
    return process.platform === 'win32' && sourceInfo.targetKind === 'directory' ? 'junction' : undefined;
 }
 
-async function copyNode(sourcePath: string, destinationPath: string, state: CopyState): Promise<VoidFilesystemResult> {
+async function copyNode(sourcePath: string, destinationPath: string, state: WriteState): Promise<Result<void, FilesystemProblem>> {
    const abort = getAbortProblem(state.signal);
    if (Result.isError(abort)) return abort;
 
@@ -620,17 +440,11 @@ async function copyNode(sourcePath: string, destinationPath: string, state: Copy
       const mkdirResult = await runFilesystemStep(
          () => mkdir(destinationPath, { recursive: true }),
          'filesystem.operation.copy-failed',
-         'failed to create copied directory',
          destinationPath
       );
       if (Result.isError(mkdirResult)) return Result.err<void, FilesystemProblem>(mkdirResult.error);
 
-      const entries = await runFilesystemStep(
-         () => readdir(sourcePath, { withFileTypes: true }),
-         'filesystem.operation.copy-failed',
-         'failed to list copied directory',
-         sourcePath
-      );
+      const entries = await runFilesystemStep(() => readdir(sourcePath, { withFileTypes: true }), 'filesystem.operation.copy-failed', sourcePath);
       if (Result.isError(entries)) return Result.err<void, FilesystemProblem>(entries.error);
 
       for (const entry of entries.value) {
@@ -642,18 +456,12 @@ async function copyNode(sourcePath: string, destinationPath: string, state: Copy
    }
 
    if (sourceInfo.value.kind === 'link') {
-      const target = await runFilesystemStep(
-         () => readlink(sourcePath),
-         'filesystem.operation.copy-failed',
-         'failed to read copied link',
-         sourcePath
-      );
+      const target = await runFilesystemStep(() => readlink(sourcePath), 'filesystem.operation.copy-failed', sourcePath);
       if (Result.isError(target)) return Result.err<void, FilesystemProblem>(target.error);
 
       const linkResult = await runFilesystemStep(
          () => symlink(target.value, destinationPath, symlinkTypeForTarget(sourceInfo.value)),
          'filesystem.operation.copy-failed',
-         'failed to create copied link',
          destinationPath
       );
       if (Result.isError(linkResult)) return linkResult;
@@ -675,9 +483,9 @@ async function copyNode(sourcePath: string, destinationPath: string, state: Copy
    return Result.ok<void, FilesystemProblem>(undefined);
 }
 
-async function copyFileWithRetry(sourcePath: string, destinationPath: string, signal?: AbortSignal): Promise<VoidFilesystemResult> {
+async function copyFileWithRetry(sourcePath: string, destinationPath: string, signal?: AbortSignal): Promise<Result<void, FilesystemProblem>> {
    for (const delayMs of [0, ...copyRetryDelaysMs]) {
-      if (delayMs > 0) await abortableSleep(delayMs, signal ?? neverAbortSignal);
+      if (delayMs > 0) await abortableSleep(delayMs, signal);
 
       const abort = getAbortProblem(signal);
       if (Result.isError(abort)) return abort;
@@ -689,19 +497,15 @@ async function copyFileWithRetry(sourcePath: string, destinationPath: string, si
       if (Result.isOk(copied)) return Result.ok<void, FilesystemProblem>(undefined);
       if (causeCode(copied.error) !== 'EBUSY' || delayMs === copyRetryDelaysMs.at(-1)) {
          return Result.err<void, FilesystemProblem>(
-            createFilesystemProblem('filesystem.operation.copy-failed', 'failed to copy file', destinationPath, copied.error)
+            createProblem('filesystem.operation.copy-failed', { path: destinationPath, cause: copied.error })
          );
       }
    }
 
-   return Result.err<void, FilesystemProblem>({
-      code: 'filesystem.operation.copy-failed',
-      message: 'failed to copy file',
-      path: destinationPath
-   });
+   return Result.err<void, FilesystemProblem>(createProblem('filesystem.operation.copy-failed', { path: destinationPath }));
 }
 
-async function deleteNode(targetPath: string, state: DeleteState): Promise<VoidFilesystemResult> {
+async function deleteNode(targetPath: string, state: WriteState): Promise<Result<void, FilesystemProblem>> {
    const abort = getAbortProblem(state.signal);
    if (Result.isError(abort)) return abort;
 
@@ -709,12 +513,7 @@ async function deleteNode(targetPath: string, state: DeleteState): Promise<VoidF
    if (Result.isError(info)) return Result.err<void, FilesystemProblem>(info.error);
 
    if (info.value.kind === 'directory') {
-      const entries = await runFilesystemStep(
-         () => readdir(targetPath, { withFileTypes: true }),
-         'filesystem.operation.delete-failed',
-         'failed to list directory before deleting it',
-         targetPath
-      );
+      const entries = await runFilesystemStep(() => readdir(targetPath, { withFileTypes: true }), 'filesystem.operation.delete-failed', targetPath);
       if (Result.isError(entries)) return Result.err<void, FilesystemProblem>(entries.error);
 
       for (const entry of entries.value) {
@@ -725,7 +524,6 @@ async function deleteNode(targetPath: string, state: DeleteState): Promise<VoidF
       const removeDirectoryResult = await runFilesystemStep(
          () => rm(targetPath, { recursive: true, maxRetries: 5, retryDelay: 100 }),
          'filesystem.operation.delete-failed',
-         'failed to remove directory',
          targetPath
       );
       if (Result.isError(removeDirectoryResult)) return removeDirectoryResult;
@@ -733,12 +531,7 @@ async function deleteNode(targetPath: string, state: DeleteState): Promise<VoidF
       return Result.ok<void, FilesystemProblem>(undefined);
    }
 
-   const unlinkResult = await runFilesystemStep(
-      () => unlink(targetPath),
-      'filesystem.operation.delete-failed',
-      'failed to remove filesystem node',
-      targetPath
-   );
+   const unlinkResult = await runFilesystemStep(() => unlink(targetPath), 'filesystem.operation.delete-failed', targetPath);
    if (Result.isError(unlinkResult)) return unlinkResult;
 
    state.bytes += info.value.kind === 'file' ? info.value.sizeBytes : 0;
@@ -748,76 +541,37 @@ async function deleteNode(targetPath: string, state: DeleteState): Promise<VoidF
    return Result.ok<void, FilesystemProblem>(undefined);
 }
 
-function createProgressReporter(
-   options: FilesystemWriteOptions,
-   phase: string,
-   progressOptions: { keepComplete?: boolean } = {}
-): FilesystemProgressReporter {
-   let lastProgressAt = 0;
+function createProgressReporter(options: FilesystemWriteOptions, phase: string, progressOptions: { keepComplete?: boolean } = {}): ProgressReporter {
+   const report = throttleReports(options.onProgress);
 
    return (progress) => {
-      const complete = (progress.percent ?? 0) >= 100;
-      const now = Date.now();
-      if (!complete && now - lastProgressAt < progressThrottleMs) return;
-      lastProgressAt = now;
-
-      const nextProgress: FilesystemProgress = { ...progress, phase };
+      const nextProgress: OperationProgress = { ...progress, phase };
       if (progressOptions.keepComplete) {
          nextProgress.current = progress.total;
          nextProgress.percent = 100;
       }
 
-      options.onProgress?.(nextProgress);
+      report(nextProgress, (progress.percent ?? 0) >= 100);
    };
 }
 
-function reportProgress(state: CopyState | DeleteState, phase: string) {
-   state.report({
-      phase,
-      current: state.bytes,
-      total: state.totalBytes,
-      percent: state.totalBytes > 0 ? Math.min(100, Math.round((state.bytes / state.totalBytes) * 100)) : 100,
-      unit: 'bytes',
-      label: `${state.files}/${state.totalFiles} files`
-   });
+function reportProgress(state: WriteState, phase: string) {
+   state.report(bytesProgress(phase, state.bytes, state.totalBytes, `${state.files}/${state.totalFiles} files`));
 }
 
-function getAbortProblem(signal?: AbortSignal): VoidFilesystemResult {
+function getAbortProblem(signal?: AbortSignal): Result<void, FilesystemProblem> {
    if (!signal?.aborted) return Result.ok<void, FilesystemProblem>(undefined);
 
-   return Result.err<void, FilesystemProblem>({
-      code: 'filesystem.operation.cancelled',
-      message: 'filesystem operation was cancelled'
-   });
-}
-
-function operationErrorFromProblem(problem: FilesystemProblem): WriteAuditError {
-   return {
-      code: problem.code,
-      message: problem.message,
-      details: {
-         path: problem.path,
-         root: problem.root,
-         detail: problem.detail
-      }
-   };
-}
-
-async function cleanupPath(targetPath: string) {
-   await Result.tryPromise({
-      try: () => rm(targetPath, { recursive: true, force: true }),
-      catch: (cause) => createFilesystemProblem('filesystem.operation.delete-failed', 'failed to clean up filesystem path', targetPath, cause)
-   });
+   return Result.err<void, FilesystemProblem>(createProblem('filesystem.operation.cancelled'));
 }
 
 async function runFilesystemStep<T>(
    task: () => Promise<T>,
    code: FilesystemProblem['code'],
-   message: string,
    targetPath: string
-): Promise<FilesystemResult<T>> {
+): Promise<Result<T, FilesystemProblem>> {
    return Result.tryPromise({
       try: task,
-      catch: (cause) => createFilesystemProblem(code, message, targetPath, cause)
+      catch: (cause) => createProblem(code, { path: targetPath, cause })
    });
 }

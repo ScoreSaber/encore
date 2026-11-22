@@ -51,5 +51,3 @@ export const modelsApi = defineDomainApi(
 export type TargetModelCollectionRequest = TargetCall<typeof modelsApi.procedures.list>;
 export type TargetModelDetailRequest = TargetModelCollectionRequest & ModelDetailRequest;
 export type TargetModelSelectionRequest = TargetCall<typeof modelsApi.procedures.previewDelete>;
-export type TargetModelDownloadRequest = TargetCall<typeof modelsApi.procedures.startDownload>;
-export type TargetModelSearchRequest = TargetCall<typeof modelsApi.procedures.search>;

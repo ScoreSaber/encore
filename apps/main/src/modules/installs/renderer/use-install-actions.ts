@@ -1,111 +1,75 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
-import type { EncoreApi } from '@/ipc/api';
-import type { IpcError } from '@/ipc/core';
+import { createProblem } from '@/lib/errors';
 import type { InstallActionProblem, InstallActionRequest, InstallDeletePreview, InstallForgetPreview } from '@/modules/installs/contract';
-import type { OperationId } from '@/modules/operations/contract';
-import { useOperations } from '@/modules/operations/renderer/use-operations';
+import { useOperationFlow } from '@/modules/operations/renderer/use-operation-flow';
+import { unwrapTarget } from '@/renderer/ipc-result';
 
-type ReadyDeletePreview = Extract<InstallDeletePreview, { status: 'ok' }>;
-type ReadyForgetPreview = Extract<InstallForgetPreview, { status: 'ok' }>;
-type ReadyAction = { kind: 'delete'; preview: ReadyDeletePreview } | { kind: 'forget'; preview: ReadyForgetPreview };
+type InstallActionReady =
+   | { kind: 'delete'; preview: Extract<InstallDeletePreview, { status: 'ok' }> }
+   | { kind: 'forget'; preview: Extract<InstallForgetPreview, { status: 'ok' }> };
 
-type InstallActionKind = ReadyAction['kind'];
-
-type InstallActionState =
-   | { status: 'idle' }
-   | { status: 'previewing'; kind: InstallActionKind }
-   | { status: 'invalid'; kind: InstallActionKind; problem: InstallActionProblem }
-   | ({ status: 'ready' | 'starting' } & ReadyAction)
-   | ({ status: 'running'; operationId: OperationId } & ReadyAction)
-   | { status: 'forgotten'; kind: 'forget'; preview: ReadyForgetPreview }
-   | { status: 'failed'; kind: InstallActionKind; error: IpcError };
+const previewFailure = createProblem('installs.manage.preview-failed');
+const startFailure = createProblem('installs.manage.start-failed');
 
 export type InstallActions = ReturnType<typeof useInstallActions>;
 
 export function useInstallActions(request: InstallActionRequest) {
    const installs = window.encore.installs;
-   const { operations, cancelOperation } = useOperations(request.targetId);
-   const [state, setState] = useState<InstallActionState>({ status: 'idle' });
+   const flow = useOperationFlow<InstallActionReady, InstallActionProblem>(request.targetId);
+   const { preview, start, submit } = flow;
+   const [forgottenKey, setForgottenKey] = useState<string | null>(null);
+   const requestKey = `${request.targetId}\0${request.installId}`;
+   const removed = forgottenKey === requestKey || (flow.state.status === 'running' && flow.operation?.status === 'completed');
 
-   useEffect(() => {
-      setState({ status: 'idle' });
-   }, [request.installId, request.targetId]);
-
-   const operation = state.status === 'running' ? (operations.find((candidate) => candidate.id === state.operationId) ?? null) : null;
-   const removed = state.status === 'forgotten' || (state.status === 'running' && operation?.status === 'completed');
-
-   const preview = useCallback(
-      async (kind: InstallActionKind) => {
-         setState({ status: 'previewing', kind });
-
-         const previewed = await previewAction(installs, request, kind).catch(() => null);
-         setState(
-            previewed ?? { status: 'failed', kind, error: { code: 'installs.manage.preview-failed', message: 'the install could not be read' } }
-         );
-      },
-      [installs, request]
+   const previewDelete = useCallback(
+      () =>
+         preview(
+            'delete',
+            async () => {
+               const previewed = unwrapTarget(await installs.previewDelete(request));
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: 'delete', preview: previewed }
+                  : { status: 'invalid', kind: 'delete', problem: previewed };
+            },
+            previewFailure
+         ),
+      [installs, preview, request]
    );
 
-   const confirm = useCallback(async () => {
-      if (state.status !== 'ready') return;
+   const previewForget = useCallback(
+      () =>
+         preview(
+            'forget',
+            async () => {
+               const previewed = unwrapTarget(await installs.previewForget(request));
+               return previewed.status === 'ok'
+                  ? { status: 'ready', kind: 'forget', preview: previewed }
+                  : { status: 'invalid', kind: 'forget', problem: previewed };
+            },
+            previewFailure
+         ),
+      [installs, preview, request]
+   );
 
-      const kind = state.kind;
-      const pending: InstallActionState = { ...state, status: 'starting' };
-      setState(pending);
+   const confirm = useCallback(
+      (ready: InstallActionReady) => {
+         if (ready.kind === 'forget') {
+            void submit(
+               ready,
+               () => installs.forget(request),
+               startFailure,
+               () => setForgottenKey(requestKey)
+            );
+            return;
+         }
 
-      const startFailure = { code: 'installs.manage.start-failed', message: 'the action could not be started' };
-
-      if (state.kind === 'forget') {
-         const response = await installs.forget(request).catch(() => null);
-         const forgotten = response?.status === 'ok' ? response.value : null;
-         setState(
-            forgotten?.ok
-               ? { status: 'forgotten', kind: 'forget', preview: state.preview }
-               : { status: 'failed', kind, error: forgotten?.error ?? startFailure }
-         );
-         return;
-      }
-
-      const response = await installs.delete(request).catch(() => null);
-      const started = response?.status === 'ok' ? response.value : null;
-
-      setState(
-         started?.ok
-            ? { ...pending, status: 'running', operationId: started.value.id }
-            : { status: 'failed', kind, error: started?.error ?? startFailure }
-      );
-   }, [installs, request, state]);
-
-   const cancel = useCallback(() => {
-      if (state.status !== 'running') return;
-
-      void cancelOperation(state.operationId);
-   }, [cancelOperation, state]);
-
-   const dismiss = useCallback(() => setState({ status: 'idle' }), []);
+         void start(ready, () => installs.delete(request), startFailure);
+      },
+      [installs, request, requestKey, start, submit]
+   );
 
    const openFolder = useCallback(() => installs.openFolder(request), [installs, request]);
 
-   return { state, operation, removed, preview, confirm, cancel, dismiss, openFolder };
-}
-
-async function previewAction(installs: EncoreApi['installs'], request: InstallActionRequest, kind: InstallActionKind): Promise<InstallActionState> {
-   if (kind === 'forget') {
-      const previewed = await installs.previewForget(request);
-      if (previewed.status !== 'ok') {
-         return { status: 'failed', kind, error: { code: 'installs.manage.preview-failed', message: 'the install could not be read' } };
-      }
-      return previewed.value.status === 'ok'
-         ? { status: 'ready', kind, preview: previewed.value }
-         : { status: 'invalid', kind, problem: previewed.value };
-   }
-
-   const previewed = await installs.previewDelete(request);
-   if (previewed.status !== 'ok') {
-      return { status: 'failed', kind, error: { code: 'installs.manage.preview-failed', message: 'the install could not be read' } };
-   }
-   return previewed.value.status === 'ok'
-      ? { status: 'ready', kind, preview: previewed.value }
-      : { status: 'invalid', kind, problem: previewed.value };
+   return { flow, forgetting: flow.state.status === 'submitting', removed, previewDelete, previewForget, confirm, openFolder };
 }

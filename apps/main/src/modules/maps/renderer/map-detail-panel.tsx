@@ -6,7 +6,6 @@ import { useTranslations } from 'use-intl';
 
 import { CopyPathContextMenu } from '@/components/copy-path-context-menu';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -44,7 +43,17 @@ export function MapDetailPanel({
       );
    }
 
-   return <MapDetail request={request} map={map} disabled={disabled} folderResult={folderResult} onDelete={onDelete} onOpenFolder={onOpenFolder} />;
+   return (
+      <MapDetail
+         key={map.id}
+         request={request}
+         map={map}
+         disabled={disabled}
+         folderResult={folderResult}
+         onDelete={onDelete}
+         onOpenFolder={onOpenFolder}
+      />
+   );
 }
 
 function MapDetail({
@@ -86,42 +95,40 @@ function MapDetail({
                </h3>
                <p className="text-muted-foreground mt-1 truncate text-sm">{t('mappedBy', { mappers: mapper })}</p>
                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <ButtonGroup aria-label={t('actions')}>
-                     {onOpenFolder ? (
-                        <Tooltip>
-                           <CopyPathContextMenu pathType="path" value={map.path}>
-                              <TooltipTrigger asChild>
-                                 <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon-sm"
-                                    disabled={disabled}
-                                    aria-label={common('openFolder.action')}
-                                    onClick={() => onOpenFolder(map.id)}
-                                 >
-                                    <FolderOpen />
-                                 </Button>
-                              </TooltipTrigger>
-                           </CopyPathContextMenu>
-                           <TooltipContent>{common('openFolder.action')}</TooltipContent>
-                        </Tooltip>
-                     ) : null}
+                  {onOpenFolder ? (
                      <Tooltip>
-                        <TooltipTrigger asChild>
-                           <Button
-                              type="button"
-                              variant="outline"
-                              size="icon-sm"
-                              disabled={disabled}
-                              aria-label={t('delete')}
-                              onClick={() => onDelete(map.id)}
-                           >
-                              <Trash2 />
-                           </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>{t('delete')}</TooltipContent>
+                        <CopyPathContextMenu pathType="path" value={map.path}>
+                           <TooltipTrigger asChild>
+                              <Button
+                                 type="button"
+                                 variant="outline"
+                                 size="icon-sm"
+                                 disabled={disabled}
+                                 aria-label={common('openFolder.action')}
+                                 onClick={() => onOpenFolder(map.id)}
+                              >
+                                 <FolderOpen />
+                              </Button>
+                           </TooltipTrigger>
+                        </CopyPathContextMenu>
+                        <TooltipContent>{common('openFolder.action')}</TooltipContent>
                      </Tooltip>
-                  </ButtonGroup>
+                  ) : null}
+                  <Tooltip>
+                     <TooltipTrigger asChild>
+                        <Button
+                           type="button"
+                           variant="outline"
+                           size="icon-sm"
+                           disabled={disabled}
+                           aria-label={t('delete')}
+                           onClick={() => onDelete(map.id)}
+                        >
+                           <Trash2 />
+                        </Button>
+                     </TooltipTrigger>
+                     <TooltipContent>{t('delete')}</TooltipContent>
+                  </Tooltip>
                   {metadata.data?.beatSaver ? (
                      <ExternalMapLink label={t('beatSaver.open')} url={metadata.data.beatSaver.url} onOpen={openLink} />
                   ) : null}
@@ -150,7 +157,7 @@ function MapDetail({
 function ExternalMapLink({ label, url, onOpen }: { label: string; url: string; onOpen: (url: string) => void }) {
    return (
       <CopyPathContextMenu pathType="url" value={url}>
-         <Button type="button" variant="link" size="sm" className="text-muted-foreground cursor-pointer" onClick={() => onOpen(url)}>
+         <Button type="button" variant="link-muted" size="sm" onClick={() => onOpen(url)}>
             {label}
             <ExternalLink className="size-3" />
          </Button>

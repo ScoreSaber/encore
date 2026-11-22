@@ -3,7 +3,7 @@ import { useTranslations } from 'use-intl';
 import { Switch } from '@/components/ui/switch';
 
 import { SettingsRow, SettingsSection } from '@/modules/settings/renderer/settings-layout';
-import { useSettings } from '@/modules/settings/renderer/settings-provider';
+import { useSettings } from '@/modules/settings/renderer/use-settings';
 
 const privacyPolicyUrl = 'https://encore.scoresaber.com/privacy';
 
@@ -16,7 +16,7 @@ export function TelemetrySection({ disabled }: { disabled: boolean }) {
    return (
       <SettingsSection title={t('title')}>
          <SettingsRow
-            label={t('share.title')}
+            title={t('share.title')}
             description={
                <>
                   {t('description')}{' '}
@@ -35,14 +35,15 @@ export function TelemetrySection({ disabled }: { disabled: boolean }) {
                </>
             }
             htmlFor="settings-telemetry-enabled"
-         >
-            <Switch
-               id="settings-telemetry-enabled"
-               checked={snapshot.app.telemetryEnabled}
-               disabled={disabled}
-               onCheckedChange={(telemetryEnabled) => void settings.updateApp({ telemetryEnabled })}
-            />
-         </SettingsRow>
+            control={
+               <Switch
+                  id="settings-telemetry-enabled"
+                  checked={snapshot.app.telemetryEnabled}
+                  disabled={disabled}
+                  onCheckedChange={(telemetryEnabled) => void settings.updateApp({ telemetryEnabled })}
+               />
+            }
+         />
       </SettingsSection>
    );
 }

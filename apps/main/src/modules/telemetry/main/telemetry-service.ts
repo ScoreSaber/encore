@@ -2,6 +2,7 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { readJsonFile, writeJsonFileAtomic } from '@/lib/filesystem/json';
+import { createSerialQueue } from '@/lib/state/machine';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import { localTargetId } from '@/modules/targets/contract';
@@ -69,16 +70,18 @@ type TelemetryServiceOptions = {
    installs: Pick<InstallRegistry, 'list' | 'subscribe'>;
    client: TelemetryClient;
    platform: NodeJS.Platform;
-   now?: () => Date;
 };
+
+type TelemetryLifecycle = 'idle' | 'running' | 'disposed';
 
 export function createTelemetryService(options: TelemetryServiceOptions) {
    const statePath = join(options.dataPath, 'telemetry.json');
    let state: StoredTelemetryState | null = null;
-   let disposed = false;
+   let lifecycle: TelemetryLifecycle = 'idle';
+   const isDisposed = () => lifecycle === 'disposed';
    let changeTimer: ReturnType<typeof setTimeout> | null = null;
    let pollTimer: ReturnType<typeof setInterval> | null = null;
-   let reportQueue = Promise.resolve();
+   const reportQueue = createSerialQueue();
 
    const unsubscribeSettings = options.settings.subscribe((snapshot) => {
       if (!snapshot.app.telemetryEnabled) return;
@@ -87,7 +90,7 @@ export function createTelemetryService(options: TelemetryServiceOptions) {
    const unsubscribeInstalls = options.installs.subscribe(scheduleReport);
 
    function scheduleReport() {
-      if (disposed) return;
+      if (isDisposed()) return;
       if (changeTimer) clearTimeout(changeTimer);
       changeTimer = setTimeout(() => {
          changeTimer = null;
@@ -97,26 +100,28 @@ export function createTelemetryService(options: TelemetryServiceOptions) {
    }
 
    function report() {
-      reportQueue = reportQueue.then(runReport);
-      return reportQueue;
+      return reportQueue.run(runReport);
    }
 
    async function runReport() {
-      if (disposed) return;
+      if (isDisposed()) return;
 
       const gathered = await Result.tryPromise({
          try: () => Promise.all([options.settings.getSnapshot(), options.installs.list()]),
          catch: () => undefined
       });
-      if (Result.isError(gathered)) return;
+      if (Result.isError(gathered) || isDisposed()) return;
 
       const [settings, installs] = gathered.value;
       if (!settings.app.telemetryEnabled) return;
 
       const hostDetails = await readTelemetryHostDetails(options.platform, settings.library.protonPath);
+      if (isDisposed()) return;
 
       const currentState = await loadState();
-      const currentTime = options.now?.() ?? new Date();
+      if (isDisposed()) return;
+
+      const currentTime = new Date();
       let refreshGeneration = currentState.refreshGeneration;
       let lastRefreshCheckedAt = currentState.lastRefreshCheckedAt;
 
@@ -125,6 +130,7 @@ export function createTelemetryService(options: TelemetryServiceOptions) {
             try: () => options.client.getRefreshGeneration(currentState.anonymousId),
             catch: () => undefined
          });
+         if (isDisposed()) return;
          if (Result.isOk(refreshed) && refreshed.value !== null) refreshGeneration = refreshed.value;
          lastRefreshCheckedAt = currentTime.toISOString();
       }
@@ -159,27 +165,30 @@ export function createTelemetryService(options: TelemetryServiceOptions) {
          snapshot_id: randomUUID()
       };
 
-      options.client.capture({
-         distinctId: currentState.anonymousId,
-         event: 'encore.census.reported',
-         properties: {
-            ...commonProperties,
-            beat_saber_install_count: snapshot.beatSaberInstallCount,
-            active_beat_saber_version: snapshot.activeBeatSaberVersion,
-            custom_repository_count: snapshot.repositories.length
-         }
-      });
-      for (const repository of snapshot.repositories) {
+      const captured = Result.try(() => {
          options.client.capture({
             distinctId: currentState.anonymousId,
-            event: 'encore.repository.reported',
+            event: 'encore.census.reported',
             properties: {
                ...commonProperties,
-               repository_url: repository.url,
-               enabled: repository.enabled
+               beat_saber_install_count: snapshot.beatSaberInstallCount,
+               active_beat_saber_version: snapshot.activeBeatSaberVersion,
+               custom_repository_count: snapshot.repositories.length
             }
          });
-      }
+         for (const repository of snapshot.repositories) {
+            options.client.capture({
+               distinctId: currentState.anonymousId,
+               event: 'encore.repository.reported',
+               properties: {
+                  ...commonProperties,
+                  repository_url: repository.url,
+                  enabled: repository.enabled
+               }
+            });
+         }
+      });
+      if (Result.isError(captured) || isDisposed()) return;
 
       await saveState({
          ...currentState,
@@ -208,35 +217,43 @@ export function createTelemetryService(options: TelemetryServiceOptions) {
    }
 
    async function saveState(next: StoredTelemetryState) {
+      if (lifecycle === 'disposed') return;
+
       const written = await writeJsonFileAtomic(statePath, next, storedTelemetryStateSchema, {
-         root: options.dataPath,
-         scope: 'settings'
+         root: options.dataPath
       });
       if (Result.isOk(written)) state = written.value;
    }
 
    async function start() {
+      if (lifecycle !== 'idle') return;
+      lifecycle = 'running';
+
       await report();
-      if (disposed) return;
+      if (lifecycle !== 'running') return;
 
       pollTimer = setInterval(() => void report(), refreshCheckIntervalMs);
       pollTimer.unref();
    }
 
    async function dispose() {
-      disposed = true;
+      if (lifecycle === 'disposed') return;
+      lifecycle = 'disposed';
+
       unsubscribeSettings();
       unsubscribeInstalls();
       if (changeTimer) clearTimeout(changeTimer);
       if (pollTimer) clearInterval(pollTimer);
-      await reportQueue;
-      await options.client.shutdown();
+      changeTimer = null;
+      pollTimer = null;
+      await reportQueue.idle();
+      await Result.tryPromise(() => options.client.shutdown());
    }
 
    return { start, report, dispose };
 }
 
-export function createTelemetrySnapshot(input: {
+function createTelemetrySnapshot(input: {
    appVersion: string;
    operatingSystem: string;
    linuxDistribution: string | null;
@@ -282,14 +299,10 @@ export function describeOperatingSystem(platform: NodeJS.Platform, systemVersion
    return platform;
 }
 
-export function normalizeTelemetryRepositoryUrl(input: string) {
-   const parsed = Result.try({
-      try: () => new URL(input),
-      catch: () => undefined
-   });
-   if (Result.isError(parsed)) return null;
+function normalizeTelemetryRepositoryUrl(input: string) {
+   const url = URL.parse(input);
+   if (!url) return null;
 
-   const url = parsed.value;
    const hostname = url.hostname.toLowerCase();
    if (url.protocol !== 'https:' || url.username || url.password) return null;
    if (

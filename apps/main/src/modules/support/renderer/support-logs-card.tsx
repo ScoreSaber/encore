@@ -3,12 +3,10 @@ import { useTranslations } from 'use-intl';
 
 import { ErrorPanel, LoadingPanel } from '@/components/state/state-panel';
 import { Button } from '@/components/ui/button';
-import { ButtonGroup } from '@/components/ui/button-group';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 import type { SupportLogGroup, SupportLogSelection } from '@/modules/support/contract';
 import { LogPreview } from '@/modules/support/renderer/log-preview';
-import { supportLogIssueKeys } from '@/modules/support/renderer/support-log-issue-keys';
 import type { Support } from '@/modules/support/renderer/use-support';
 
 export function SupportLogsCard({ support, showInstallLogs = true }: { support: Support; showInstallLogs?: boolean }) {
@@ -53,28 +51,24 @@ export function SupportLogsCard({ support, showInstallLogs = true }: { support: 
                </DialogHeader>
                {support.selectedLog.status === 'loading' ? <p className="text-muted-foreground text-sm">{common('loading')}</p> : null}
                {support.selectedLog.status === 'error' ? <p className="text-sm">{t('issues.unreadable')}</p> : null}
-               {support.selectedLog.status === 'unavailable' ? (
-                  <p className="text-sm">{t(`issues.${supportLogIssueKeys[support.selectedLog.issue]}`)}</p>
-               ) : null}
-               {support.selectedLog.status === 'ready' ? <LogPreview className="h-[28rem]" text={support.selectedLog.text} /> : null}
+               {support.selectedLog.status === 'unavailable' ? <p className="text-sm">{t(`issues.${support.selectedLog.issue}`)}</p> : null}
+               {support.selectedLog.status === 'ready' ? <LogPreview className="h-112" text={support.selectedLog.text} /> : null}
                <DialogFooter>
                   <Button type="button" variant="outline" disabled={busy} onClick={support.closeLog}>
                      {common('cancel')}
                   </Button>
-                  <ButtonGroup aria-label={t('actionDescription')}>
-                     <Button type="button" variant="outline" disabled={busy || !logReady} onClick={() => void support.copySelectedLog()}>
-                        <ClipboardCopy data-icon="inline-start" />
-                        {t('copy')}
-                     </Button>
-                     <Button type="button" variant="outline" disabled={busy || !logReady} onClick={() => void support.saveSelectedLog()}>
-                        <Save data-icon="inline-start" />
-                        {t('save')}
-                     </Button>
-                     <Button type="button" disabled={busy || !logReady} onClick={() => void support.openSelectedLog()}>
-                        <ExternalLink data-icon="inline-start" />
-                        {t('open')}
-                     </Button>
-                  </ButtonGroup>
+                  <Button type="button" variant="outline" disabled={busy || !logReady} onClick={() => void support.copySelectedLog()}>
+                     <ClipboardCopy data-icon="inline-start" />
+                     {t('copy')}
+                  </Button>
+                  <Button type="button" variant="outline" disabled={busy || !logReady} onClick={() => void support.saveSelectedLog()}>
+                     <Save data-icon="inline-start" />
+                     {t('save')}
+                  </Button>
+                  <Button type="button" disabled={busy || !logReady} onClick={() => void support.openSelectedLog()}>
+                     <ExternalLink data-icon="inline-start" />
+                     {t('open')}
+                  </Button>
                </DialogFooter>
             </DialogContent>
          </Dialog>

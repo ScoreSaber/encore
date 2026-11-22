@@ -1,33 +1,26 @@
-import { z } from 'zod';
-
-import { defineIpcDescriptor, defineIpcCommand, defineIpcEvent, defineIpcQuery } from '@/ipc/core';
+import { defineIpc, event, linkRegistrationSchema, request } from '@/ipc/core';
 import { launchOptionsSchema } from '@/modules/launch/contract';
 import {
    shortcutKindSchema,
    type LaunchLinkEvent,
    type ShortcutPreview,
    type ShortcutProtocolResult,
-   type ShortcutRequest,
    type ShortcutResult,
    type ShortcutState
 } from '@/modules/shortcuts/contract';
-import { targetInstallRequestSchema } from '@/modules/targets/ipc';
+import { targetInstallRequestSchema } from '@/modules/targets/contract';
 
 const shortcutRequestSchema = targetInstallRequestSchema.extend({
    kind: shortcutKindSchema,
    options: launchOptionsSchema
 });
 
-const shortcutProtocolRequestSchema = z.object({
-   registered: z.boolean()
-});
+export const shortcutsIpc = defineIpc('shortcuts', {
+   getState: request().returns<ShortcutState>(),
+   preview: request(shortcutRequestSchema).returns<ShortcutPreview>(),
+   create: request(shortcutRequestSchema).returns<ShortcutResult>(),
+   setProtocolRegistered: request(linkRegistrationSchema).returns<ShortcutProtocolResult>(),
 
-export const shortcutsIpc = defineIpcDescriptor({
-   getState: defineIpcQuery<ShortcutState>('shortcuts:state'),
-   preview: defineIpcCommand<ShortcutPreview, ShortcutRequest>('shortcuts:preview', shortcutRequestSchema),
-   create: defineIpcCommand<ShortcutResult, ShortcutRequest>('shortcuts:create', shortcutRequestSchema),
-   setProtocolRegistered: defineIpcCommand<ShortcutProtocolResult, { registered: boolean }>('shortcuts:set-protocol', shortcutProtocolRequestSchema),
-
-   onLinkOpened: defineIpcEvent<LaunchLinkEvent>('shortcuts:link-opened'),
-   takePendingLink: defineIpcCommand<LaunchLinkEvent | null>('shortcuts:take-pending-link')
+   onLinkOpened: event<LaunchLinkEvent>(),
+   takePendingLink: request().returns<LaunchLinkEvent | null>()
 });

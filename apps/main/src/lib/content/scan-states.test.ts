@@ -1,134 +1,126 @@
-import { describe, expect, test } from 'vite-plus/test';
+import { afterEach, expect, test, vi } from 'vite-plus/test';
+import { z } from 'zod';
 
-import type { ContentScanCache } from '@/lib/content/content-cache';
 import { createScanStates } from '@/lib/content/scan-states';
 
-type Snapshot = { status: 'missing' | 'ready' | 'scanning'; value: number };
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-const emptyCache: ContentScanCache<Snapshot, string, null> = {
-   load: async () => null,
-   save: async () => undefined,
-   remove: async () => undefined
+type TestSnapshot = {
+   installId: string;
+   status: 'missing' | 'ready' | 'scanning' | 'unsupported';
+   progress: { scanned: number; total: number } | null;
+   items: string[];
 };
 
-describe('content scan states', () => {
-   test('reuses the scan cache across rescans', async () => {
-      let scans = 0;
-      const states = createScanStates<Snapshot, string, null>({
-         getInstallPath: async () => '/game',
-         emptySnapshot: (_installId, status) => ({ status: status === 'unsupported' ? 'missing' : status, value: 0 }),
-         emptyExtra: () => null,
-         runScan: async ({ state }) => {
-            scans += 1;
-            expect(state.cache.get('map')).toBe(scans === 1 ? undefined : 'parsed');
-            if (scans === 1) state.cache.set('map', 'parsed');
-            state.snapshot = { status: 'ready', value: scans };
-            return state.snapshot;
-         },
-         publish: () => undefined,
-         cache: emptyCache
-      });
+const snapshotSchema: z.ZodType<TestSnapshot> = z.object({
+   installId: z.string(),
+   status: z.enum(['missing', 'ready', 'scanning', 'unsupported']),
+   progress: z.object({ scanned: z.number(), total: z.number() }).nullable(),
+   items: z.array(z.string())
+});
 
-      await states.list('install');
-      const rescanned = await states.rescan('install');
+const tempDirs: string[] = [];
 
-      expect(rescanned).toEqual({ status: 'ready', value: 2 });
+afterEach(async () => {
+   while (tempDirs.length > 0) {
+      const dir = tempDirs.pop();
+      if (dir) await rm(dir, { recursive: true, force: true });
+   }
+});
+
+async function createTempDir() {
+   const dir = await mkdtemp(join(tmpdir(), 'encore-scan-states-'));
+   tempDirs.push(dir);
+   return dir;
+}
+
+const silentLog = { warn: () => undefined };
+
+test('background refresh preserves cached ready status and foreground rescan restores previous snapshot on failure', async () => {
+   const dataPath = await createTempDir();
+   const installPath = join(dataPath, 'install-a');
+
+   const primer = createScanStates({
+      dataPath,
+      log: silentLog,
+      cacheName: 'test-scan',
+      snapshotSchema,
+      cacheEntrySchema: z.string(),
+      extraSchema: z.null(),
+      emptyExtra: null,
+      getInstallPath: async () => installPath,
+      emptySnapshot: (installId, status) => ({ installId, status, progress: null, items: [] }),
+      runScan: async ({ installId }) => ({ installId, status: 'ready', progress: null, items: ['cached-item'] })
+   });
+   expect((await primer.list({ installId: 'inst-1' })).items).toEqual(['cached-item']);
+   primer.dispose();
+
+   const bgGate = Promise.withResolvers<TestSnapshot>();
+   let failNext = false;
+   const runScan = vi.fn(async ({ onProgress }: { onProgress: (p: { scanned: number; total: number }) => void }) => {
+      onProgress({ scanned: 1, total: 2 });
+      if (failNext) throw new Error('disk offline');
+      return bgGate.promise;
    });
 
-   test('rescans with empty state when an install id resolves to a new path', async () => {
-      let installPath = '/game/first';
-      let scans = 0;
-      const published: Snapshot[] = [];
-      const states = createScanStates<Snapshot, string, string[]>({
-         getInstallPath: async () => installPath,
-         emptySnapshot: (_installId, status) => ({ status: status === 'unsupported' ? 'missing' : status, value: 0 }),
-         emptyExtra: () => [],
-         runScan: async ({ state }) => {
-            scans += 1;
-            expect(state.cache.size).toBe(0);
-            expect(state.extra).toEqual([]);
-            state.cache.set(installPath, 'parsed');
-            state.extra.push(installPath);
-            return { status: 'ready', value: scans };
-         },
-         publish: (snapshot) => published.push(snapshot),
-         cache: {
-            load: async () => null,
-            save: async () => undefined,
-            remove: async () => undefined
-         }
-      });
-
-      await states.list('install');
-      published.length = 0;
-      installPath = '/game/second';
-
-      expect(await states.list('install')).toEqual({ status: 'ready', value: 2 });
-      expect(published).toEqual([
-         { status: 'scanning', value: 0 },
-         { status: 'ready', value: 2 }
-      ]);
-      expect(states.get('install')).toMatchObject({ installPath: '/game/second', extra: ['/game/second'] });
-      const state = states.get('install');
-      if (!state) throw new Error('scan state was not created');
-      expect([...state.cache.keys()]).toEqual(['/game/second']);
+   const scanner = createScanStates({
+      dataPath,
+      log: silentLog,
+      cacheName: 'test-scan',
+      snapshotSchema,
+      cacheEntrySchema: z.string(),
+      extraSchema: z.null(),
+      emptyExtra: null,
+      getInstallPath: async () => installPath,
+      emptySnapshot: (installId, status) => ({ installId, status, progress: null, items: [] }),
+      runScan
    });
+   const published: TestSnapshot[] = [];
+   scanner.subscribe((snapshot) => published.push(snapshot));
 
-   test('evicts old idle install state', async () => {
-      const states = createScanStates<Snapshot, string, null>({
-         getInstallPath: async (installId) => `/game/${installId}`,
-         emptySnapshot: (_installId, status) => ({ status: status === 'unsupported' ? 'missing' : status, value: 0 }),
-         emptyExtra: () => null,
-         runScan: async ({ state }) => {
-            state.snapshot = { status: 'ready', value: 1 };
-            return state.snapshot;
-         },
-         publish: () => undefined,
-         cache: emptyCache
-      });
+   const initial = await scanner.list({ installId: 'inst-1' });
+   expect(initial).toMatchObject({ status: 'ready', items: ['cached-item'] });
+   expect(published).toEqual([]);
 
-      for (let index = 0; index < 13; index += 1) {
-         await states.list(`install-${index}`);
-      }
+   bgGate.resolve({ installId: 'inst-1', status: 'ready', progress: null, items: ['fresh-item'] });
+   await vi.waitFor(() => expect(published).toContainEqual(expect.objectContaining({ status: 'ready', items: ['fresh-item'] })));
 
-      expect(states.get('install-0')).toBeUndefined();
-      expect(states.get('install-12')?.snapshot.status).toBe('ready');
+   published.length = 0;
+   failNext = true;
+   const recovered = await scanner.rescan({ installId: 'inst-1' });
+   expect(recovered).toMatchObject({ status: 'ready', items: ['fresh-item'] });
+   expect(published.at(0)?.status).toBe('scanning');
+   expect(published.at(-1)).toMatchObject({ status: 'ready', items: ['fresh-item'] });
+   scanner.dispose();
+});
+
+test('dispose stops post-dispose scans and discards in-flight scan emissions', async () => {
+   const dataPath = await createTempDir();
+   const gate = Promise.withResolvers<TestSnapshot>();
+   const scanner = createScanStates({
+      dataPath,
+      log: silentLog,
+      cacheName: 'test-dispose',
+      snapshotSchema,
+      cacheEntrySchema: z.string(),
+      extraSchema: z.null(),
+      emptyExtra: null,
+      getInstallPath: async () => join(dataPath, 'install-b'),
+      emptySnapshot: (installId, status) => ({ installId, status, progress: null, items: [] }),
+      runScan: async () => gate.promise
    });
+   const published: TestSnapshot[] = [];
+   scanner.subscribe((snapshot) => published.push(snapshot));
 
-   test('returns a persisted snapshot while revalidating it in the background', async () => {
-      const { promise: scanGate, resolve: finishScan } = Promise.withResolvers<void>();
-      const saved: Snapshot[] = [];
-      const published: Snapshot[] = [];
-      const states = createScanStates<Snapshot, string, null>({
-         getInstallPath: async () => '/game',
-         emptySnapshot: (_installId, status) => ({ status: status === 'unsupported' ? 'missing' : status, value: 0 }),
-         emptyExtra: () => null,
-         runScan: async ({ state }) => {
-            expect(state.background).toBe(true);
-            await scanGate;
-            return { status: 'ready', value: 2 };
-         },
-         publish: (snapshot) => published.push(snapshot),
-         cache: {
-            load: async () => ({ snapshot: { status: 'ready', value: 1 }, cache: new Map([['map', 'parsed']]), extra: null }),
-            save: async (_installId, _installPath, state) => {
-               saved.push(state.snapshot);
-            },
-            remove: async () => undefined
-         }
-      });
+   const pending = scanner.list({ installId: 'inst-2' });
+   await vi.waitFor(() => expect(published).toHaveLength(1));
+   scanner.dispose();
+   gate.resolve({ installId: 'inst-2', status: 'ready', progress: null, items: ['late'] });
+   await pending;
 
-      const listed = await states.list('install');
-
-      expect(listed).toEqual({ status: 'ready', value: 1 });
-      expect(published).toEqual([]);
-      expect(states.get('install')?.cache.get('map')).toBe('parsed');
-
-      const pending = states.get('install')?.pending;
-      finishScan();
-      await pending;
-
-      expect(published).toEqual([{ status: 'ready', value: 2 }]);
-      expect(saved).toEqual([{ status: 'ready', value: 2 }]);
-   });
+   expect(published).toHaveLength(1);
+   expect(await scanner.list({ installId: 'inst-2' })).toMatchObject({ status: 'missing' });
+   expect(await scanner.rescan({ installId: 'inst-2' })).toMatchObject({ status: 'missing' });
 });

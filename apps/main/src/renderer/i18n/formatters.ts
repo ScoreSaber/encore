@@ -12,7 +12,7 @@ function parseInstant(value: string) {
    return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function createFormatters(locale: Locale) {
+function createFormatters(locale: Locale) {
    const dateTimeFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' });
    const dateFormat = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' });
    const timeFormat = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' });

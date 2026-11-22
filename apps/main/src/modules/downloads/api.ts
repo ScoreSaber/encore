@@ -2,11 +2,11 @@ import { z } from 'zod';
 
 import { defineDomainApi, targetProcedure } from '@/lib/api';
 import {
-   downloadCatalogSnapshotSchema,
    downloadRequestSchema,
    downloadStartResultSchema,
    oculusDownloadPreviewSchema,
    steamDownloadPreviewSchema,
+   targetDownloadCatalogSchema,
    unavailableDownloadPreviewSchema
 } from '@/modules/downloads/contract';
 
@@ -14,11 +14,11 @@ const downloadPreviewValueSchema = z.union([unavailableDownloadPreviewSchema, st
 export const downloadsApi = defineDomainApi('downloads', {
    getCatalog: targetProcedure({
       capability: 'download-install',
-      output: downloadCatalogSnapshotSchema.nullable()
+      output: targetDownloadCatalogSchema.nullable()
    }),
    refreshCatalog: targetProcedure({
       capability: 'download-install',
-      output: downloadCatalogSnapshotSchema.nullable()
+      output: targetDownloadCatalogSchema.nullable()
    }),
    preview: targetProcedure({
       capability: 'download-install',

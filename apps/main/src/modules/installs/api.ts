@@ -6,13 +6,15 @@ import {
    installDetailResultSchema,
    installForgetPreviewSchema,
    installForgetResultSchema,
-   installOperationResultSchema,
+   installImportPreviewSchema,
+   installImportSourceSchema,
    installPinRequestSchema,
    installRegistryResultSchema,
    installRegistrySnapshotSchema,
    installReorderRequestSchema,
    installUpdateRequestSchema
 } from '@/modules/installs/contract';
+import { operationResultSchema } from '@/modules/operations/contract';
 
 export const installsApi = defineDomainApi(
    'installs',
@@ -20,6 +22,16 @@ export const installsApi = defineDomainApi(
       list: targetProcedure({
          capability: 'list-installs',
          output: installRegistrySnapshotSchema
+      }),
+      previewImport: targetProcedure({
+         capability: 'import-install',
+         input: installImportSourceSchema,
+         output: installImportPreviewSchema
+      }),
+      importFolder: targetProcedure({
+         capability: 'import-install',
+         input: installImportSourceSchema,
+         output: installDetailResultSchema
       }),
       getDetail: targetProcedure({
          capability: 'list-installs',
@@ -53,7 +65,7 @@ export const installsApi = defineDomainApi(
       delete: targetProcedure({
          capability: 'manage-installs',
          input: installActionRequestSchema,
-         output: installOperationResultSchema
+         output: operationResultSchema
       }),
       previewForget: targetProcedure({
          capability: 'manage-installs',

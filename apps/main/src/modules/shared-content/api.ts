@@ -6,6 +6,7 @@ import {
    sharedConnectActionSchema,
    sharedConnectPreviewSchema,
    customSharedFolderActionResultSchema,
+   customSharedFolderChoiceSchema,
    relativeFolderPathSchema,
    sharedContentActionSchema,
    sharedContentOverviewSchema,
@@ -69,6 +70,11 @@ export const sharedContentApi = defineDomainApi(
          input: install.extend({ relativePath: relativeFolderPathSchema }),
          output: customSharedFolderActionResultSchema
       }),
+      chooseCustomFolder: targetProcedure({
+         capability: 'share-content',
+         input: install.extend({ path: z.string().trim().min(1) }),
+         output: customSharedFolderChoiceSchema
+      }),
       forgetCustomFolder: targetProcedure({
          capability: 'share-content',
          input: z.object({ folderId: sharedFolderIdSchema }),
@@ -87,5 +93,3 @@ export const sharedContentApi = defineDomainApi(
 );
 
 export type TargetSharedContentRequest = TargetCall<typeof sharedContentApi.procedures.list>;
-export type TargetSharedContentActionRequest = TargetCall<typeof sharedContentApi.procedures.preview>;
-export type TargetSharedConnectRequest = TargetCall<typeof sharedContentApi.procedures.previewConnect>;

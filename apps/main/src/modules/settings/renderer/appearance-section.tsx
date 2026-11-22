@@ -9,18 +9,19 @@ import { themes } from '@/modules/settings/contract';
 import { SettingsRow, SettingsSection } from '@/modules/settings/renderer/settings-layout';
 import { localeNames, locales } from '@/renderer/i18n/config';
 import { useLocale } from '@/renderer/i18n/locale-provider';
-import { useTheme } from '@/renderer/theme/theme-provider';
+import { useTheme } from '@/renderer/theme/theme';
 
-export function AppearanceSection({ disabled }: { disabled: boolean }) {
+export function LanguageRow({ disabled }: { disabled: boolean }) {
    const t = useTranslations('settings');
    const { locale, setLocale } = useLocale();
-   const { accentColor, setAccentColor, theme, setTheme } = useTheme();
 
    return (
-      <SettingsSection title={t('appearance.title')}>
-         <SettingsRow label={t('language.title')} htmlFor="settings-locale">
+      <SettingsRow
+         title={t('language.title')}
+         htmlFor="settings-locale"
+         control={
             <Select value={locale} onValueChange={setLocale} disabled={disabled}>
-               <SelectTrigger id="settings-locale" className="w-full min-w-44 @md/field-group:w-48">
+               <SelectTrigger id="settings-locale" size="sm" className="w-full sm:w-44">
                   <SelectValue />
                </SelectTrigger>
                <SelectContent>
@@ -33,41 +34,57 @@ export function AppearanceSection({ disabled }: { disabled: boolean }) {
                   </SelectGroup>
                </SelectContent>
             </Select>
-         </SettingsRow>
+         }
+      />
+   );
+}
 
-         <SettingsRow label={t('theme.title')} id="settings-theme">
-            <ToggleGroup
-               className="flex-wrap justify-start @md/field-group:justify-end"
-               type="single"
-               value={theme}
-               spacing={2}
-               aria-labelledby="settings-theme"
-               disabled={disabled}
-               onValueChange={(value) => {
-                  if (value) setTheme(value);
-               }}
-            >
-               {themes.map((item) => {
-                  const Icon = item === 'light' ? Sun : item === 'dark' ? Moon : SunMoon;
-                  return (
-                     <ToggleGroupItem key={item} value={item}>
-                        <Icon />
-                        {t(`theme.${item}`)}
-                     </ToggleGroupItem>
-                  );
-               })}
-            </ToggleGroup>
-         </SettingsRow>
+export function AppearanceSection({ disabled }: { disabled: boolean }) {
+   const t = useTranslations('settings');
+   const { accentColor, setAccentColor, theme, setTheme } = useTheme();
 
-         <SettingsRow label={t('accentColor.title')}>
-            <ColorPicker
-               disabled={disabled}
-               label={t('accentColor.pickerLabel')}
-               inputLabel={t('accentColor.inputLabel')}
-               value={accentColor}
-               onChange={setAccentColor}
-            />
-         </SettingsRow>
+   return (
+      <SettingsSection>
+         <SettingsRow
+            title={t('theme.title')}
+            control={
+               <ToggleGroup
+                  className="flex-wrap justify-start"
+                  type="single"
+                  size="sm"
+                  value={theme}
+                  spacing={2}
+                  aria-label={t('theme.title')}
+                  disabled={disabled}
+                  onValueChange={(value) => {
+                     if (value) setTheme(value);
+                  }}
+               >
+                  {themes.map((item) => {
+                     const Icon = item === 'light' ? Sun : item === 'dark' ? Moon : SunMoon;
+                     return (
+                        <ToggleGroupItem key={item} value={item}>
+                           <Icon />
+                           {t(`theme.${item}`)}
+                        </ToggleGroupItem>
+                     );
+                  })}
+               </ToggleGroup>
+            }
+         />
+
+         <SettingsRow
+            title={t('accentColor.title')}
+            control={
+               <ColorPicker
+                  disabled={disabled}
+                  label={t('accentColor.pickerLabel')}
+                  inputLabel={t('accentColor.inputLabel')}
+                  value={accentColor}
+                  onChange={setAccentColor}
+               />
+            }
+         />
       </SettingsSection>
    );
 }

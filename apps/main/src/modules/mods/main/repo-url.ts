@@ -15,33 +15,33 @@ export function resolveRepositoryListingUrl(input: string): Result<string, ModRe
       try: () => new URL(trimmed),
       catch: (): ModRepositoryProblem => modRepositoryProblem('invalid-url', 'the address could not be read')
    });
-   if (Result.isError(parsed)) return Result.err<string, ModRepositoryProblem>(parsed.error);
+   if (Result.isError(parsed)) return Result.err(parsed.error);
 
    if (parsed.value.protocol === 'file:') {
       if (parsed.value.hostname || parsed.value.username || parsed.value.password || parsed.value.port) {
-         return Result.err<string, ModRepositoryProblem>(modRepositoryProblem('invalid-url', 'a local repository cannot name a host or credentials'));
+         return Result.err(modRepositoryProblem('invalid-url', 'a local repository cannot name a host or credentials'));
       }
 
       parsed.value.hash = '';
       parsed.value.search = '';
-      return Result.ok<string, ModRepositoryProblem>(withListingFile(parsed.value));
+      return Result.ok(withListingFile(parsed.value));
    }
 
    const resolved = resolveHttpsUrl(trimmed);
-   if (Result.isError(resolved)) return Result.err<string, ModRepositoryProblem>(modRepositoryProblem('invalid-url', resolved.error.message));
+   if (Result.isError(resolved)) return Result.err(modRepositoryProblem('invalid-url', resolved.error.message));
 
    const url = resolved.value;
-   if (url.port) return Result.err<string, ModRepositoryProblem>(modRepositoryProblem('invalid-url', 'the address cannot name a port'));
+   if (url.port) return Result.err(modRepositoryProblem('invalid-url', 'the address cannot name a port'));
 
    url.hash = '';
 
    const blob = githubBlobPattern.exec(url.pathname);
    if (url.hostname.toLowerCase() === 'github.com' && blob) {
       const raw = new URL(`https://raw.githubusercontent.com/${blob[1]}/${blob[2]}/${blob[3]}`);
-      return Result.ok<string, ModRepositoryProblem>(withListingFile(raw));
+      return Result.ok(withListingFile(raw));
    }
 
-   return Result.ok<string, ModRepositoryProblem>(withListingFile(url));
+   return Result.ok(withListingFile(url));
 }
 
 function withListingFile(url: URL) {

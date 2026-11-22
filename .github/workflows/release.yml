@@ -205,6 +205,18 @@ jobs:
                     apps/main/release/*.blockmap
                  flatpak: false
                  linux_packages: libarchive-tools musl-tools rpm xz-utils
+               - name: Linux arm64 packages
+                 os: ubuntu-24.04-arm
+                 package_args: --linux AppImage deb rpm --arm64 '-c.appImage.artifactName=${productName}-${version}-linux-arm64.${ext}' '-c.deb.artifactName=${productName}-${version}-linux-arm64.${ext}' '-c.rpm.artifactName=${productName}-${version}-linux-aarch64.${ext}'
+                 artifact: encore-linux-arm64
+                 artifact_paths: |
+                    apps/main/release/*.AppImage
+                    apps/main/release/*.deb
+                    apps/main/release/*.rpm
+                    apps/main/release/latest-linux-arm64.yml
+                    apps/main/release/*.blockmap
+                 flatpak: false
+                 linux_packages: libarchive-tools musl-tools rpm xz-utils
                - name: Linux x86_64 Flatpak
                  os: ubuntu-latest
                  package_args: --linux flatpak --x64
@@ -326,11 +338,96 @@ jobs:
               retention-days: 7
               compression-level: 0
 
+   quest:
+      name: Build Quest APK
+      needs: version
+      runs-on: ubuntu-latest
+      permissions:
+         contents: read
+      steps:
+         - name: Checkout
+           uses: actions/checkout@v5
+           with:
+              ref: ${{ needs.version.outputs.sha }}
+
+         - name: Setup Vite+
+           uses: voidzero-dev/setup-vp@v1.17.0
+           with:
+              node-version-file: .node-version
+              cache: true
+              run-install: false
+
+         - name: Set up Java
+           uses: actions/setup-java@v6
+           with:
+              distribution: temurin
+              java-version: '21'
+
+         - name: Install Android SDK packages
+           run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+
+         - name: Install dependencies
+           run: vp install --frozen-lockfile --ignore-scripts
+
+         - name: Build Quest app
+           shell: bash
+           env:
+              RELEASE_VERSION: ${{ needs.version.outputs.version }}
+           run: |
+              node --input-type=module <<'NODE'
+              import { readFileSync, writeFileSync } from "node:fs";
+
+              const path = "apps/main/package.json";
+              const pkg = JSON.parse(readFileSync(path, "utf8"));
+              pkg.version = process.env.RELEASE_VERSION;
+              writeFileSync(path, JSON.stringify(pkg));
+              NODE
+
+              vp run @encore/daemon#build
+              vp run @encore/mobile#build
+              vp run @encore/mobile#sync android
+              apps/mobile/android/gradlew -p apps/mobile/android --no-daemon :app:assembleRelease \
+                 -PencoreVersionName="$RELEASE_VERSION" -PencoreVersionCode="$GITHUB_RUN_NUMBER"
+
+         - name: Sign Quest APK
+           shell: bash
+           env:
+              RELEASE_VERSION: ${{ needs.version.outputs.version }}
+              ENCORE_ANDROID_KEYSTORE_BASE64: ${{ secrets.ENCORE_ANDROID_KEYSTORE_BASE64 }}
+              ENCORE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ENCORE_ANDROID_KEYSTORE_PASSWORD }}
+           run: |
+              if [[ -z "$ENCORE_ANDROID_KEYSTORE_BASE64" || -z "$ENCORE_ANDROID_KEYSTORE_PASSWORD" ]]; then
+                 echo "::error::Set ENCORE_ANDROID_KEYSTORE_BASE64 and ENCORE_ANDROID_KEYSTORE_PASSWORD before releasing."
+                 exit 1
+              fi
+
+              umask 077
+              keystore="$(mktemp "$RUNNER_TEMP/encore-android.XXXXXX")"
+              trap 'rm -f "$keystore"' EXIT
+              printf '%s' "$ENCORE_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+
+              apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+              mkdir -p release-quest
+              apk="release-quest/Encore-$RELEASE_VERSION-quest.apk"
+              "$apksigner" sign --ks "$keystore" --ks-type PKCS12 --ks-pass env:ENCORE_ANDROID_KEYSTORE_PASSWORD \
+                 --out "$apk" apps/mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk
+              "$apksigner" verify "$apk"
+
+         - name: Upload Quest release asset
+           uses: actions/upload-artifact@v6
+           with:
+              name: encore-quest
+              path: release-quest/*-quest.apk
+              if-no-files-found: error
+              retention-days: 7
+              compression-level: 0
+
    release:
       name: Publish release
       needs:
          - version
          - package
+         - quest
       runs-on: ubuntu-latest
       steps:
          - name: Download release assets
