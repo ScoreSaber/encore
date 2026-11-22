@@ -22,11 +22,6 @@ const faq = [
     answer:
       "Yes. Both can use the same versions and shared content. Just don't have both changing the same files at once",
   },
-  {
-    question: "Does Encore support Quest standalone?",
-    answer:
-      "Quest support is current WIP and is not available in this release. There is no release date yet.",
-  },
 ];
 
 export function HomeSections() {
