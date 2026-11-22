@@ -16,7 +16,7 @@ cat > "$data/applications/com.scoresaber.encore.desktop" <<DESKTOP
 Type=Application
 Name=Encore
 Comment=Beat Saber companion
-Exec=$apps/Encore.AppImage %U
+Exec=env APPIMAGE_EXTRACT_AND_RUN=1 $apps/Encore.AppImage %U
 Icon=encore
 Terminal=false
 Categories=Utility;
@@ -28,4 +28,4 @@ DESKTOP
 update-desktop-database "$data/applications" 2>/dev/null || true
 xdg-mime default com.scoresaber.encore.desktop x-scheme-handler/encore 2>/dev/null || true
 
-setsid "$apps/Encore.AppImage" > /dev/null 2>&1 < /dev/null &
+APPIMAGE_EXTRACT_AND_RUN=1 setsid "$apps/Encore.AppImage" > /dev/null 2>&1 < /dev/null &
