@@ -3,14 +3,7 @@ import { z } from 'zod';
 
 import { createPersistentCache, readRecent, setRecent } from '@/lib/content/content-cache';
 import { officialModSourceId, officialModSourceName, type ModCatalogSource, type ModPlatform, type ModSourceStatus } from '@/modules/mods/contract';
-import {
-   beatModsModSchema,
-   beatModsVersionSchema,
-   createBeatModsApi,
-   type BeatModsApi,
-   type BeatModsEntry,
-   type BeatModsProblem
-} from '@/modules/mods/main/beatmods-api';
+import { beatModsEntrySchema, createBeatModsApi, type BeatModsApi, type BeatModsEntry, type BeatModsProblem } from '@/modules/mods/main/beatmods-api';
 import {
    composeModIndex,
    modIndexKey,
@@ -25,7 +18,6 @@ const ttlMs = 10 * 60 * 1000;
 const maxHashLookups = 80;
 const maxCachedCatalogs = 4;
 const maxCachedHashLookups = maxHashLookups * 2;
-const beatModsEntrySchema = z.object({ mod: beatModsModSchema, version: beatModsVersionSchema });
 const catalogCacheValueSchema = z.object({ entries: z.array(beatModsEntrySchema), fetchedAt: z.int().nonnegative() });
 
 type ModCatalogRequest = {
@@ -105,8 +97,7 @@ export function createModCatalogService(options: ModCatalogOptions) {
    async function runRefresh(request: ModCatalogRequest, key: string): Promise<Result<ModIndex, BeatModsProblem>> {
       if (!(await options.repositories.isBeatModsEnabled())) return build(request, [], [], 'remote', Date.now());
 
-      const [status, listed, repositories] = await Promise.all([api.checkStatus(), api.listMods(request), options.repositories.listEntries(request)]);
-      if (Result.isError(status)) return Result.err(status.error);
+      const [listed, repositories] = await Promise.all([api.listMods(request), options.repositories.listEntries(request)]);
       if (Result.isError(listed)) return Result.err(listed.error);
 
       const fetchedAt = Date.now();
@@ -176,7 +167,7 @@ export function createModCatalogService(options: ModCatalogOptions) {
       const started = (async () => {
          const looked = await api.lookupHash(key);
          const version = Result.isOk(looked) ? looked.value : null;
-         const match = version ? { modId: modIndexKey(officialModSourceId, String(version.modId)), version: version.modVersion } : null;
+         const match = version ? { modId: modIndexKey(officialModSourceId, String(version.projectId)), version: version.semver } : null;
          setRecent(hashLookups, key, match, maxCachedHashLookups);
          return match;
       })().finally(() => {

@@ -7,7 +7,7 @@ import { createContentIngestionService } from '@/lib/content/content-ingestion';
 import { createProblem } from '@/lib/errors';
 import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/main/install-registry.fixture';
 import { defaultModSourceResolutionSettings } from '@/modules/mods/contract';
-import { beatModsDownloadUrl, createBeatModsApi } from '@/modules/mods/main/beatmods-api';
+import { createBeatModsApi, type BeatModsEntry } from '@/modules/mods/main/beatmods-api';
 import { createModCatalogService } from '@/modules/mods/main/mod-catalog';
 import { createModPatcher } from '@/modules/mods/main/mod-patcher';
 import { createModService } from '@/modules/mods/main/mod-service';
@@ -45,6 +45,16 @@ test('refuses tampered archives and uninstalls only the files a mod owns', async
 
       return waitForOperation(operations, started.value.id);
    };
+
+   const snapshot = await mods.getMods(request);
+   if (snapshot.status !== 'ready') throw new Error('the mod catalogue did not load');
+   expect(snapshot.mods.find(({ modId }) => modId === 'beatmods:2')?.latestVersion).toBe('1.0.0');
+   expect(snapshot.mods.find(({ modId }) => modId === 'beatmods:1')).toMatchObject({
+      iconUrl: 'https://beatmods.com/files/1/icon.png',
+      category: 'core',
+      isRequired: true
+   });
+   expect(snapshot.mods.some(({ modId }) => modId === 'beatmods:5')).toBe(false);
 
    expect(await run(await mods.installMods({ ...request, modIds: ['beatmods:4'] }))).toMatchObject({
       status: 'failed',
@@ -86,24 +96,38 @@ const zips = {
    broken: buildZipArchive([{ name: 'Plugins/Broken.dll', data: 'tampered' }])
 };
 
-const catalogResponse = {
-   mods: [
-      catalogMod(1, 'BSIPA', zips.bsipa, [], { 'IPA.exe': 'ipa-exe', 'IPA/Data/Managed/IPA.Injector.dll': 'injector' }),
-      catalogMod(2, 'BSML', zips.bsml, [10], { 'Plugins/BSML.dll': 'bsml' }),
-      catalogMod(3, 'Counters+', zips.counters, [20], { 'Plugins/Counters.dll': 'counters' }),
-      catalogMod(4, 'Broken', zips.broken, [], { 'Plugins/Broken.dll': 'broken' })
-   ]
-};
+const bsml = catalogMod(2, 'BSML', zips.bsml, [{ pId: 1, sv: '^1.0.0' }], { 'Plugins/BSML.dll': 'bsml' });
+const catalogResponse = [
+   catalogMod(1, 'BSIPA', zips.bsipa, [], { 'IPA.exe': 'ipa-exe', 'IPA/Data/Managed/IPA.Injector.dll': 'injector' }),
+   { ...bsml, version: { ...bsml.version, semver: '1.1.0', platform: 'oculus' } },
+   catalogMod(3, 'Counters+', zips.counters, [{ pId: 2, sv: '^1.0.0' }], { 'Plugins/Counters.dll': 'counters' }),
+   catalogMod(4, 'Broken', zips.broken, [], { 'Plugins/Broken.dll': 'broken' }),
+   catalogMod(5, 'Incompatible mod', zips.broken, [{ pId: 2, sv: '^2.0.0' }], { 'Plugins/Broken.dll': 'broken' })
+];
 
-function catalogMod(id: number, name: string, zip: Buffer, dependencies: number[], files: Record<string, string>) {
+function catalogMod(id: number, name: string, zip: Buffer, dependencies: BeatModsEntry['version']['dependencies'], files: Record<string, string>) {
    return {
-      mod: { id, name, summary: name, category: id === 1 ? 'core' : 'gameplay', authors: [] },
-      latest: {
+      project: {
+         id,
+         name,
+         summary: name,
+         description: '',
+         category: id === 1 ? 'Mod Loader' : 'Gameplay',
+         iconFileUrl: `https://beatmods.com/files/${id}/icon.png`,
+         gitUrl: '',
+         authors: []
+      },
+      version: {
          id: id * 10,
-         modId: id,
-         modVersion: '1.0.0',
+         projectId: id,
+         uploaderId: 1,
+         semver: '1.0.0',
+         platform: 'universal',
+         supportedGameVersions: [{ version: '1.37.0' }],
          zipHash: md5(zip),
+         downloadUrl: `https://beatmods.com/files/${id}/${id * 10}/${encodeURIComponent(name)}.zip`,
          dependencies,
+         fileSize: zip.length,
          contentHashes: Object.entries(files).map(([path, data]) => ({ path, hash: md5(data) }))
       }
    };
@@ -113,16 +137,36 @@ const oldBsml = 'old-bsml';
 
 function fakeBeatMods(url: string) {
    const { pathname, searchParams } = new URL(url);
-   if (pathname === '/api/status') return Promise.resolve(Response.json({ status: 'ok' }));
-   if (pathname !== '/api/hashlookup') return Promise.resolve(Response.json(catalogResponse));
+   expect(searchParams.get('status')).toBe('verified');
+   if (pathname === '/api/v3/mods') {
+      expect(searchParams.get('gameName')).toBe('beatsaber');
+      expect(searchParams.get('platform')).toBe('steam');
+      expect(searchParams.get('gameVersion')).toBe('1.37.0');
+      return Promise.resolve(Response.json(catalogResponse));
+   }
+   if (pathname === '/api/v3/mods/2') {
+      return Promise.resolve(
+         Response.json({
+            project: bsml.project,
+            versions: [
+               { ...bsml.version, semver: '1.2.0', supportedGameVersions: [{ version: '1.38.0' }] },
+               { ...bsml.version, semver: '1.1.0', platform: 'oculus' },
+               bsml.version
+            ]
+         })
+      );
+   }
 
-   const older = { ...catalogMod(2, 'BSML', zips.bsml, [], { 'Plugins/OldBSML.dll': oldBsml }).latest, modVersion: '0.9.0' };
-   return Promise.resolve(Response.json({ modVersions: searchParams.get('hash') === md5(oldBsml) ? [older] : [] }));
+   expect(pathname).toBe('/api/v3/hashlookup/version');
+   if (searchParams.get('hash') !== md5(oldBsml)) return Promise.resolve(Response.json({}, { status: 404 }));
+   const old = catalogMod(2, 'BSML', zips.bsml, [], { 'Plugins/OldBSML.dll': oldBsml });
+   return Promise.resolve(Response.json({ [old.version.zipHash]: { project: old.project, version: { ...old.version, semver: '0.9.0' } } }));
 }
 
-const archives = new Map(Object.values(zips).map((zip) => [beatModsDownloadUrl(md5(zip)), zip]));
+const archives = new Map(Object.values(zips).map((zip) => [md5(zip), zip]));
 const fakeCdn: ContentFetch = (url) => {
-   const archive = archives.get(url);
+   const entry = catalogResponse.find(({ version }) => version.downloadUrl === url);
+   const archive = entry && archives.get(entry.version.zipHash);
 
    return Promise.resolve(archive ? new Response(new Uint8Array(archive)) : new Response('not found', { status: 404 }));
 };

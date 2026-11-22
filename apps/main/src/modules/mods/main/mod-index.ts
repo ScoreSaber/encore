@@ -4,6 +4,7 @@ import type { ContentHash, ContentHashAlgorithm } from '@/lib/content/contract';
 import { evaluateHttpsUrl } from '@/lib/security/external-url';
 import {
    beatModsHost,
+   beatModsOrigin,
    bsipaModName,
    officialModSourceId,
    officialModSourceName,
@@ -17,7 +18,7 @@ import {
    type ModSourceStatus,
    type ModSummary
 } from '@/modules/mods/contract';
-import { beatModsDownloadUrl, beatModsIconUrl, beatModsModUrl, type BeatModsEntry } from '@/modules/mods/main/beatmods-api';
+import type { BeatModsEntry } from '@/modules/mods/main/beatmods-api';
 
 export type ModIndexFile = {
    path: string;
@@ -176,10 +177,9 @@ export function buildModIndex(input: {
 }
 
 export function toModIndexEntries(entries: BeatModsEntry[]): ModIndexEntry[] {
-   const packageIdByVersionId = new Map(entries.map((entry) => [entry.version.id, String(entry.mod.id)]));
-
-   return entries.map((entry): ModIndexEntry => {
-      const packageId = String(entry.mod.id);
+   return entries.map(({ project, version }) => {
+      const packageId = String(project.id);
+      const author = project.authors.find(({ id }) => id === version.uploaderId) ?? project.authors[0];
 
       return {
          modId: modIndexKey(officialModSourceId, packageId),
@@ -187,28 +187,25 @@ export function toModIndexEntries(entries: BeatModsEntry[]): ModIndexEntry[] {
          sourceId: officialModSourceId,
          sourceName: officialModSourceName,
          sourceKind: 'official',
-         name: entry.mod.name,
-         summary: entry.mod.summary,
-         description: entry.mod.description,
-         iconUrl: beatModsIconUrl(entry.mod.iconFileName),
+         name: project.name,
+         summary: project.summary,
+         description: project.description,
+         iconUrl: project.iconFileUrl,
          links: toModLinks([
-            { kind: 'listing', url: beatModsModUrl(entry.mod.id) },
-            { kind: 'source', url: entry.mod.gitUrl }
+            { kind: 'listing', url: new URL(`/mods/${project.id}`, beatModsOrigin).href },
+            { kind: 'source', url: project.gitUrl }
          ]),
-         category: entry.mod.category,
-         author: describeAuthor(entry),
-         version: entry.version.modVersion,
-         sizeBytes: entry.version.fileSize ?? null,
-         isBsipa: entry.mod.name.trim().toLowerCase() === bsipaModName,
+         category: project.category,
+         author: author?.displayName || author?.username || '',
+         version: version.semver,
+         sizeBytes: version.fileSize,
+         isBsipa: project.name.toLowerCase() === bsipaModName,
          claimedIdentity: null,
-         dependencies: entry.version.dependencies
-            .map((versionId) => packageIdByVersionId.get(versionId))
-            .filter((dependencyId) => dependencyId !== undefined)
-            .map((dependencyId) => modIndexKey(officialModSourceId, dependencyId)),
-         downloadUrl: beatModsDownloadUrl(entry.version.zipHash),
+         dependencies: version.dependencies.map(({ pId }) => modIndexKey(officialModSourceId, String(pId))),
+         downloadUrl: version.downloadUrl,
          downloadHost: beatModsHost,
-         archiveHash: { algorithm: 'md5', value: entry.version.zipHash },
-         files: entry.version.contentHashes.map((content) => ({ path: content.path, hash: { algorithm: 'md5', value: content.hash } }))
+         archiveHash: { algorithm: 'md5', value: version.zipHash },
+         files: version.contentHashes.map((content) => ({ path: content.path, hash: { algorithm: 'md5', value: content.hash } }))
       };
    });
 }
@@ -246,12 +243,6 @@ export function toModLinks(candidates: { kind: ModLinkKind; url: string | null |
    }
 
    return links;
-}
-
-function describeAuthor(entry: BeatModsEntry) {
-   const author = entry.version.author ?? entry.mod.authors[0];
-
-   return author?.displayName ?? author?.username ?? '';
 }
 
 function selectIdentityCandidate(candidates: ModIndexEntry[], strategy: ModSourceResolutionSettings['strategy']) {
