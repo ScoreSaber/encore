@@ -91,12 +91,14 @@ export function QuestStandaloneSection() {
                            if (!connected) return;
                            action.mutate({
                               owner: 'companion',
-                              run: async () =>
-                                 unwrapIpc(await window.encore.quest.installCompanion({ targetId: connected.id })).installed ? t('installed') : null
+                              run: async () => {
+                                 unwrapIpc(await window.encore.quest.installCompanion({ targetId: connected.id }));
+                                 return t('installed');
+                              }
                            });
                         }}
                      >
-                        {t('installApp')}
+                        {t(busy && action.variables.owner === 'companion' ? 'installingApp' : 'installApp')}
                      </Button>
                   }
                />

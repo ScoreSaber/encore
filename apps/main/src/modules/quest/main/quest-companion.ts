@@ -3,22 +3,46 @@ import { z } from 'zod';
 
 import { parseAxml } from '@/lib/android/axml';
 import { openZipArchive, zipCompressionDeflate, zipCompressionStored } from '@/lib/archive/zip-read';
+import { downloadContent } from '@/lib/content/content-download';
 import { createProblem, type Problem } from '@/lib/errors';
+import { fetchJsonResource } from '@/lib/http/json';
+import { downloadHostsFor } from '@/lib/http/url';
 import { encorePackageId } from '@/modules/quest/contract';
-
-import { stat } from 'node:fs/promises';
+import { encoreReleasesUrl } from '@/modules/updates/contract';
 
 const maxApkBytes = 512 * 1024 * 1024;
 const maxManifestBytes = 4 * 1024 * 1024;
+const latestReleaseUrl = 'https://api.github.com/repos/ScoreSaber/encore/releases/latest';
+const releaseSchema = z.object({
+   tag_name: z.string().regex(/^v\d+\.\d+\.\d+$/),
+   assets: z.array(z.object({ name: z.string(), digest: z.string().nullish() }))
+});
 
-export async function validateCompanionApk(path: string): Promise<Result<void, Problem>> {
-   const info = await Result.tryPromise({
-      try: () => stat(path),
-      catch: (cause) => createProblem('quest.apk.unreadable', { cause })
+export async function downloadCompanionApk(path: string): Promise<Result<void, Problem>> {
+   const release = await fetchJsonResource({ url: latestReleaseUrl, schema: releaseSchema });
+   if (Result.isError(release)) {
+      return Result.err(createProblem('quest.apk.release-failed', { cause: release.error.detail ?? release.error.message }));
+   }
+
+   const { tag_name: tag, assets } = release.value;
+   const name = `Encore-${tag.slice(1)}-quest.apk`;
+   const asset = assets.find((asset) => asset.name === name);
+   if (!asset) return Result.err(createProblem('quest.apk.release-missing'));
+   if (!asset.digest) return Result.err(createProblem('quest.apk.integrity-failed'));
+
+   const downloaded = await downloadContent({
+      url: `${encoreReleasesUrl}/download/${tag}/${name}`,
+      destinationPath: path,
+      limits: { maxDownloadBytes: maxApkBytes },
+      policy: { allowedHosts: downloadHostsFor('github.com') }
    });
-   if (Result.isError(info)) return Result.err(info.error);
-   if (!info.value.isFile()) return Result.err(createProblem('quest.apk.invalid'));
-   if (info.value.size > maxApkBytes) return Result.err(createProblem('quest.apk.too-large'));
+   if (Result.isError(downloaded)) return Result.err(downloaded.error);
+   if (`sha256:${downloaded.value.sha256}` !== asset.digest) return Result.err(createProblem('quest.apk.integrity-failed'));
+
+   return validateCompanionApk(path);
+}
+
+async function validateCompanionApk(path: string): Promise<Result<void, Problem>> {
    const archive = await openZipArchive(path, { maxEntries: 16_384 });
    if (Result.isError(archive)) return Result.err(createProblem('quest.apk.invalid'));
    try {

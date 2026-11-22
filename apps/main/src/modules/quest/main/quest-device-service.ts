@@ -3,6 +3,7 @@ import { Result } from 'better-result';
 import { createAdbClient, type AdbClient, type AdbDevice, type AdbDeviceState } from '@/lib/android/adb';
 import type { AdbProvisioner } from '@/lib/android/adb-provisioner';
 import { createProblem, type Problem } from '@/lib/errors';
+import { removeQuietly } from '@/lib/filesystem/path';
 import { translate } from '@/lib/messages';
 import {
    createEmptyInstallRegistrySnapshot,
@@ -20,13 +21,16 @@ import {
    type QuestState,
    type QuestWirelessRequest
 } from '@/modules/quest/contract';
-import { validateCompanionApk } from '@/modules/quest/main/quest-companion';
+import { downloadCompanionApk } from '@/modules/quest/main/quest-companion';
 import type { QuestMutationLock } from '@/modules/quest/main/quest-mutation-lock';
 import { readBackupState } from '@/modules/quest/main/quest-patch-backup';
 import { questModDataDir, questSavedPlayerDataPath, questScotland2Path } from '@/modules/quest/main/quest-paths';
 import { questTargetIdPrefix, type Target, type TargetEvent, type TargetId } from '@/modules/targets/contract';
 
+import { mkdtemp } from 'node:fs/promises';
 import { connect } from 'node:net';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const pollIntervalMs = 10_000;
@@ -350,15 +354,27 @@ export function createQuestDeviceService(options: {
       });
    }
 
-   function installCompanion(targetId: TargetId, localPath: string) {
+   function installCompanion(targetId: TargetId) {
       return withLock(targetId, () =>
          Result.gen(async function* () {
             const { client: adb } = yield* getConnection(targetId);
-            yield* Result.await(validateCompanionApk(localPath));
-            const { endpoint } = yield* Result.await(enableWirelessUnlocked({ targetId, port: 5555 }));
-            yield* Result.await(adb.installCompanion(endpoint, localPath));
-            await adb.shell(endpoint, `pm grant ${encorePackageId} android.permission.WRITE_SECURE_SETTINGS`);
-            return adb.startPackage(endpoint, encorePackageId);
+            const staging = yield* Result.await(
+               Result.tryPromise({
+                  try: () => mkdtemp(join(tmpdir(), 'encore-companion-')),
+                  catch: (cause) => createProblem('quest.apk.staging-failed', { cause })
+               })
+            );
+
+            try {
+               const path = join(staging, 'encore.apk');
+               yield* Result.await(downloadCompanionApk(path));
+               const { endpoint } = yield* Result.await(enableWirelessUnlocked({ targetId, port: 5555 }));
+               yield* Result.await(adb.installCompanion(endpoint, path));
+               await adb.shell(endpoint, `pm grant ${encorePackageId} android.permission.WRITE_SECURE_SETTINGS`);
+               return (await adb.startPackage(endpoint, encorePackageId)).map(() => null);
+            } finally {
+               await removeQuietly(staging);
+            }
          })
       );
    }

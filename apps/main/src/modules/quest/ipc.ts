@@ -22,7 +22,7 @@ export const questIpc = defineIpc('quest', {
    connectWireless: request(questWirelessRequestSchema).returns<QuestWirelessResult>(),
    disconnectWireless: request(targetIdRequestSchema).returns<QuestWirelessResult>(),
    enableWireless: request(questEnableWirelessRequestSchema).returns<QuestWirelessResult>(),
-   installCompanion: request(targetIdRequestSchema).returns<IpcResult<{ installed: boolean }>>(),
+   installCompanion: request(targetIdRequestSchema).returns<IpcResult<null>>(),
    ownerSignedIn: request().returns<boolean>(),
    startOwnerSignIn: request().returns<IpcResult<QuestOwnerSignIn>>(),
    openOwnerSignIn: request(),

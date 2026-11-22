@@ -258,10 +258,10 @@ function GameStep({ number, headset }: { number: number; headset: Target }) {
 function CompanionStep({ headset }: { headset: Target | null }) {
    const t = useTranslations('quest');
    const install = useMutation({
-      mutationFn: async (targetId: string) => unwrapIpc(await window.encore.quest.installCompanion({ targetId })).installed
+      mutationFn: async (targetId: string) => unwrapIpc(await window.encore.quest.installCompanion({ targetId }))
    });
    const questState = useQuery({ ...questStateQueryOptions(headset?.id ?? ''), enabled: headset !== null });
-   const installed = install.data === true || (questState.data?.companionInstalled ?? false);
+   const installed = questState.data?.companionInstalled || (install.isSuccess && install.variables === headset?.id);
 
    return (
       <SetupStep
@@ -285,7 +285,7 @@ function CompanionStep({ headset }: { headset: Target | null }) {
                   onClick={() => headset && install.mutate(headset.id)}
                >
                   <Download data-icon="inline-start" />
-                  {t('installApp')}
+                  {t(install.isPending ? 'installingApp' : 'installApp')}
                </Button>
             </div>
          )}

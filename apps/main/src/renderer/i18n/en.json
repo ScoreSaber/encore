@@ -1694,6 +1694,7 @@
       "enableWireless": "Switch to Wi-Fi",
       "wirelessReady": "Wireless is ready at {endpoint}. You can unplug the cable",
       "installApp": "Install Encore on headset",
+      "installingApp": "Installing Encore…",
       "installed": "Encore is installed. Open it in the headset and allow debugging to use it without a computer",
       "disconnect": "Disconnect",
       "invalidAddress": "Enter a headset address with a port",
@@ -1821,9 +1822,7 @@
       "companion": {
          "title": "Encore on the headset",
          "row": "Mod without a computer",
-         "description": "Install Encore on the headset to manage mods there. After a restart the headset reconnects to this computer over Wi-Fi by itself, then choose Switch to Wi-Fi to hand access back to the headset app",
-         "pickTitle": "Install Encore on Quest",
-         "pickFilter": "Encore Android app"
+         "description": "Install Encore on the headset to manage mods there. After a restart the headset reconnects to this computer over Wi-Fi by itself, then choose Switch to Wi-Fi to hand access back to the headset app"
       },
       "operations": {
          "launch": "Launch Beat Saber",
@@ -2360,12 +2359,14 @@
             "cancelled": "The map download was cancelled"
          },
          "apk": {
-            "unreadable": "The Encore APK couldn't be read",
-            "too-large": "Choose an Encore APK smaller than 512 MB",
-            "invalid": "The chosen file isn't a readable Encore APK",
+            "release-failed": "Encore couldn't check GitHub for the latest Quest release",
+            "release-missing": "The latest Encore release has no Quest APK",
+            "integrity-failed": "Encore couldn't verify the Quest APK against GitHub's checksum",
+            "staging-failed": "Encore couldn't prepare a temporary folder for the Quest APK",
+            "invalid": "The downloaded Encore APK couldn't be opened",
             "manifest-unreadable": "The APK's Android manifest couldn't be read",
             "manifest-too-large": "The APK's Android manifest is too large",
-            "wrong-package": "Choose an Encore APK for {packageId}"
+            "wrong-package": "The downloaded APK isn't for {packageId}"
          },
          "bluetooth": {
             "not-chosen": "No headset was chosen",

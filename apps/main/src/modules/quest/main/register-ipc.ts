@@ -1,9 +1,7 @@
 import { Result } from 'better-result';
 import { shell, type IpcMainInvokeEvent } from 'electron';
 
-import { showOpenDialog } from '@/ipc/dialogs';
 import { defineIpcHandlers, type IpcBroadcast } from '@/ipc/host';
-import { translate } from '@/lib/messages';
 import type { SecretStore } from '@/lib/security/secret-store';
 import { questIpc } from '@/modules/quest/ipc';
 import { createQuestBluetoothChooser } from '@/modules/quest/main/quest-bluetooth-chooser';
@@ -36,17 +34,7 @@ export function createQuestIpcModule(devices: QuestDeviceService, headsets: Ques
          return disabled;
       },
       enableWireless: (request) => devices.enableWireless(request),
-      installCompanion: async ({ targetId }, event) => {
-         const selected = await showOpenDialog(event, {
-            title: translate('quest.companion.pickTitle'),
-            properties: ['openFile'],
-            filters: [{ name: translate('quest.companion.pickFilter'), extensions: ['apk'] }]
-         });
-         const path = selected.filePaths[0];
-         if (selected.canceled || !path) return Result.ok({ installed: false });
-
-         return (await devices.installCompanion(targetId, path)).map(() => ({ installed: true }));
-      },
+      installCompanion: ({ targetId }) => devices.installCompanion(targetId),
       ownerSignedIn: () => owner.signedIn(),
       startOwnerSignIn: () => owner.start(),
       openOwnerSignIn: async () => {
