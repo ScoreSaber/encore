@@ -57,6 +57,28 @@ export function buildInstallPlan(index: ModIndex, scan: ModScan, selectedIds: st
    return { mods: orderInstallPlan(planned), missingDependencies };
 }
 
+export function orderModRemovals(selectedIds: string[], dependencies: ReadonlyMap<string, string[]>) {
+   const dependants = new Map<string, string[]>();
+   for (const [modId, requiredIds] of dependencies) {
+      for (const requiredId of requiredIds) {
+         const existing = dependants.get(requiredId);
+         if (existing) existing.push(modId);
+         else dependants.set(requiredId, [modId]);
+      }
+   }
+
+   const visited = new Set<string>();
+   const ordered: string[] = [];
+   const visit = (modId: string) => {
+      if (visited.has(modId)) return;
+      visited.add(modId);
+      for (const dependantId of dependants.get(modId) ?? []) visit(dependantId);
+      ordered.push(modId);
+   };
+   for (const modId of selectedIds) visit(modId);
+   return ordered;
+}
+
 export function describeInstallPlan(plan: ReturnType<typeof buildInstallPlan>, scan: ModScan, patcherSupported: boolean) {
    const entries = plan.mods.map((planned) => planned.entry);
    const warnings: ModWarning[] = [];

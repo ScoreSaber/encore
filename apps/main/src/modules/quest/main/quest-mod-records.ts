@@ -2,17 +2,19 @@ import { Result } from 'better-result';
 import { z } from 'zod';
 
 import { createProblem } from '@/lib/errors';
+import { removeQuietly } from '@/lib/filesystem/path';
 import { questModSourceId, questModSourceName, type ExternalMod, type ModSummary } from '@/modules/mods/contract';
 import { modIndexKey, type ModIndex } from '@/modules/mods/main/mod-index';
 import type { InstalledMod, ModScan } from '@/modules/mods/main/mod-scan';
 import { beatSaberPackageId } from '@/modules/quest/contract';
-import { parseQmodManifest, type QmodManifest } from '@/modules/quest/main/qmod';
+import { openQmod, parseQmodManifest, type QmodManifest } from '@/modules/quest/main/qmod';
 import type { QuestConnection } from '@/modules/quest/main/quest-device-service';
 import {
    questEarlyModsDir,
    questLateModsDir,
    questLibsDir,
    questPackagesDir,
+   questPackagePath,
    questRecordsPath,
    sanitizeQuestFileName
 } from '@/modules/quest/main/quest-paths';
@@ -27,6 +29,7 @@ const questRecordSchema = z.object({
    name: z.string(),
    version: z.string(),
    modId: z.string().nullable().default(null),
+   requiredDependencies: z.array(z.string()).optional(),
    files: z.array(z.string()),
    packagePath: z.string()
 });
@@ -49,6 +52,28 @@ export function qmodFileTargets(manifest: QmodManifest) {
 
 export function installedRecords(scan: QuestScan) {
    return scan.records.filter((record) => !scan.missing.has(record.id));
+}
+
+export function requiredQuestDependencies(manifest: QmodManifest) {
+   return manifest.dependencies.filter((dependency) => dependency.required).map((dependency) => dependency.id);
+}
+
+export async function readLegacyQuestDependencies({ client, serial }: QuestConnection, record: QuestRecord, staging: string, maxBytes: number) {
+   if (record.packagePath !== questPackagePath(record.id)) return undefined;
+   const stats = await client.directoryStats(serial, record.packagePath);
+   if (Result.isError(stats) || stats.value.files !== 1 || stats.value.bytes > maxBytes) return undefined;
+
+   const path = join(staging, 'installed.qmod');
+   const pulled = await client.pull(serial, record.packagePath, path);
+   if (Result.isError(pulled)) return undefined;
+
+   const opened = await openQmod(path);
+   if (Result.isOk(opened)) opened.value.close();
+   await removeQuietly(path);
+   if (Result.isError(opened)) return undefined;
+   const { manifest } = opened.value;
+   if (manifest.id !== record.id || manifest.version !== record.version) return undefined;
+   return requiredQuestDependencies(manifest);
 }
 
 export function readQuestMods(connection: QuestConnection, gameVersion: string) {
@@ -191,7 +216,15 @@ async function readMbfRecords({ client, serial }: QuestConnection, gameVersion: 
       const files = qmodFileTargets(manifest).map((target) => target.path);
       const exists = await Promise.all(files.map((file) => client.fileExists(serial, file)));
       if (exists.some((result) => Result.isError(result) || !result.value)) continue;
-      records.push({ id: manifest.id, name: manifest.name, version: manifest.version, modId: null, files, packagePath });
+      records.push({
+         id: manifest.id,
+         name: manifest.name,
+         version: manifest.version,
+         modId: null,
+         requiredDependencies: requiredQuestDependencies(manifest),
+         files,
+         packagePath
+      });
    }
    return records;
 }

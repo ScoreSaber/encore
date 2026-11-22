@@ -54,6 +54,7 @@ export type ModService = ReturnType<typeof createModService>;
 export function createModService(options: ModServiceOptions) {
    const patcher = options.patcher ?? createModPatcher();
    const contexts = createModContexts({ registry: options.registry, catalog: options.catalog, dataPath: options.dataPath, log: options.log });
+   const activeInstalls = new Set<InstallId>();
 
    async function getMods(request: ModRequest): Promise<ModsSnapshot> {
       const cached = await contexts.cachedSnapshot(request.installId);
@@ -79,17 +80,17 @@ export function createModService(options: ModServiceOptions) {
       });
    }
 
-   function planChanges(request: ModChangesRequest) {
+   function planChanges(request: ModChangesRequest, mode?: 'scan') {
       return Result.gen(async function* () {
-         const context = yield* Result.await(contexts.load(request.installId));
+         const context = yield* Result.await(contexts.load(request.installId, mode));
          const plan = yield* Result.await(planModChanges(request, context, patcher.supported));
          return Result.ok({ install: context.install, ...plan });
       });
    }
 
-   function planUninstall(request: ModUninstallRequest) {
+   function planUninstall(request: ModUninstallRequest, mode?: 'scan') {
       return Result.gen(async function* () {
-         const context = yield* Result.await(contexts.load(request.installId));
+         const context = yield* Result.await(contexts.load(request.installId, mode));
          const preview = yield* Result.await(planModUninstall(request, context, patcher.supported));
          return Result.ok({ install: context.install, preview });
       });
@@ -145,7 +146,8 @@ export function createModService(options: ModServiceOptions) {
       const plan = await planChanges(request);
       if (Result.isError(plan)) return failure(request, plan.error);
 
-      const { install, preview, planned } = plan.value;
+      const { install, preview } = plan.value;
+      if (preview.uninstall.warnings.includes('removes-dependants')) return Result.err(createProblem('mods.removal-changed'));
       return start(
          install.id,
          {
@@ -160,10 +162,14 @@ export function createModService(options: ModServiceOptions) {
             }
          },
          async (operationId, signal) => {
-            const uninstalled = await writeUninstall(operationId, install, preview.uninstall, signal);
+            const current = await planChanges(request, 'scan');
+            if (Result.isError(current)) return failure(request, current.error);
+            if (current.value.preview.uninstall.warnings.includes('removes-dependants')) return Result.err(createProblem('mods.removal-changed'));
+
+            const uninstalled = await writeUninstall(operationId, current.value.install, current.value.preview.uninstall, signal);
             if (Result.isError(uninstalled)) return uninstalled;
 
-            const installed = await writeInstall(operationId, install, planned, signal);
+            const installed = await writeInstall(operationId, current.value.install, current.value.planned, signal);
             if (Result.isError(installed)) return installed;
 
             return Result.ok({
@@ -182,6 +188,7 @@ export function createModService(options: ModServiceOptions) {
       if (Result.isError(plan)) return failure(request, plan.error);
 
       const { install, preview } = plan.value;
+      if (preview.warnings.includes('removes-dependants')) return Result.err(createProblem('mods.removal-changed'));
       return start(
          install.id,
          {
@@ -194,7 +201,12 @@ export function createModService(options: ModServiceOptions) {
             progress: { phase: 'preparing', current: 0, total: preview.fileCount, percent: 0, unit: 'files' },
             metadata: { installId: request.installId, scope: request.scope }
          },
-         (operationId, signal) => writeUninstall(operationId, install, preview, signal)
+         async (operationId, signal) => {
+            const current = await planUninstall(request, 'scan');
+            if (Result.isError(current)) return failure(request, current.error);
+            if (current.value.preview.warnings.includes('removes-dependants')) return Result.err(createProblem('mods.removal-changed'));
+            return writeUninstall(operationId, current.value.install, current.value.preview, signal);
+         }
       );
    }
 
@@ -234,7 +246,18 @@ export function createModService(options: ModServiceOptions) {
       );
    }
 
-   function start(installId: InstallId, operation: Omit<CreateOperationInput, 'cancel'>, work: ModWork, cleanup?: () => void | Promise<void>) {
+   async function start(
+      installId: InstallId,
+      operation: Omit<CreateOperationInput, 'cancel'>,
+      work: ModWork,
+      cleanup?: () => void | Promise<void>
+   ): Promise<Result<OperationSnapshot, Problem>> {
+      if (activeInstalls.has(installId)) {
+         await cleanup?.();
+         return Result.err(createProblem('mods.busy'));
+      }
+
+      activeInstalls.add(installId);
       const created = options.operations.start(operation, async (operationId, signal) => {
          try {
             const result = await work(operationId, signal);
@@ -242,9 +265,14 @@ export function createModService(options: ModServiceOptions) {
             else options.operations.complete(operationId, result.value);
          } finally {
             contexts.forget(installId);
+            activeInstalls.delete(installId);
             await cleanup?.();
          }
       });
+      if (created.status === 'cancelled') {
+         activeInstalls.delete(installId);
+         await cleanup?.();
+      }
 
       return Result.ok(created);
    }
@@ -286,31 +314,42 @@ export function createModService(options: ModServiceOptions) {
       return Result.ok<InstallOutcome, Problem>({ installId: install.id, mods: planned.length, files, bytes });
    }
 
-   async function writeUninstall(operationId: string, install: InstallDetail, preview: ReadyModUninstallPreview, signal: AbortSignal) {
-      const removesBsipa = preview.mods.some((removal) => removal.name.trim().toLowerCase() === bsipaModName);
-      if (removesBsipa && (await patcher.canPatch()) && (await patcher.hasPatcher(install.path))) {
-         const reverted = await patcher.revert(install.path);
-         if (Result.isError(reverted)) return Result.err<UninstallOutcome, Problem>(reverted.error);
-      }
-
-      const paths = [
-         ...preview.mods.flatMap((removal) => removal.files),
-         ...preview.external.map((external) => join(install.path, ...external.path.split('/'))),
-         ...preview.folders
+   async function writeUninstall(
+      operationId: string,
+      install: InstallDetail,
+      preview: ReadyModUninstallPreview,
+      signal: AbortSignal
+   ): Promise<Result<UninstallOutcome, Problem>> {
+      const bsipaIndex = preview.mods.findIndex((removal) => removal.name.trim().toLowerCase() === bsipaModName);
+      const removalGroups = [
+         ...preview.mods.map((removal) => removal.files),
+         [...preview.external.map((external) => join(install.path, ...external.path.split('/'))), ...preview.folders]
       ];
+      const total = removalGroups.reduce((sum, paths) => sum + paths.length, 0);
 
       let files = 0;
-      for (const [index, path] of paths.entries()) {
-         const deleted = await deletePathWithProgress({ targetPath: path, root: install.path, allowMissing: true, signal });
-         if (Result.isError(deleted)) return Result.err<UninstallOutcome, Problem>(deleted.error);
+      let current = 0;
+      for (const [index, paths] of removalGroups.entries()) {
+         if (signal.aborted) return Result.err(createProblem('filesystem.operation.cancelled'));
+         if (index === bsipaIndex && (await patcher.canPatch()) && (await patcher.hasPatcher(install.path))) {
+            const reverted = await patcher.revert(install.path);
+            if (Result.isError(reverted)) return Result.err(reverted.error);
+         }
 
-         files += deleted.value.files;
-         options.operations.update(operationId, {
-            progress: { phase: 'deleting', current: index + 1, total: paths.length, percent: percentOf(index + 1, paths.length), unit: 'files' }
-         });
+         for (const path of paths) {
+            const deleted = await deletePathWithProgress({ targetPath: path, root: install.path, allowMissing: true, signal });
+            if (Result.isError(deleted)) return Result.err(deleted.error);
+
+            files += deleted.value.files;
+            current += 1;
+            options.operations.update(operationId, {
+               progress: { phase: 'deleting', current, total, percent: percentOf(current, total), unit: 'files' }
+            });
+         }
       }
 
-      return Result.ok<UninstallOutcome, Problem>({ installId: install.id, mods: preview.mods.length, files });
+      if (signal.aborted) return Result.err(createProblem('filesystem.operation.cancelled'));
+      return Result.ok({ installId: install.id, mods: preview.mods.length, files });
    }
 
    function invalid(request: ModRequest, problem: ModProblem) {

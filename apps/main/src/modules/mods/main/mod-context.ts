@@ -38,7 +38,7 @@ export function createModContexts(options: { registry: InstallRegistry; catalog:
       maxEntries: 12
    });
 
-   async function load(installId: InstallId, refresh = false): Promise<Result<ModContext, ModProblem>> {
+   async function load(installId: InstallId, mode: 'cached' | 'scan' | 'refresh' = 'cached'): Promise<Result<ModContext, ModProblem>> {
       const generation = (scanGenerations.get(installId) ?? 0) + 1;
       scanGenerations.set(installId, generation);
 
@@ -50,13 +50,13 @@ export function createModContexts(options: { registry: InstallRegistry; catalog:
 
       const platform: ModPlatform = install.store === 'oculus' ? 'oculuspc' : 'steampc';
       const request = { gameVersion, platform };
-      const index = refresh ? await options.catalog.refresh(request) : await options.catalog.get(request);
+      const index = mode === 'refresh' ? await options.catalog.refresh(request) : await options.catalog.get(request);
       if (Result.isError(index)) {
          return Result.err({ issue: 'catalog-unavailable', detail: index.error.detail ?? index.error.message });
       }
 
       const cached = readRecent(scans, install.id);
-      if (!refresh && cached && isSamePath(cached.installPath, install.path)) {
+      if (mode === 'cached' && cached && isSamePath(cached.installPath, install.path)) {
          return Result.ok({ install, gameVersion, platform, index: index.value, scan: cached.scan });
       }
 
@@ -79,7 +79,7 @@ export function createModContexts(options: { registry: InstallRegistry; catalog:
 
    async function snapshot(installId: InstallId, refresh: boolean): Promise<Result<ReadyModsSnapshot, ModProblem>> {
       const generationBefore = (scanGenerations.get(installId) ?? 0) + 1;
-      const context = await load(installId, refresh);
+      const context = await load(installId, refresh ? 'refresh' : 'cached');
       if (Result.isError(context)) return Result.err(context.error);
 
       const { install, gameVersion, platform, index, scan } = context.value;

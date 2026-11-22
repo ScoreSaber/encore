@@ -20,16 +20,17 @@ import {
    type ModUninstallRequest,
    type ModWarning,
    type ReadyModChangesPreview,
+   type ReadyModInstallPreview,
    type ReadyModUninstallPreview
 } from '@/modules/mods/contract';
 import type { ModProblem } from '@/modules/mods/main/mod-context';
 import { buildModIndex } from '@/modules/mods/main/mod-index';
 import { modContentLimits } from '@/modules/mods/main/mod-install';
-import { buildInstallPlan, describeInstallPlan, summarizeMods } from '@/modules/mods/main/mod-plan';
+import { buildInstallPlan, describeInstallPlan, orderModRemovals, summarizeMods, type PlannedMod } from '@/modules/mods/main/mod-plan';
 import { withoutInstalledMods, type ModScan } from '@/modules/mods/main/mod-scan';
 import type { ModRepositoryService } from '@/modules/mods/main/repo-service';
 import type { OperationSerializable, OperationSnapshot } from '@/modules/operations/contract';
-import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
+import type { CreateOperationInput, OperationRegistry } from '@/modules/operations/main/operation-registry';
 import { questInstallId } from '@/modules/quest/contract';
 import { openQmod } from '@/modules/quest/main/qmod';
 import type { QuestDeviceService } from '@/modules/quest/main/quest-device-service';
@@ -48,7 +49,14 @@ import {
    type QuestModJob,
    type QueuedQmod
 } from '@/modules/quest/main/quest-mod-install';
-import { describeScan, installedRecords, readQuestMods, recordModId, type QuestScan } from '@/modules/quest/main/quest-mod-records';
+import {
+   describeScan,
+   installedRecords,
+   readLegacyQuestDependencies,
+   readQuestMods,
+   recordModId,
+   type QuestScan
+} from '@/modules/quest/main/quest-mod-records';
 import type { QuestMutationLock } from '@/modules/quest/main/quest-mutation-lock';
 import {
    questEarlyModsDir,
@@ -147,7 +155,7 @@ export function createQuestModService(options: {
          await options.repositories.refresh();
       }
 
-      const loaded = await loadScan(request, refresh);
+      const loaded = await loadScan(request, refresh ? 'refresh' : 'cached');
       if (Result.isError(loaded)) return unavailableModsSnapshot(request, loaded.error.issue, loaded.error.detail);
       const { context, scan } = loaded.value;
 
@@ -169,110 +177,115 @@ export function createQuestModService(options: {
    async function previewInstall(request: QuestModSelectionRequest): Promise<ModInstallPreview> {
       const loaded = await loadScan(request);
       if (Result.isError(loaded)) return invalid(request, loaded.error);
-      if (request.modIds.length === 0) return invalid(request, { issue: 'nothing-selected' });
-
-      return buildInstallPreview(request, loaded.value.context, loaded.value.scan, request.modIds);
+      const plan = planInstall(request, loaded.value.context, loaded.value.scan, request.modIds);
+      return Result.isOk(plan) ? plan.value.preview : invalid(request, plan.error);
    }
 
-   function buildInstallPreview(
+   function planInstall(
       request: QuestModRequest,
       context: QuestContext,
       scan: ModScan,
       modIds: string[],
       removeModIds: string[] = []
-   ): ModInstallPreview {
+   ): Result<{ preview: ReadyModInstallPreview; planned: PlannedMod[] }, ModProblem> {
+      if (modIds.length === 0) return Result.err({ issue: 'nothing-selected' });
       const plan = buildInstallPlan(context.index, withoutInstalledMods(scan, removeModIds), modIds);
-      if (plan.mods.length === 0) return invalid(request, { issue: 'not-found', detail: modIds.join(', ') });
+      if (plan.mods.length === 0) return Result.err({ issue: 'not-found', detail: modIds.join(', ') });
 
-      return {
-         status: 'ok',
-         installId: request.installId,
-         installPath: questModDataDir,
-         pendingPath: questModloaderDir,
-         ...describeInstallPlan({ ...plan, missingDependencies: false }, scan, false)
-      };
+      return Result.ok({
+         preview: {
+            status: 'ok',
+            installId: request.installId,
+            installPath: questModDataDir,
+            pendingPath: questModloaderDir,
+            ...describeInstallPlan({ ...plan, missingDependencies: false }, scan, false)
+         },
+         planned: plan.mods
+      });
    }
 
    async function previewChanges(request: QuestModChangesRequest): Promise<ModChangesPreview> {
       const loaded = await loadScan(request);
       if (Result.isError(loaded)) return invalid(request, loaded.error);
-      return buildChangesPreview(request, loaded.value.context, loaded.value.scan);
+      const plan = await planChanges(request, loaded.value.context, loaded.value.scan);
+      return Result.isOk(plan) ? plan.value.preview : invalid(request, plan.error);
    }
 
-   function buildChangesPreview(request: QuestModChangesRequest, context: QuestContext, scan: QuestScan): ModChangesPreview {
+   async function planChanges(
+      request: QuestModChangesRequest,
+      context: QuestContext,
+      scan: QuestScan
+   ): Promise<Result<{ preview: ReadyModChangesPreview; planned: PlannedMod[] }, ModProblem>> {
       if (request.installModIds.length === 0 || request.removeModIds.length === 0) {
-         return invalid(request, { issue: 'nothing-selected' });
+         return Result.err({ issue: 'nothing-selected' });
       }
 
-      const uninstall = buildUninstallPreview({ ...request, scope: 'selection', modIds: request.removeModIds, externalIds: [] }, scan);
-      if (uninstall.status === 'invalid') return uninstall;
+      const uninstallPlan = await planUninstall({ ...request, scope: 'selection', modIds: request.removeModIds, externalIds: [] }, context, scan);
+      if (Result.isError(uninstallPlan)) return Result.err(uninstallPlan.error);
 
-      const install = buildInstallPreview(request, context, scan, request.installModIds, request.removeModIds);
-      if (install.status === 'invalid') return install;
+      const uninstall = uninstallPlan.value;
+      const removedIds = uninstall.mods.map((mod) => mod.modId);
+      const installPlan = planInstall(request, context, scan, request.installModIds, removedIds);
+      if (Result.isError(installPlan)) return Result.err(installPlan.error);
+      const { preview: install, planned } = installPlan.value;
+      if (planned.some(({ entry }) => removedIds.includes(entry.modId))) return Result.err({ issue: 'conflicting-changes' });
 
-      return {
-         status: 'ok',
-         installId: request.installId,
-         install,
-         uninstall,
-         warnings: [...new Set([...install.warnings, ...uninstall.warnings])]
-      };
+      return Result.ok({
+         preview: {
+            status: 'ok',
+            installId: request.installId,
+            install,
+            uninstall,
+            warnings: [...new Set([...install.warnings, ...uninstall.warnings])]
+         },
+         planned
+      });
    }
 
-   async function applyChanges(request: QuestModChangesRequest): Promise<Result<OperationSnapshot, Problem>> {
-      const loaded = await loadScan(request);
-      if (Result.isError(loaded)) return failure(request, loaded.error);
-      const { context, scan } = loaded.value;
-      const previewed = buildChangesPreview(request, context, scan);
-      if (previewed.status === 'invalid') return failure(request, previewed);
+   function applyChanges(request: QuestModChangesRequest) {
+      return startRemoval(request, async (context, scan) => {
+         const plan = await planChanges(request, context, scan);
+         if (Result.isError(plan)) return failure(request, plan.error);
+         const { preview: previewed, planned } = plan.value;
+         if (previewed.uninstall.warnings.includes('removes-dependants')) return Result.err(createProblem('mods.removal-changed'));
 
-      const plan = buildInstallPlan(context.index, withoutInstalledMods(scan, request.removeModIds), request.installModIds);
-      const queue = plan.mods.map((planned) => toQueuedQmod(planned.entry));
-      const lock = options.mutations.acquire(request.targetId);
-      if (Result.isError(lock)) return Result.err(lock.error);
-      const operation = options.operations.start(
-         {
-            kind: 'download',
-            title: translate('quest.operations.applyChanges'),
-            message: translate('quest.operations.game'),
-            targetId: request.targetId,
-            progress: { phase: 'preparing', current: 0, total: 2, percent: 0, unit: 'steps' },
-            metadata: {
-               installId: request.installId,
-               install: previewed.install.mods.map((entry) => entry.name),
-               remove: previewed.uninstall.mods.map((entry) => entry.name)
-            }
-         },
-         (operationId, signal) =>
-            withStaging(options.stagingRoot, (staging) => applyStaged(job(context, operationId, staging, signal), previewed, queue)).then((result) =>
-               settle(operationId, signal, result)
-            ),
-         lock.value
-      );
-
-      return Result.ok(operation);
+         const queue = planned.map(({ entry }) => toQueuedQmod(entry));
+         return Result.ok({
+            operation: {
+               kind: 'download',
+               title: translate('quest.operations.applyChanges'),
+               message: translate('quest.operations.game'),
+               targetId: request.targetId,
+               progress: { phase: 'preparing', current: 0, total: 2, percent: 0, unit: 'steps' },
+               metadata: {
+                  installId: request.installId,
+                  install: previewed.install.mods.map((entry) => entry.name),
+                  remove: previewed.uninstall.mods.map((entry) => entry.name)
+               }
+            },
+            run: (job) => applyStaged(job, scan, previewed, queue)
+         });
+      });
    }
 
    async function installMods(request: QuestModSelectionRequest): Promise<Result<OperationSnapshot, Problem>> {
       const loaded = await loadScan(request);
       if (Result.isError(loaded)) return failure(request, loaded.error);
       const { context, scan } = loaded.value;
-      if (request.modIds.length === 0) return failure(request, { issue: 'nothing-selected' });
-      const previewed = buildInstallPreview(request, context, scan, request.modIds);
-      if (previewed.status === 'invalid') return failure(request, previewed);
-
-      const plan = buildInstallPlan(context.index, scan, request.modIds);
-      const queue = plan.mods.map((planned) => toQueuedQmod(planned.entry));
+      const plan = planInstall(request, context, scan, request.modIds);
+      if (Result.isError(plan)) return failure(request, plan.error);
+      const { preview, planned } = plan.value;
+      const queue = planned.map(({ entry }) => toQueuedQmod(entry));
       const lock = options.mutations.acquire(request.targetId);
       if (Result.isError(lock)) return Result.err(lock.error);
       const operation = options.operations.start(
          {
             kind: 'download',
-            title: translate('quest.operations.install', { count: plan.mods.length }),
+            title: translate('quest.operations.install', { count: planned.length }),
             message: translate('quest.operations.game'),
             targetId: request.targetId,
-            progress: { phase: 'preparing', current: 0, total: plan.mods.length, percent: 0, unit: 'items' },
-            metadata: { installId: request.installId, mods: previewed.mods.map((entry) => entry.name) }
+            progress: { phase: 'preparing', current: 0, total: planned.length, percent: 0, unit: 'items' },
+            metadata: { installId: request.installId, mods: preview.mods.map((entry) => entry.name) }
          },
          (operationId, signal) =>
             withStaging(options.stagingRoot, (staging) => install(job(context, operationId, staging, signal), queue)).then((result) =>
@@ -294,11 +307,10 @@ export function createQuestModService(options: {
       return installed;
    }
 
-   function applyStaged(job: QuestModJob, previewed: ReadyModChangesPreview, queue: QueuedQmod[]) {
+   function applyStaged(job: QuestModJob, scan: QuestScan, previewed: ReadyModChangesPreview, queue: QueuedQmod[]) {
       const removedIds = new Set(previewed.uninstall.mods.map((mod) => mod.modId));
 
       return Result.gen(async function* () {
-         const scan = yield* Result.await(scanMods(job.context, false));
          const removedRecords = scan.records.filter((record) => removedIds.has(recordModId(record, scan)));
          const remaining = scan.records.filter((record) => !removedIds.has(recordModId(record, scan)));
          const prepared = yield* Result.await(
@@ -308,6 +320,9 @@ export function createQuestModService(options: {
                remaining.filter((record) => !scan.missing.has(record.id))
             )
          );
+         if (prepared.some(({ manifest }) => removedRecords.some((record) => record.id === manifest.id))) {
+            return Result.err(createProblem('quest.mods.conflicting-changes'));
+         }
          if (job.signal.aborted) return Result.err(createProblem('quest.install.cancelled'));
 
          options.operations.update(job.operationId, { cancelable: false });
@@ -332,10 +347,15 @@ export function createQuestModService(options: {
    async function previewUninstall(request: QuestModUninstallRequest): Promise<ModUninstallPreview> {
       const loaded = await loadScan(request);
       if (Result.isError(loaded)) return invalid(request, loaded.error);
-      return buildUninstallPreview(request, loaded.value.scan);
+      const plan = await planUninstall(request, loaded.value.context, loaded.value.scan);
+      return Result.isOk(plan) ? plan.value : invalid(request, plan.error);
    }
 
-   function buildUninstallPreview(request: QuestModUninstallRequest, scan: QuestScan): ModUninstallPreview {
+   async function planUninstall(
+      request: QuestModUninstallRequest,
+      context: QuestContext,
+      scan: QuestScan
+   ): Promise<Result<ReadyModUninstallPreview, ModProblem>> {
       const externalIds = new Set(request.externalIds);
       const selected =
          request.scope === 'all'
@@ -343,19 +363,47 @@ export function createQuestModService(options: {
             : scan.records.filter((record) => request.modIds.includes(recordModId(record, scan)) || externalIds.has(`record:${record.id}`));
       const external =
          request.scope === 'all' ? scan.external : scan.external.filter((file) => externalIds.has(file.id) && !file.id.startsWith('record:'));
-      if (selected.length === 0 && external.length === 0 && request.scope === 'selection') return invalid(request, { issue: 'nothing-selected' });
+      if (selected.length === 0 && external.length === 0 && request.scope === 'selection') return Result.err({ issue: 'nothing-selected' });
+
+      let removals = selected;
+      if (request.scope === 'selection' && selected.length > 0) {
+         const recordsById = new Map(scan.records.map((record) => [record.id, record]));
+         const packageIdsByModId = new Map(scan.records.map((record) => [recordModId(record, scan), record.id]));
+         const dependencies = new Map<string, string[]>();
+         const legacy = scan.records.filter((record) => record.requiredDependencies === undefined);
+         if (legacy.length > 0) {
+            const inspected = await withStaging(options.stagingRoot, async (staging) => {
+               for (const record of legacy) {
+                  const required = await readLegacyQuestDependencies(context.connection, record, staging, modContentLimits.maxArchiveBytes);
+                  if (required) dependencies.set(record.id, required);
+               }
+               return Result.ok(undefined);
+            });
+            if (Result.isError(inspected)) return Result.err({ issue: 'inspect-failed', detail: inspected.error.message });
+         }
+         for (const record of scan.records) {
+            if (dependencies.has(record.id)) continue;
+            const entry = context.index.byModId.get(recordModId(record, scan));
+            dependencies.set(record.id, record.requiredDependencies ?? (entry?.dependencies ?? []).flatMap((id) => packageIdsByModId.get(id) ?? []));
+         }
+         removals = orderModRemovals(
+            selected.map((record) => record.id),
+            dependencies
+         ).flatMap((id) => recordsById.get(id) ?? []);
+      }
 
       const folders = request.scope === 'all' ? [questEarlyModsDir, questLateModsDir, questLibsDir] : [];
 
       const warnings: ModWarning[] = [];
+      if (removals.length > selected.length) warnings.push('removes-dependants');
       if (external.length > 0 && request.scope === 'all') warnings.push('removes-external');
 
-      return {
+      return Result.ok({
          status: 'ok',
          installId: request.installId,
          installPath: questModDataDir,
          scope: request.scope,
-         mods: selected.map((record) => ({
+         mods: removals.map((record) => ({
             modId: recordModId(record, scan),
             name: record.name,
             version: record.version,
@@ -363,50 +411,78 @@ export function createQuestModService(options: {
          })),
          external,
          folders,
-         fileCount: selected.reduce((total, record) => total + record.files.length + 1, 0) + external.length,
+         fileCount: removals.reduce((total, record) => total + record.files.length + 1, 0) + external.length,
          warnings
-      };
+      });
    }
 
-   async function uninstallMods(request: QuestModUninstallRequest): Promise<Result<OperationSnapshot, Problem>> {
-      const loaded = await loadScan(request);
-      if (Result.isError(loaded)) return failure(request, loaded.error);
-      const { context, scan } = loaded.value;
-      const previewed = buildUninstallPreview(request, scan);
-      if (previewed.status === 'invalid') return failure(request, previewed);
+   function uninstallMods(request: QuestModUninstallRequest) {
+      return startRemoval(request, async (context, scan) => {
+         const plan = await planUninstall(request, context, scan);
+         if (Result.isError(plan)) return failure(request, plan.error);
+         const previewed = plan.value;
+         if (previewed.warnings.includes('removes-dependants')) return Result.err(createProblem('mods.removal-changed'));
 
+         return Result.ok({
+            operation: {
+               kind: 'delete',
+               title:
+                  request.scope === 'all'
+                     ? translate('quest.operations.removeAll')
+                     : translate('quest.operations.remove', { count: previewed.mods.length }),
+               message: translate('quest.operations.game'),
+               targetId: request.targetId,
+               progress: { phase: 'preparing', current: 0, total: previewed.fileCount, percent: 0, unit: 'files' },
+               metadata: { installId: request.installId, scope: request.scope }
+            },
+            run: (job) => uninstall(job, scan, previewed)
+         });
+      });
+   }
+
+   async function startRemoval(
+      request: QuestModRequest,
+      prepare: (
+         context: QuestContext,
+         scan: QuestScan
+      ) => Promise<
+         Result<
+            { operation: Omit<CreateOperationInput, 'cancel'>; run: (job: QuestModJob) => Promise<Result<OperationSerializable, Problem>> },
+            Problem
+         >
+      >
+   ): Promise<Result<OperationSnapshot, Problem>> {
       const lock = options.mutations.acquire(request.targetId);
       if (Result.isError(lock)) return Result.err(lock.error);
-      const operation = options.operations.start(
-         {
-            kind: 'delete',
-            title:
-               request.scope === 'all'
-                  ? translate('quest.operations.removeAll')
-                  : translate('quest.operations.remove', { count: previewed.mods.length }),
-            message: translate('quest.operations.game'),
-            targetId: request.targetId,
-            progress: { phase: 'preparing', current: 0, total: previewed.fileCount, percent: 0, unit: 'files' },
-            metadata: { installId: request.installId, scope: request.scope }
-         },
-         (operationId, signal) =>
-            withStaging(options.stagingRoot, (staging) => uninstall(job(context, operationId, staging, signal), previewed)).then((result) =>
-               settle(operationId, signal, result)
-            ),
-         lock.value
-      );
+      let started = false;
+      try {
+         const loaded = await loadScan(request, 'scan');
+         if (Result.isError(loaded)) return failure(request, loaded.error);
+         const { context, scan } = loaded.value;
+         const prepared = await prepare(context, scan);
+         if (Result.isError(prepared)) return Result.err(prepared.error);
 
-      return Result.ok(operation);
+         const { operation, run } = prepared.value;
+         const snapshot = options.operations.start(
+            operation,
+            (operationId, signal) =>
+               withStaging(options.stagingRoot, (staging) => run(job(context, operationId, staging, signal))).then((result) =>
+                  settle(operationId, signal, result)
+               ),
+            lock.value
+         );
+         started = true;
+         return Result.ok(snapshot);
+      } finally {
+         if (!started) lock.value.release();
+      }
    }
 
-   async function uninstall(job: QuestModJob, previewed: ReadyModUninstallPreview) {
+   async function uninstall(job: QuestModJob, scan: QuestScan, previewed: ReadyModUninstallPreview) {
       const removedIds = new Set(previewed.mods.map((removal) => removal.modId));
-      const uninstalled = await Result.gen(async function* () {
-         const scan = yield* Result.await(scanMods(job.context, false));
-         const removed = scan.records.filter((record) => removedIds.has(recordModId(record, scan)));
-         const remaining = scan.records.filter((record) => !removedIds.has(recordModId(record, scan)));
-         return writeUninstall(job, previewed, removed, remaining);
-      });
+      const removed = scan.records.filter((record) => removedIds.has(recordModId(record, scan)));
+      const remaining = scan.records.filter((record) => !removedIds.has(recordModId(record, scan)));
+      const uninstalled = await writeUninstall(job, previewed, removed, remaining);
       forgetScan(job.context.targetId);
       return uninstalled;
    }
@@ -540,10 +616,13 @@ export function createQuestModService(options: {
       });
    }
 
-   async function loadScan(request: QuestModRequest, refresh = false): Promise<Result<{ context: QuestContext; scan: QuestScan }, ModProblem>> {
-      const context = await loadContext(request, refresh);
+   async function loadScan(
+      request: QuestModRequest,
+      mode: 'cached' | 'scan' | 'refresh' = 'cached'
+   ): Promise<Result<{ context: QuestContext; scan: QuestScan }, ModProblem>> {
+      const context = await loadContext(request, mode === 'refresh');
       if (Result.isError(context)) return Result.err(context.error);
-      const scan = await scanMods(context.value, refresh);
+      const scan = await scanMods(context.value, mode !== 'cached');
       if (Result.isError(scan)) return Result.err({ issue: 'inspect-failed', detail: scan.error.message });
       return Result.ok({ context: context.value, scan: scan.value });
    }

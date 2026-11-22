@@ -1328,6 +1328,7 @@
          "missing-dependency": "A mod depends on something BeatMods doesn't list for this version, so it may not load",
          "patcher-runs": "Encore runs the BSIPA patcher against the game so mods load",
          "patcher-unsupported": "The BSIPA patcher only runs on Windows, so these files are staged and nothing is patched here",
+         "removes-dependants": "The list includes other installed mods that depend on your selection",
          "removes-external": "Files Encore didn't install are removed too",
          "replaces-installed": "Installed mod files are replaced with the new version",
          "unverified-source": "{platform, select, quest {This file isn't from the Quest mod list, so Encore can't check it} other {This file isn't from BeatMods, so Encore can't check it}}",
@@ -1335,6 +1336,7 @@
       },
       "issues": {
          "catalog-unavailable": "{platform, select, quest {The Quest mod list couldn't be reached} other {BeatMods couldn't be reached, so the mod list is unavailable}}",
+         "conflicting-changes": "These changes would install and remove the same mod. Change your selection and try again",
          "inspect-failed": "This install folder couldn't be read",
          "not-found": "This install isn't in the registry anymore",
          "nothing-selected": "No mods were selected",
@@ -2497,6 +2499,7 @@
          },
          "mods": {
             "catalog-unavailable": "The Quest mod repository couldn't be reached",
+            "conflicting-changes": "These changes would install and remove the same mod. Change your selection and try again",
             "inspect-failed": "The headset couldn't be inspected",
             "not-found": "The headset isn't connected anymore",
             "nothing-selected": "No mod was selected",
@@ -2679,7 +2682,9 @@
          }
       },
       "mods": {
+         "busy": "Wait for the current mod operation to finish",
          "catalog-unavailable": "BeatMods couldn't be reached, so the mod list is unavailable",
+         "conflicting-changes": "These changes would install and remove the same mod. Change your selection and try again",
          "inspect-failed": "This install folder couldn't be read",
          "not-found": "This install isn't in the registry anymore",
          "nothing-selected": "No mods were selected",
@@ -2706,6 +2711,7 @@
          "install-failed": "{name} couldn't be installed",
          "import-failed": "{name} couldn't be imported",
          "preview-failed": "The mods couldn't be read",
+         "removal-changed": "Other installed mods depend on this selection. Open the removal preview again to review them",
          "start-failed": "The action couldn't be started",
          "import": {
             "preview-failed": "The file couldn't be read"

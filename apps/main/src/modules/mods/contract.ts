@@ -274,6 +274,7 @@ const modCatalogSourceSchema = z.enum(['cache', 'remote']);
 
 const modIssueSchema = z.enum([
    'catalog-unavailable',
+   'conflicting-changes',
    'inspect-failed',
    'not-found',
    'nothing-selected',
@@ -288,6 +289,7 @@ const modWarningSchema = z.enum([
    'missing-dependency',
    'patcher-runs',
    'patcher-unsupported',
+   'removes-dependants',
    'removes-external',
    'replaces-installed',
    'unofficial-source',

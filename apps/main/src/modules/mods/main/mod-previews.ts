@@ -16,7 +16,7 @@ import type {
 import type { ModContext, ModProblem } from '@/modules/mods/main/mod-context';
 import { maxModArchiveBytes } from '@/modules/mods/main/mod-install';
 import { modFileCandidates, modFolders, modRemovableFolders } from '@/modules/mods/main/mod-paths';
-import { buildInstallPlan, describeInstallPlan, type PlannedMod } from '@/modules/mods/main/mod-plan';
+import { buildInstallPlan, describeInstallPlan, orderModRemovals, type PlannedMod } from '@/modules/mods/main/mod-plan';
 import { withoutInstalledMods, type ModScan } from '@/modules/mods/main/mod-scan';
 
 import { basename, extname, join } from 'node:path';
@@ -46,14 +46,10 @@ export async function planModChanges(
    );
    if (Result.isError(uninstall)) return Result.err(uninstall.error);
 
-   const install = planInstall(
-      request.installId,
-      context,
-      withoutInstalledMods(context.scan, request.removeModIds),
-      request.installModIds,
-      patcherSupported
-   );
+   const removedIds = uninstall.value.mods.map((mod) => mod.modId);
+   const install = planInstall(request.installId, context, withoutInstalledMods(context.scan, removedIds), request.installModIds, patcherSupported);
    if (Result.isError(install)) return Result.err(install.error);
+   if (install.value.planned.some(({ entry }) => removedIds.includes(entry.modId))) return Result.err({ issue: 'conflicting-changes' });
 
    return Result.ok({
       preview: {
@@ -73,14 +69,17 @@ export async function planModUninstall(
    patcherSupported: boolean
 ): Promise<Result<ReadyModUninstallPreview, ModProblem>> {
    const { install, index, scan } = context;
-   const selection = request.scope === 'all' ? [...scan.installed.keys()] : request.modIds;
+   const selection = request.scope === 'all' ? [...scan.installed.keys()] : [...new Set(request.modIds.filter((id) => scan.installed.has(id)))];
    const external = request.scope === 'all' ? scan.external : scan.external.filter((file) => request.externalIds.includes(file.id));
    if (selection.length === 0 && external.length === 0 && request.scope === 'selection') return Result.err({ issue: 'nothing-selected' });
 
-   const mods = await Promise.all(selection.map((modId) => describeRemoval(context, modId)));
+   const dependencies = new Map([...scan.installed.keys()].map((modId) => [modId, index.byModId.get(modId)?.dependencies ?? []]));
+   const ordered = orderModRemovals(selection, dependencies);
+   const mods = await Promise.all(ordered.map((modId) => describeRemoval(context, modId)));
    const removals = mods.filter((removal) => removal !== null);
 
    const warnings: ModWarning[] = [];
+   if (ordered.length > selection.length) warnings.push('removes-dependants');
    if (external.length > 0 && request.scope === 'all') warnings.push('removes-external');
    if (patcherSupported && removals.some((removal) => index.byModId.get(removal.modId)?.isBsipa)) warnings.push('patcher-runs');
 

@@ -62,7 +62,7 @@ test('refuses tampered archives and uninstalls only the files a mod owns', async
    });
    expect(await readdir(installPath)).not.toContain('IPA');
 
-   expect(await run(await mods.installMods({ ...request, modIds: ['beatmods:3'] }))).toMatchObject({
+   expect(await run(await mods.installMods({ ...request, modIds: ['beatmods:2', 'beatmods:3'] }))).toMatchObject({
       status: 'completed',
       result: { mods: 3, files: 4 }
    });
@@ -100,7 +100,7 @@ const bsml = catalogMod(2, 'BSML', zips.bsml, [{ pId: 1, sv: '^1.0.0' }], { 'Plu
 const catalogResponse = [
    catalogMod(1, 'BSIPA', zips.bsipa, [], { 'IPA.exe': 'ipa-exe', 'IPA/Data/Managed/IPA.Injector.dll': 'injector' }),
    { ...bsml, version: { ...bsml.version, semver: '1.1.0', platform: 'oculus' } },
-   catalogMod(3, 'Counters+', zips.counters, [{ pId: 2, sv: '^1.0.0' }], { 'Plugins/Counters.dll': 'counters' }),
+   catalogMod(3, 'Counters+', zips.counters, [{ pId: 1, sv: '^1.0.0' }], { 'Plugins/Counters.dll': 'counters' }),
    catalogMod(4, 'Broken', zips.broken, [], { 'Plugins/Broken.dll': 'broken' }),
    catalogMod(5, 'Incompatible mod', zips.broken, [{ pId: 2, sv: '^2.0.0' }], { 'Plugins/Broken.dll': 'broken' })
 ];

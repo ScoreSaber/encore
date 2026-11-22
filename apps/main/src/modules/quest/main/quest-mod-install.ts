@@ -18,7 +18,7 @@ import type { OperationRegistry } from '@/modules/operations/main/operation-regi
 import { beatSaberPackageId, questInstallId } from '@/modules/quest/contract';
 import { openQmod, type OpenedQmod, type QmodManifest } from '@/modules/quest/main/qmod';
 import type { QuestConnection } from '@/modules/quest/main/quest-device-service';
-import { qmodFileTargets, saveRecords, type QuestRecord } from '@/modules/quest/main/quest-mod-records';
+import { qmodFileTargets, requiredQuestDependencies, saveRecords, type QuestRecord } from '@/modules/quest/main/quest-mod-records';
 import {
    isQuestModFile,
    isQuestPackagePath,
@@ -341,6 +341,7 @@ async function pushQmod(job: QuestModJob, opened: OpenedQmod, archivePath: strin
          name: manifest.name,
          version: manifest.version,
          modId: null,
+         requiredDependencies: requiredQuestDependencies(manifest),
          files: targets.map((target) => target.path),
          packagePath
       });

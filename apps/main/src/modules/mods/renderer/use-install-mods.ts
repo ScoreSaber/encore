@@ -22,7 +22,7 @@ import { queryStatus, useSnapshotMutation } from '@/renderer/query/api-query';
 type ModActionReady =
    | { kind: 'install'; preview: ReadyModInstallPreview }
    | { kind: 'uninstall'; preview: ReadyModUninstallPreview }
-   | { kind: 'changes'; preview: ReadyModChangesPreview; installModIds: string[]; removeModIds: string[] }
+   | { kind: 'changes'; preview: ReadyModChangesPreview; installModIds: string[] }
    | { kind: 'import'; preview: ReadyModImportPreview };
 
 const previewFailure = createProblem('mods.preview-failed');
@@ -187,7 +187,7 @@ export function useInstallMods(request: TargetModRequest) {
             async () => {
                const previewed = unwrapTarget(await modsApi.previewChanges({ ...request, installModIds, removeModIds }));
                return previewed.status === 'ok'
-                  ? { status: 'ready', kind: 'changes', preview: previewed, installModIds, removeModIds }
+                  ? { status: 'ready', kind: 'changes', preview: previewed, installModIds }
                   : { status: 'invalid', kind: 'changes', problem: previewed };
             },
             previewFailure
@@ -231,7 +231,11 @@ export function useInstallMods(request: TargetModRequest) {
             if (ready.kind === 'import')
                return modsApi.import({ ...request, sourcePath: ready.preview.sourcePath, uploadId: ready.preview.uploadId });
             if (ready.kind === 'changes')
-               return modsApi.applyChanges({ ...request, installModIds: ready.installModIds, removeModIds: ready.removeModIds });
+               return modsApi.applyChanges({
+                  ...request,
+                  installModIds: ready.installModIds,
+                  removeModIds: ready.preview.uninstall.mods.map((mod) => mod.modId)
+               });
             if (ready.kind === 'install') return modsApi.installMods({ ...request, modIds: ready.preview.mods.map((mod) => mod.modId) });
 
             return modsApi.uninstallMods({
