@@ -341,7 +341,7 @@ jobs:
    quest:
       name: Build Quest APK
       needs: version
-      runs-on: ubuntu-latest
+      runs-on: ubuntu-24.04
       permissions:
          contents: read
       steps:
@@ -364,7 +364,9 @@ jobs:
               java-version: '21'
 
          - name: Install Android SDK packages
-           run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+           run: |
+              "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+                 "platforms;android-36" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
 
          - name: Install dependencies
            run: vp install --frozen-lockfile --ignore-scripts
