@@ -213,10 +213,11 @@ jobs:
                     apps/main/release/*.AppImage
                     apps/main/release/*.deb
                     apps/main/release/*.rpm
+                    apps/main/release/*-steam-frame.flatpak
                     apps/main/release/latest-linux-arm64.yml
                     apps/main/release/*.blockmap
                  flatpak: false
-                 linux_packages: libarchive-tools musl-tools rpm xz-utils
+                 linux_packages: flatpak libarchive-tools musl-tools rpm xz-utils
                - name: Linux x86_64 Flatpak
                  os: ubuntu-latest
                  package_args: --linux flatpak --x64
@@ -298,6 +299,21 @@ jobs:
               APPIMAGE_EXTRACT_AND_RUN: '1'
               RELEASE_VERSION: ${{ needs.version.outputs.version }}
            run: vp exec --filter encore -- electron-builder ${{ matrix.package_args }} --config.extraMetadata.version="$RELEASE_VERSION" --publish never
+
+         - name: Set up uv
+           if: matrix.artifact == 'encore-linux-arm64'
+           uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+           with:
+              enable-cache: false
+
+         - name: Build Steam Frame installer
+           if: matrix.artifact == 'encore-linux-arm64'
+           env:
+              RELEASE_VERSION: ${{ needs.version.outputs.version }}
+           run: |
+              apps/main/packaging/steam-frame/build.sh \
+                 "apps/main/release/Encore-$RELEASE_VERSION-linux-arm64.AppImage" \
+                 "apps/main/release/Encore-$RELEASE_VERSION-steam-frame.flatpak"
 
          - name: Azure login
            if: matrix.os == 'windows-latest'

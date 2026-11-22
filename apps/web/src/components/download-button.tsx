@@ -5,12 +5,12 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 
 const ASSET_SUFFIXES = {
-  Windows: "-windows-x64.exe",
-  Linux: "-linux-x86_64.AppImage",
-  "Apple silicon": "-macos-arm64.dmg",
-  "Intel Mac": "-macos-x64.dmg",
-  "Steam Frame": "-steam-frame.flatpak",
-  Quest: "-quest.apk",
+  Windows: ["-windows-x64.exe"],
+  Linux: ["-linux-x86_64.AppImage"],
+  "Apple silicon": ["-macos-arm64.dmg"],
+  "Intel Mac": ["-macos-x64.dmg"],
+  "Steam Frame": ["-steam-frame.flatpak", "-linux-arm64.AppImage"],
+  Quest: ["-quest.apk"],
 };
 
 type Platform = keyof typeof ASSET_SUFFIXES;
@@ -108,10 +108,11 @@ async function fetchLatestRelease(): Promise<Release> {
 }
 
 function pickAsset(assets: ReleaseAsset[], platform: Platform) {
-  return (
-    assets.find((asset) => asset.name.endsWith(ASSET_SUFFIXES[platform]))?.browser_download_url ??
-    RELEASES_URL
-  );
+  for (const suffix of ASSET_SUFFIXES[platform]) {
+    const asset = assets.find(({ name }) => name.endsWith(suffix));
+    if (asset) return asset.browser_download_url;
+  }
+  return RELEASES_URL;
 }
 
 function PlatformIcon({ platform }: { platform: Platform }) {
@@ -159,10 +160,10 @@ export function DownloadButton() {
   useEffect(() => {
     let active = true;
     let latestPlatforms: Platform[] | null = null;
-    let latestAssets: ReleaseAsset[] = [];
+    let latestAssets: ReleaseAsset[] | null = null;
 
     const sync = () => {
-      if (!active || !latestPlatforms) return;
+      if (!active || !latestPlatforms || !latestAssets) return;
       setState({ status: "ready", platforms: latestPlatforms, assets: latestAssets });
     };
 
