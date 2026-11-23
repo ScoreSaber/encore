@@ -55,7 +55,6 @@ const playlistContentLimits: Partial<ContentLimits> = {
    stallTimeoutMs: 20_000
 };
 
-const maxMissingMapsPerRun = 200;
 const playlistRecordSchema = z.object({ summary: localPlaylistSummarySchema, hashes: z.array(z.string()) });
 const playlistScanCacheEntrySchema = z.object({ fingerprint: z.string(), record: playlistRecordSchema });
 
@@ -417,7 +416,7 @@ export function createPlaylistService(options: PlaylistServiceOptions) {
 
       return options.maps.startDownloadByHash({
          installId: request.installId,
-         hashes: missing.slice(0, maxMissingMapsPerRun),
+         hashes: missing,
          title: translate('playlists.detail.installMissing', { count: missing.length }),
          message: record.summary.title
       });

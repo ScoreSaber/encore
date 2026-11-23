@@ -36,15 +36,28 @@ import {
    type MapSearchRequest,
    type MapSelectionRequest
 } from '@/modules/maps/contract';
-import { beatSaverDownloadHosts, createBeatSaverCatalog, searchBeatSaver, type BeatSaverCatalog } from '@/modules/maps/main/beatsaver-catalog';
+import {
+   beatSaverDownloadHosts,
+   createBeatSaverCatalog,
+   hashLookupChunkSize,
+   searchBeatSaver,
+   type BeatSaverCatalog
+} from '@/modules/maps/main/beatsaver-catalog';
 import { exportMapsToZip, openMapArchive } from '@/modules/maps/main/map-archive';
 import { coverDataUrl, coverMimeType, packCovers } from '@/modules/maps/main/map-covers';
-import { installMapArchives, receiveMapArchive, type InstallMapArchivesInput, type MapArchiveSource } from '@/modules/maps/main/map-install';
+import {
+   installMapArchives,
+   installMapArchiveStream,
+   mapInstallConcurrency,
+   receiveMapArchive,
+   type InstallMapArchivesInput,
+   type MapArchiveSource
+} from '@/modules/maps/main/map-install';
 import { customLevelsPath } from '@/modules/maps/main/map-paths';
 import { scanCustomLevels, withMapDuplicateFlags, type MapScanCacheEntry } from '@/modules/maps/main/map-scanner';
 import { fetchScoreSaberMapUrl } from '@/modules/maps/main/scoresaber/scoresaber-catalog';
 import type { CreateOperationInput, OperationRegistry } from '@/modules/operations/main/operation-registry';
-import { createBytesProgress, createInstallProgress } from '@/modules/operations/main/operation-reporting';
+import { createBytesProgress } from '@/modules/operations/main/operation-reporting';
 import type { AppLogWriter } from '@/modules/support/main/app-log';
 
 import { readFile, realpath } from 'node:fs/promises';
@@ -93,7 +106,6 @@ export function createMapService(options: MapServiceOptions) {
       fetchContent: options.fetchContent
    });
    const catalog = options.catalog ?? createBeatSaverCatalog();
-   const reportInstallProgress = createInstallProgress(options.operations);
    const reportBytesProgress = createBytesProgress(options.operations);
    const sharedScans = new Map<string, SharedMapScan>();
    const states = createScanStates({
@@ -361,33 +373,24 @@ export function createMapService(options: MapServiceOptions) {
       if (!mapsPath) return mapFailure(input.installId, 'install-not-found');
 
       const installed = await installedHashes(input.installId);
-      const wanted = input.hashes.filter((hash) => !installed.has(hash));
+      const wanted = [...new Set(input.hashes.map((hash) => hash.toLowerCase()))].filter((hash) => !installed.has(hash));
       if (wanted.length === 0) return mapFailure(input.installId, 'already-installed');
 
-      const records = await catalog.getByHashes(wanted);
-      if (Result.isError(records)) return mapFailure(input.installId, 'source-unavailable', records.error.detail);
-      if (records.value.size === 0) return mapFailure(input.installId, 'source-unavailable');
-
-      const sources: MapArchiveSource[] = [...records.value.values()].map((record) => ({
-         source: { kind: 'url', url: record.downloadUrl },
-         fallbackName: record.summary.key,
-         expectedHash: record.summary.hash
-      }));
       const operationInput: Omit<CreateOperationInput, 'cancel'> = {
          kind: 'download',
          title: input.title,
          progress: {
             phase: 'preparing',
             current: 0,
-            total: sources.length,
+            total: wanted.length,
             percent: 0,
             unit: 'items'
          },
-         metadata: { installId: input.installId, mapCount: sources.length }
+         metadata: { installId: input.installId, mapCount: wanted.length }
       };
       if (input.message) operationInput.message = input.message;
       const operation = options.operations.start(operationInput, (operationId, signal) =>
-         runInstall(operationId, { installId: input.installId, mapsPath, sources, allowedHosts: beatSaverDownloadHosts, signal })
+         runDownloadByHash(operationId, { installId: input.installId, mapsPath, hashes: wanted, signal })
       );
 
       return { ok: true, value: operation };
@@ -428,26 +431,152 @@ export function createMapService(options: MapServiceOptions) {
       return { ok: true, value: operation };
    }
 
-   async function runInstall(
-      operationId: string,
-      input: Omit<InstallMapArchivesInput, 'ingestion' | 'installed' | 'onProgress'> & { installId: InstallId }
-   ) {
+   async function readInstalledForOperation(operationId: string, installId: InstallId, signal: AbortSignal) {
       const unsubscribe = states.subscribe((snapshot) => {
-         if (input.signal.aborted || snapshot.installId !== input.installId || !snapshot.progress) return;
+         if (signal.aborted || snapshot.installId !== installId || !snapshot.progress) return;
 
          const { scanned, total } = snapshot.progress;
          options.operations.update(operationId, {
             progress: { phase: 'scanning', current: scanned, total, percent: total ? Math.round((scanned / total) * 100) : 0, unit: 'items' }
          });
       });
-      const installed = await installedHashes(input.installId).finally(unsubscribe);
+
+      return installedHashes(installId).finally(unsubscribe);
+   }
+
+   async function runDownloadByHash(operationId: string, input: { installId: InstallId; mapsPath: string; hashes: MapHash[]; signal: AbortSignal }) {
+      const installed = await readInstalledForOperation(operationId, input.installId, input.signal);
+      if (input.signal.aborted) return;
+
+      const total = input.hashes.length;
+      const ready: MapArchiveSource[] = [];
+      let nextChunkOffset = 0;
+      let lookupDone = false;
+      let pendingFetch: Promise<void> | null = null;
+      let foundAny = false;
+      let skipped = 0;
+      let lookupProblem: Problem | null = null;
+
+      async function loadNextChunk() {
+         while (!lookupDone && !input.signal.aborted) {
+            if (nextChunkOffset >= total) {
+               lookupDone = true;
+               return;
+            }
+
+            const rawChunk = input.hashes.slice(nextChunkOffset, nextChunkOffset + hashLookupChunkSize);
+            nextChunkOffset += rawChunk.length;
+
+            const chunk = rawChunk.filter((hash) => !installed.has(hash));
+            skipped += rawChunk.length - chunk.length;
+            if (chunk.length === 0) continue;
+
+            const records = await catalog.getByHashes(chunk, input.signal);
+            if (input.signal.aborted) {
+               lookupDone = true;
+               return;
+            }
+            if (Result.isError(records)) {
+               lookupProblem = createProblem('maps.source-unavailable', { installId: input.installId, detail: records.error.detail });
+               lookupDone = true;
+               return;
+            }
+
+            for (const hash of chunk) {
+               const record = records.value.get(hash);
+               if (!record) {
+                  skipped += 1;
+                  continue;
+               }
+               foundAny = true;
+               ready.push({
+                  source: { kind: 'url', url: record.downloadUrl },
+                  fallbackName: record.summary.key,
+                  expectedHash: record.summary.hash
+               });
+            }
+
+            if (ready.length > 0) return;
+         }
+      }
+
+      function startFetch() {
+         pendingFetch ??= loadNextChunk().finally(() => {
+            pendingFetch = null;
+         });
+         return pendingFetch;
+      }
+
+      async function nextSource() {
+         for (;;) {
+            if (input.signal.aborted) return null;
+
+            const source = ready.shift();
+            if (source) {
+               if (ready.length <= mapInstallConcurrency && !lookupDone && !input.signal.aborted) void startFetch();
+               return source;
+            }
+
+            if (lookupDone) return null;
+
+            await startFetch();
+         }
+      }
+
+      const outcome = await installMapArchiveStream({
+         ingestion,
+         mapsPath: input.mapsPath,
+         allowedHosts: beatSaverDownloadHosts,
+         installed,
+         signal: input.signal,
+         total,
+         nextSource,
+         skippedCount: () => skipped,
+         onProgress: (progress) => options.operations.update(operationId, { progress })
+      });
+
+      if (outcome.mapCount > 0) {
+         await rescan({ installId: input.installId });
+         await syncSharedFolder(input.installId);
+      }
+
+      if (input.signal.aborted) return;
+
+      if (lookupProblem) {
+         options.operations.fail(operationId, lookupProblem);
+         return;
+      }
+
+      if (!foundAny) {
+         options.operations.fail(operationId, createProblem('maps.source-unavailable', { installId: input.installId }));
+         return;
+      }
+
+      if (outcome.mapCount === 0) {
+         options.operations.fail(operationId, outcome.lastProblem ?? createProblem('maps.nothing-installed'));
+         return;
+      }
+
+      options.operations.complete(operationId, {
+         installId: input.installId,
+         mapCount: outcome.mapCount,
+         bytes: outcome.bytes,
+         files: outcome.files
+      });
+   }
+
+   async function runInstall(
+      operationId: string,
+      input: Omit<InstallMapArchivesInput, 'ingestion' | 'installed' | 'onProgress'> & { installId: InstallId }
+   ) {
+      const installed = await readInstalledForOperation(operationId, input.installId, input.signal);
       if (input.signal.aborted) return;
 
       const outcome = await installMapArchives({
          ...input,
          ingestion,
          installed,
-         onProgress: (index, progress) => reportInstallProgress(operationId, index, input.sources.length, progress)
+         onProgress: (progress) => options.operations.update(operationId, { progress })
       });
 
       await rescan({ installId: input.installId });

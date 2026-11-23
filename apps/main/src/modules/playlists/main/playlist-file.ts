@@ -13,8 +13,6 @@ import { basename, extname, join } from 'node:path';
 
 export const maxPlaylistBytes = 8 * 1024 * 1024;
 
-const maxPlaylistSongs = 10_000;
-
 const hashPattern = /[\da-f]{40}/i;
 const keyPattern = /^[\da-z]{1,16}$/i;
 
@@ -76,7 +74,7 @@ export function parsePlaylistDocument(raw: string, fileName: string): Result<Par
       author: parsed.data.playlistAuthor?.trim() ?? '',
       description: parsed.data.playlistDescription?.trim() ?? '',
       syncUrl: readSyncUrl(parsed.data.customData?.syncURL),
-      songs: readSongs(z.array(songSchema).parse(songs.slice(0, maxPlaylistSongs)))
+      songs: readSongs(z.array(songSchema).parse(songs))
    });
 }
 

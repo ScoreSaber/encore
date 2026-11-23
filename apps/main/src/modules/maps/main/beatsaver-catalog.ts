@@ -16,7 +16,7 @@ const beatSaverApiOrigin = 'https://api.beatsaver.com';
 const fetchTimeoutMs = 15_000;
 const searchPageSize = 20;
 
-const hashLookupChunkSize = 50;
+export const hashLookupChunkSize = 50;
 const positiveNumberSchema = z.number().transform((value) => (value > 0 ? value : undefined));
 
 export const beatSaverDownloadHosts = ['cdn.beatsaver.com', 'r2cdn.beatsaver.com', 'na.cdn.beatsaver.com', 'eu.cdn.beatsaver.com'];
@@ -135,7 +135,7 @@ export function createBeatSaverCatalog() {
       return Result.ok<BeatSaverMapRecord, BeatSaverProblem>(record);
    }
 
-   async function getByHashes(hashes: readonly string[]) {
+   async function getByHashes(hashes: readonly string[], signal?: AbortSignal): Promise<Result<Map<MapHash, BeatSaverMapRecord>, BeatSaverProblem>> {
       const wanted = [
          ...new Set(
             hashes.flatMap((hash) => {
@@ -147,9 +147,21 @@ export function createBeatSaverCatalog() {
       const records = new Map<MapHash, BeatSaverMapRecord>();
 
       for (let index = 0; index < wanted.length; index += hashLookupChunkSize) {
+         if (signal?.aborted) {
+            return Result.err({ issue: 'fetch-failed', detail: 'aborted' });
+         }
+
          const chunk = wanted.slice(index, index + hashLookupChunkSize);
-         const fetched = await readJson(`${beatSaverApiOrigin}/maps/hash/${chunk.join(',')}`, hashResponseSchema);
-         if (Result.isError(fetched)) return Result.err<Map<MapHash, BeatSaverMapRecord>, BeatSaverProblem>(fetched.error);
+         const url = `${beatSaverApiOrigin}/maps/hash/${chunk.join(',')}`;
+         const fetched = await fetchJsonResource(
+            signal
+               ? { url, schema: hashResponseSchema, timeoutMs: fetchTimeoutMs, signal }
+               : { url, schema: hashResponseSchema, timeoutMs: fetchTimeoutMs }
+         );
+         if (Result.isError(fetched)) {
+            if (fetched.error.code === 'json.not-found') continue;
+            return Result.err(toCatalogProblem(fetched.error));
+         }
 
          for (const document of fetched.value) {
             for (const hash of chunk) {
@@ -159,7 +171,7 @@ export function createBeatSaverCatalog() {
          }
       }
 
-      return Result.ok<Map<MapHash, BeatSaverMapRecord>, BeatSaverProblem>(records);
+      return Result.ok(records);
    }
 
    return { search, getByKey, getByHashes, pageSize: searchPageSize };
