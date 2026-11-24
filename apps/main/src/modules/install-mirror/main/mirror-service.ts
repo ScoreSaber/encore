@@ -320,8 +320,9 @@ export function createMirrorService(options: {
       const local = await readLocalTree(root);
       if (Result.isError(local)) return Result.err<{ plan: Plan; links: MirrorLink[]; sourceFiles: number }, Problem>(local.error);
       const linkPaths = new Set(remote.value.links.map((link) => link.path));
-      const wanted = new Set(remote.value.entries.map((entry) => entry.path));
-      const download = remote.value.entries.filter((entry) => {
+      const entries = remote.value.entries.filter((entry) => entry.path.split('/').every((name) => Buffer.byteLength(name) <= 255));
+      const wanted = new Set(entries.map((entry) => entry.path));
+      const download = entries.filter((entry) => {
          const existing = local.value.files.get(entry.path);
          return !existing || existing.size !== entry.size || Math.trunc(existing.mtimeMs) !== Math.trunc(entry.mtimeMs);
       });
