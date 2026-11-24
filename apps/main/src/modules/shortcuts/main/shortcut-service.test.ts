@@ -28,7 +28,7 @@ test('adds a Steam shortcut without touching the entries Steam already had', asy
          getSteamRoots: async () => [join(root, 'steam')],
          writeWindowsShortcut: () => Result.ok(undefined),
          getProtocolState: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false }),
-         setProtocolRegistered: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false })
+         setProtocolRegistered: async () => ({ ok: true, value: { scheme: encoreProtocol, registered: true, canUnregister: false } })
       },
       getInstall: async () => ({ id: 'install_abcdef012345', name: 'Beat Saber 1.37.0' })
    });
@@ -60,7 +60,7 @@ test('writes a desktop entry Exec line that survives percent-encoded args and re
          getSteamRoots: async () => [],
          writeWindowsShortcut: () => Result.ok(undefined),
          getProtocolState: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false }),
-         setProtocolRegistered: () => ({ scheme: encoreProtocol, registered: true, canUnregister: false })
+         setProtocolRegistered: async () => ({ ok: true, value: { scheme: encoreProtocol, registered: true, canUnregister: false } })
       },
       getInstall: async () => ({ id: 'install_abcdef012345', name: 'Beat Saber' })
    });

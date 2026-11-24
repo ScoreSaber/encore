@@ -59,6 +59,19 @@ test.skipIf(process.platform === 'win32')('shows an install registered while an 
    expect((await registry.list()).installs).toContainEqual(expect.objectContaining({ path: installPath, status: 'ready' }));
 });
 
+test('keeps install details available when a registry refresh starts during lookup', async () => {
+   const { installRoot, registry, register } = await createInstallTestbed();
+   const install = await register(await writeInstallFolder(join(installRoot, 'Beat Saber')));
+   const unsubscribe = registry.subscribe(() => {
+      unsubscribe();
+      void registry.rescan();
+   });
+
+   const refreshing = registry.rescan();
+   expect(await registry.get(install.id)).toMatchObject({ id: install.id, path: install.path });
+   await refreshing;
+});
+
 async function openPipeWriter(pipePath: string) {
    const opened = await Result.tryPromise(() => open(pipePath, constants.O_WRONLY | constants.O_NONBLOCK));
    if (Result.isOk(opened)) return opened.value;

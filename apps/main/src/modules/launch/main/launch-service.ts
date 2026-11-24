@@ -42,6 +42,7 @@ type LaunchServiceOptions = {
    operations: OperationRegistry;
    runtime: LaunchRuntime;
    storeClientDelayMs?: number;
+   waitForPrefixCopy?: () => Promise<void> | undefined;
 };
 
 type GameLifecycle = { status: 'idle' } | { status: 'launching' } | { status: 'running'; process: RunningProcess };
@@ -207,14 +208,23 @@ export function createLaunchService(options: LaunchServiceOptions) {
       const resolved = await protonPlan(await options.settingsStore.getSnapshot());
       if (resolved.status === 'unavailable') return Result.err(createProblem(`launch.${resolved.issue}`, { detail: resolved.detail }));
 
+      await options.waitForPrefixCopy?.();
       const prepared = await runtime.prepareProtonCompatData(resolved.plan.compatDataPath);
       return prepared.map(() => resolved.plan);
    }
 
    async function start(request: LaunchRequestBody): Promise<Result<OperationSnapshot, Problem>> {
+      if (platform === 'linux' && options.waitForPrefixCopy?.()) {
+         return Result.err(createProblem('launch.prefix-copy-in-progress', { installId: request.installId }));
+      }
+
       const previewed = await preview(request);
       if (previewed.status === 'unavailable') {
          return Result.err(createProblem(`launch.${previewed.issue}`, { installId: previewed.installId, detail: previewed.detail }));
+      }
+
+      if (previewed.proton && options.waitForPrefixCopy?.()) {
+         return Result.err(createProblem('launch.prefix-copy-in-progress', { installId: request.installId }));
       }
 
       if (lifecycle.status !== 'idle') {
@@ -265,8 +275,12 @@ export function createLaunchService(options: LaunchServiceOptions) {
       }
 
       if (previewed.proton) {
-         options.operations.update(operationId, { message: previewed.proton.compatDataPath, progress: { phase: 'proton-prefix', percent: 50 } });
+         if (options.waitForPrefixCopy?.()) {
+            return options.operations.fail(operationId, createProblem('launch.prefix-copy-in-progress'));
+         }
+         if (signal.aborted) return;
 
+         options.operations.update(operationId, { message: previewed.proton.compatDataPath, progress: { phase: 'proton-prefix', percent: 50 } });
          const prepared = await runtime.prepareProtonCompatData(previewed.proton.compatDataPath);
          if (Result.isError(prepared)) return options.operations.fail(operationId, prepared.error);
       }
@@ -295,6 +309,10 @@ export function createLaunchService(options: LaunchServiceOptions) {
       const watchdog = previewed.options.closeEncore ? await runtime.prepareWatchdog() : null;
       if (watchdog && Result.isError(watchdog)) return options.operations.fail(operationId, watchdog.error);
       if (signal.aborted) return;
+
+      if (previewed.proton && options.waitForPrefixCopy?.()) {
+         return options.operations.fail(operationId, createProblem('launch.prefix-copy-in-progress'));
+      }
 
       const spawned = await runtime.spawn({
          ...command,
@@ -353,5 +371,5 @@ export function createLaunchService(options: LaunchServiceOptions) {
       };
    }
 
-   return { getState, getOptions, updateOptions, preview, start, subscribe, protonFor };
+   return { getState, getOptions, updateOptions, preview, start, subscribe, protonFor, isLaunchActive: () => lifecycle.status !== 'idle' };
 }

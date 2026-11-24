@@ -56,7 +56,9 @@ export function createInstallRegistry(options: InstallRegistryOptions) {
    }
 
    async function get(installId: InstallId) {
-      await list();
+      if (state.status === 'uninitialized') await rescan();
+      while (state.status === 'scanning') await state.pending;
+
       return state.status === 'ready' ? (state.details.get(installId) ?? null) : null;
    }
 

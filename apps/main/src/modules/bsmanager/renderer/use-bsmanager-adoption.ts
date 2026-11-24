@@ -14,9 +14,16 @@ type BSManagerAdoptionState =
    | { status: 'idle' }
    | { status: 'loading' }
    | { status: 'invalid'; plan: BSManagerPlanProblem }
-   | { status: 'ready'; plan: ReadyBSManagerPlan; selected: string[]; shareContent: boolean }
-   | { status: 'adopting'; plan: ReadyBSManagerPlan; selected: string[]; shareContent: boolean }
-   | { status: 'adopted'; plan: ReadyBSManagerPlan; selected: string[]; shareContent: boolean; outcome: BSManagerAdoptionOutcome }
+   | { status: 'ready'; plan: ReadyBSManagerPlan; selected: string[]; shareContent: boolean; copyPrefix: boolean }
+   | { status: 'adopting'; plan: ReadyBSManagerPlan; selected: string[]; shareContent: boolean; copyPrefix: boolean }
+   | {
+        status: 'adopted';
+        plan: ReadyBSManagerPlan;
+        selected: string[];
+        shareContent: boolean;
+        copyPrefix: boolean;
+        outcome: BSManagerAdoptionOutcome;
+     }
    | { status: 'failed'; error: Problem };
 
 export type BSManagerAdopter = ReturnType<typeof useBSManagerAdoption>;
@@ -66,7 +73,8 @@ export function useBSManagerAdoption(targetId: TargetId) {
             status: 'ready',
             plan,
             selected: plan.versions.filter((version) => version.status === 'ready').map((version) => version.id),
-            shareContent: !plan.sharedRootAdopted
+            shareContent: !plan.sharedRootAdopted,
+            copyPrefix: false
          }
       });
    }, []);
@@ -102,11 +110,11 @@ export function useBSManagerAdoption(targetId: TargetId) {
       [targetId]
    );
 
-   const setShareContent = useCallback(
-      (next: boolean) => {
+   const setOption = useCallback(
+      (option: 'shareContent' | 'copyPrefix', next: boolean) => {
          setScoped((current) => {
             if (current.targetId !== targetId || current.state.status !== 'ready') return current;
-            return { targetId, state: { ...current.state, shareContent: next } };
+            return { targetId, state: { ...current.state, [option]: next } };
          });
       },
       [targetId]
@@ -117,20 +125,26 @@ export function useBSManagerAdoption(targetId: TargetId) {
 
       const token = guard.current.next();
       const destination = targetId;
-      const { plan, selected: versionIds, shareContent: adoptSharedRoot } = state;
-      setScoped({ targetId: destination, state: { status: 'adopting', plan, selected: versionIds, shareContent: adoptSharedRoot } });
+      const { plan, selected: versionIds, shareContent: adoptSharedRoot, copyPrefix } = state;
+      setScoped({ targetId: destination, state: { ...state, status: 'adopting' } });
 
       const adopted = await inlineIpcResult(
-         () => bsmanager.adopt({ targetId: destination, rootPath: plan.rootPath, versionIds, adoptSharedRoot }),
+         () =>
+            bsmanager.adopt({
+               targetId: destination,
+               rootPath: plan.rootPath,
+               versionIds,
+               adoptSharedRoot,
+               copyPrefix,
+               replacePrefix: copyPrefix && plan.existingPrefix
+            }),
          createProblem('bsmanager.adopt-failed')
       );
       if (!guard.current.isCurrent(token) || activeTarget.current !== destination) return;
 
       setScoped({
          targetId: destination,
-         state: adopted.ok
-            ? { status: 'adopted', plan, selected: versionIds, shareContent: adoptSharedRoot, outcome: adopted.value }
-            : { status: 'failed', error: adopted.error }
+         state: adopted.ok ? { ...state, status: 'adopted', outcome: adopted.value } : { status: 'failed', error: adopted.error }
       });
    }, [bsmanager, state, targetId]);
 
@@ -144,7 +158,7 @@ export function useBSManagerAdoption(targetId: TargetId) {
       state,
       selected,
       shareContent,
-      setShareContent,
+      setOption,
       open,
       toggleVersion,
       confirm,

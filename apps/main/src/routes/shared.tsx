@@ -74,7 +74,7 @@ function SharedRoute() {
                   ) : null}
                </div>
                {selectedTarget ? <p className="text-muted-foreground mt-1 text-sm">{t('on', { device: targetName(selectedTarget) })}</p> : null}
-               {supportHint && !isLocal ? <p className="text-muted-foreground mt-1 text-xs">{supportHint}</p> : null}
+               {supportHint ? <p className="text-muted-foreground mt-1 text-xs">{supportHint}</p> : null}
             </div>
             <TargetPicker
                id="shared-target"

@@ -5,6 +5,8 @@ import { operationErrorSchema } from '@/modules/operations/contract';
 import { customSharedFolderSchema, sharedFolderIdSchema, sharedFolderLinkStateSchema } from '@/modules/shared-content/contract';
 import { storeKindSchema } from '@/modules/stores/contract';
 
+export const bsmanagerPrefixCopyPhase = 'bsmanager-prefix-copy';
+
 const bsmanagerIssueSchema = z.enum([
    'inspect-failed',
    'not-bsmanager',
@@ -13,6 +15,10 @@ const bsmanagerIssueSchema = z.enum([
    'nothing-to-clean',
    'nothing-to-adopt',
    'register-failed',
+   'prefix-copy-failed',
+   'prefix-copy-unavailable',
+   'prefix-replace-confirmation-required',
+   'prefix-copy-game-active',
    'unsupported-target'
 ]);
 
@@ -50,6 +56,8 @@ const readyBSManagerPlanSchema = z.object({
    versionsPath: z.string(),
    sharedContentPath: z.string(),
    currentSharedRootPath: z.string(),
+   prefixPath: z.string().nullable(),
+   existingPrefix: z.boolean(),
    sharedRootAdopted: z.boolean(),
    useSymlinks: z.boolean(),
    customFolders: z.array(customSharedFolderSchema),
@@ -74,13 +82,15 @@ const bsmanagerAdoptionOutcomeSchema = z.object({
 
 export const bsmanagerAdoptResultSchema = z.union([
    z.object({ ok: z.literal(true), value: bsmanagerAdoptionOutcomeSchema }),
-   z.object({ ok: z.literal(false), error: operationErrorSchema })
+   z.object({ ok: z.literal(false), error: operationErrorSchema.extend({ detail: z.string().optional() }) })
 ]);
 
 export const bsmanagerAdoptInputSchema = z.object({
    rootPath: z.string().min(1),
    versionIds: z.array(z.string().min(1)),
-   adoptSharedRoot: z.boolean()
+   adoptSharedRoot: z.boolean(),
+   copyPrefix: z.boolean().optional(),
+   replacePrefix: z.boolean().optional()
 });
 
 export const bsmanagerCleanupInputSchema = z.object({ rootPath: z.string().min(1) });

@@ -27,10 +27,13 @@ export function OperationOutcome({ operation, labels }: { operation: OperationSn
    if (operation.status === 'cancelled') return <p>{labels.cancelled}</p>;
 
    if (operation.status === 'failed') {
+      const details = operation.error?.details;
+      const detail = details && typeof details === 'object' && 'detail' in details && typeof details.detail === 'string' ? details.detail : null;
       return (
          <>
             <p>{labels.failed}</p>
             <p className="text-muted-foreground text-xs break-all">{operation.error?.message}</p>
+            {detail ? <p className="text-muted-foreground text-xs break-all">{detail}</p> : null}
          </>
       );
    }

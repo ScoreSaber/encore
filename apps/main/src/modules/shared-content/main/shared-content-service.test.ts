@@ -4,6 +4,7 @@ import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/mai
 import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
 import type { SharedContentActionRequest } from '@/modules/shared-content/contract';
 import { createSharedContentService } from '@/modules/shared-content/main/shared-content-service';
+import { customSharedFolderId } from '@/modules/shared-content/main/shared-library';
 
 import { chmod, mkdir, readdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -36,6 +37,24 @@ test('linking keeps conflicting files and unlinking never drains the shared fold
    expect(await readdir(sharedPlaylists)).toEqual(['one.bplist', 'same.bplist']);
    expect(await readdir(join(first.path, 'Playlists'))).toEqual(['one.bplist', 'same.bplist']);
    expect(await readdir(join(second.path, 'Playlists'))).toEqual(['one.bplist', 'same.bplist']);
+});
+
+test('links a nested custom folder when its install-side parents are missing', async () => {
+   const { installRoot, registry, settingsStore, operations, log, register } = await createInstallTestbed();
+   const shared = createSharedContentService({ registry, settingsStore, operations, log });
+   onTestFinished(() => shared.dispose());
+   const install = await register(await writeInstallFolder(join(installRoot, 'Beat Saber')));
+   const installRelativePath = 'UserData/ScoreSaber/Replays';
+   const libraryRelativePath = 'Replays';
+   const folderId = customSharedFolderId(installRelativePath, libraryRelativePath);
+   await settingsStore.updateLibrarySettings({ customFolders: [{ id: folderId, installRelativePath, libraryRelativePath }] });
+
+   const started = await shared.start({ installId: install.id, folderId, action: 'link' });
+   if (!started.ok) throw new Error(started.error.message);
+
+   expect(await waitForOperation(operations, started.value.id)).toMatchObject({ status: 'completed' });
+   const snapshot = await shared.list({ installId: install.id });
+   expect(snapshot.folders).toContainEqual(expect.objectContaining({ id: folderId, state: 'linked' }));
 });
 
 test('unlinking a foreign link takes files from where it points, not the active library', async () => {

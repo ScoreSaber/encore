@@ -68,7 +68,7 @@ function AppLinkRow({ disabled }: { disabled: boolean }) {
          label={t('scheme')}
          state={state?.protocol ?? null}
          schemes={state ? [state.protocol.scheme] : []}
-         failed={shortcuts.isError || setRegistered.isError}
+         failure={setRegistered.error?.message ?? (shortcuts.isError ? t('unavailable') : null)}
          busy={setRegistered.isPending}
          disabled={disabled}
          onChange={(registered) => setRegistered.mutate(registered)}
@@ -227,12 +227,13 @@ function useLinkProtocol<State extends ProtocolState>(
    options: UndefinedInitialDataOptions<State, Error, State, ReturnType<typeof apiKey>> & { queryKey: DataTag<QueryKey, State, Error> },
    register: (registered: boolean) => Promise<IpcResult<State>>
 ) {
+   const t = useTranslations('settings.deepLinks');
    const query = useQuery(options);
    const setRegistered = useSnapshotMutation(options.queryKey, async (registered: boolean) => unwrapIpc(await register(registered)));
 
    return {
       state: query.data ?? null,
-      failed: query.isError || setRegistered.isError,
+      failure: setRegistered.error?.message ?? (query.isError ? t('unavailable') : null),
       busy: setRegistered.isPending,
       onChange: (registered: boolean) => setRegistered.mutate(registered)
    };
@@ -243,7 +244,7 @@ function ProtocolRow({
    label,
    schemes,
    state,
-   failed,
+   failure,
    busy,
    disabled,
    onChange
@@ -252,7 +253,7 @@ function ProtocolRow({
    label: string;
    schemes: string[];
    state: ProtocolState | null;
-   failed: boolean;
+   failure: string | null;
    busy: boolean;
    disabled: boolean;
    onChange: (registered: boolean) => void;
@@ -271,7 +272,7 @@ function ProtocolRow({
                : label
          }
          htmlFor={id}
-         description={failed ? t('unavailable') : permanent ? t('registeredPermanent') : undefined}
+         description={failure ?? (permanent ? t('registeredPermanent') : undefined)}
          control={
             <Switch id={id} checked={state?.registered ?? false} disabled={disabled || !state || busy || permanent} onCheckedChange={onChange} />
          }

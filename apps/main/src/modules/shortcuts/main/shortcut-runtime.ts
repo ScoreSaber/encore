@@ -1,9 +1,10 @@
 import { Result } from 'better-result';
 import { app, shell } from 'electron';
 
+import type { IpcResult } from '@/ipc/core';
 import { causeMessage } from '@/lib/errors';
 import { encoreProtocol, type ShortcutProtocolState } from '@/modules/shortcuts/contract';
-import { canUnregisterProtocol, isProtocolRegistered, setProtocolRegistered } from '@/modules/shortcuts/main/deep-link';
+import { canUnregisterProtocol, isProtocolRegistered, setProtocolLinkRegistered } from '@/modules/shortcuts/main/deep-link';
 import { getSteamClientRoots } from '@/modules/stores/main/steam-client';
 
 type WindowsShortcutLink = {
@@ -20,7 +21,7 @@ export type ShortcutRuntime = {
    getSteamRoots: () => Promise<readonly string[]>;
    writeWindowsShortcut: (shortcutPath: string, link: WindowsShortcutLink) => Result<void, string>;
    getProtocolState: () => ShortcutProtocolState;
-   setProtocolRegistered: (registered: boolean) => ShortcutProtocolState;
+   setProtocolRegistered: (registered: boolean) => Promise<IpcResult<ShortcutProtocolState>>;
 };
 
 export function createShortcutRuntime(): ShortcutRuntime {
@@ -41,10 +42,7 @@ export function createShortcutRuntime(): ShortcutRuntime {
             catch: causeMessage
          }).andThen((written) => (written ? Result.ok() : Result.err('Windows refused to write the shortcut file'))),
       getProtocolState: protocolState,
-      setProtocolRegistered: (registered) => {
-         setProtocolRegistered(encoreProtocol, registered);
-         return protocolState();
-      }
+      setProtocolRegistered: (registered) => setProtocolLinkRegistered(encoreProtocol, registered)
    };
 }
 

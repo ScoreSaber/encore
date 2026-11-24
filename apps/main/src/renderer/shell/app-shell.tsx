@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { FolderSymlink, Home, Plus, Settings } from 'lucide-react';
+import { toast } from 'sonner';
 import { useTranslations } from 'use-intl';
 
 import { AppLink } from '@/components/app-link';
@@ -14,6 +15,7 @@ import { cn } from '@/components/utils';
 import { AlphaWarningDialog } from '@/modules/app/renderer/alpha-warning-dialog';
 import { appInfoQueryOptions } from '@/modules/app/renderer/app-queries';
 import { Onboarding } from '@/modules/app/renderer/onboarding';
+import { bsmanagerPrefixCopyPhase } from '@/modules/bsmanager/contract';
 import { AddInstallDialog } from '@/modules/downloads/renderer/add-install-dialog';
 import { useVersionDownload, type VersionDownloader } from '@/modules/downloads/renderer/use-version-download';
 import { ImportInstallDialog } from '@/modules/installs/renderer/import-install-dialog';
@@ -22,12 +24,13 @@ import { MapLinkDialog } from '@/modules/maps/renderer/map-link-dialog';
 import { ModelLinkDialog } from '@/modules/models/renderer/model-link-dialog';
 import { ModRepositoryLinkDialog } from '@/modules/mods/renderer/mod-repository-link-dialog';
 import { useRepositorySync } from '@/modules/mods/renderer/use-repository-sync';
+import { useOperations } from '@/modules/operations/renderer/use-operations';
 import { PlaylistLinkDialog } from '@/modules/playlists/renderer/playlist-link-dialog';
 import { QuestSetupDialog } from '@/modules/quest/renderer/quest-setup';
 import { SettingsNav } from '@/modules/settings/renderer/settings-nav';
 import { useSettings } from '@/modules/settings/renderer/use-settings';
 import { DeepLinkLaunchDialog } from '@/modules/shortcuts/renderer/deep-link-launch-dialog';
-import { runsOnSteamFrame } from '@/modules/targets/contract';
+import { localTargetId, runsOnSteamFrame } from '@/modules/targets/contract';
 import { useSelectedTarget } from '@/modules/targets/renderer/use-selected-target';
 import { SidebarUpdateButton } from '@/modules/updates/renderer/update-controls';
 import { sidebarItemClassName, SidebarTargets } from '@/renderer/shell/sidebar-targets';
@@ -159,8 +162,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
          <GlobalDialogs importer={importer} downloader={downloader} onQuest={() => setQuestSetupOpen(true)} />
          <QuestSetupDialog open={questSetupOpen} onOpenChange={setQuestSetupOpen} />
          <Toaster richColors closeButton />
+         {desktop && window.encore.platform === 'linux' ? <PrefixCopyToast /> : null}
       </>
    );
+}
+
+function PrefixCopyToast() {
+   const t = useTranslations('bsmanager');
+   const { operations } = useOperations(localTargetId);
+   const copying = operations.some(
+      (operation) => operation.kind === 'copy' && operation.status === 'running' && operation.progress?.phase === bsmanagerPrefixCopyPhase
+   );
+   const message = t('copyingPrefix');
+
+   useEffect(() => {
+      if (!copying) return;
+
+      const id = toast.loading(message, { dismissible: false, closeButton: false });
+      return () => {
+         toast.dismiss(id);
+      };
+   }, [copying, message]);
+
+   return null;
 }
 
 function SidebarLink({ to, isActive, children }: { to: '/' | '/shared' | '/settings'; isActive?: boolean; children: React.ReactNode }) {

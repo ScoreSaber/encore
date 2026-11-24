@@ -81,7 +81,7 @@ import { createSharedContentIpcModule } from '@/modules/shared-content/main/regi
 import { createSharedContentService } from '@/modules/shared-content/main/shared-content-service';
 import { defaultSharedContentRootPath } from '@/modules/shared-content/main/shared-paths';
 import { encoreProtocol } from '@/modules/shortcuts/contract';
-import { registerDeepLinkIntake, setProtocolRegistered } from '@/modules/shortcuts/main/deep-link';
+import { registerDeepLinkIntake, registerDefaultEncoreProtocol } from '@/modules/shortcuts/main/deep-link';
 import { createShortcutsIpcModule } from '@/modules/shortcuts/main/register-ipc';
 import { openSteamLink, readSteamClientState } from '@/modules/stores/main/steam-client';
 import { supportApi } from '@/modules/support/api';
@@ -139,10 +139,29 @@ function composeEncore(log: AppLogWriter) {
       operations: operationRegistry,
       settingsStore
    });
+   const bsmanagerLocations = {
+      platform: process.platform,
+      homePath,
+      documentsPath: app.getPath('documents'),
+      appDataPath: app.getPath('appData')
+   };
+   const bsmanagerAdoption = createBSManagerAdoptionService({
+      isLaunchActive: (): boolean => launchService.isLaunchActive(),
+      operations: operationRegistry,
+      registry: installRegistry,
+      settingsStore,
+      converter: createBSManagerSharedContentConverter({
+         operations: operationRegistry,
+         locations: bsmanagerLocations
+      }),
+      locations: bsmanagerLocations
+   });
+   void bsmanagerAdoption.migrateAdoptedSetup();
    const launchService = createLaunchService({
       settingsStore,
       registry: installRegistry,
       operations: operationRegistry,
+      waitForPrefixCopy: bsmanagerAdoption.waitForPrefixCopy,
       runtime: createLaunchRuntime({ prepareWatchdog: createLaunchWatchdog(dataPath) })
    });
    const ensureProton = async () => ensureSteamProton((await settingsStore.getSnapshot()).library.protonPath, process.arch);
@@ -286,22 +305,6 @@ function composeEncore(log: AppLogWriter) {
       implementApi(updatesApi, updater, { subscribe: updater.subscribe })
    ];
    const remoteReceiver = disposeOnQuit(createRemoteReceiverClient({ store: createRemoteTargetStore({ settingsStore, secretStore }) }));
-   const bsmanagerLocations = {
-      platform: process.platform,
-      homePath,
-      documentsPath: app.getPath('documents'),
-      appDataPath: app.getPath('appData')
-   };
-   const bsmanagerAdoption = createBSManagerAdoptionService({
-      registry: installRegistry,
-      settingsStore,
-      converter: createBSManagerSharedContentConverter({
-         operations: operationRegistry,
-         locations: bsmanagerLocations
-      }),
-      locations: bsmanagerLocations
-   });
-   void bsmanagerAdoption.migrateAdoptedSetup();
    const questHeadsets = disposeOnQuit(
       createQuestHeadsets({
          dataPath,
@@ -516,7 +519,7 @@ function composeEncore(log: AppLogWriter) {
 
 function startEncore() {
    electronApp.setAppUserModelId('com.scoresaber.encore');
-   setProtocolRegistered(encoreProtocol, true);
+   registerDefaultEncoreProtocol();
    const log = createAppLogWriter({ logsPath: app.getPath('logs'), homePath: app.getPath('home') });
    composeEncore(log);
    void log.info(`app started ${app.getVersion()} on ${process.platform} ${process.arch} (electron ${process.versions.electron})`);

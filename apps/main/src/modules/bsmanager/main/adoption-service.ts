@@ -1,8 +1,11 @@
 import { Result } from 'better-result';
 
-import { createProblem } from '@/lib/errors';
+import { causeMessage, createProblem } from '@/lib/errors';
 import { isPathInside, isSamePath, resolveFilesystemPath, pathExistsSafely, readPathInfo } from '@/lib/filesystem/path';
+import { translate } from '@/lib/messages';
+import { createSerialQueue } from '@/lib/state/machine';
 import {
+   bsmanagerPrefixCopyPhase,
    invalidBSManagerPlan,
    type BSManagerAdoptInput,
    type BSManagerCleanupInput,
@@ -29,9 +32,11 @@ import {
    type BSManagerLocations
 } from '@/modules/bsmanager/main/bsmanager-paths';
 import { findLinkedInstallFolders } from '@/modules/bsmanager/main/linked-folders';
+import { copyBSManagerPrefix, inspectBSManagerPrefix } from '@/modules/bsmanager/main/prefix';
 import type { BSManagerSharedContentConverter } from '@/modules/bsmanager/main/shared-content-converter';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import { customInstallName, stripMechanicalSuffix } from '@/modules/installs/main/naming';
+import type { OperationRegistry } from '@/modules/operations/main/operation-registry';
 import type { SettingsStore } from '@/modules/settings/main/settings-store';
 import {
    configuredSharedFolderDefinitions,
@@ -51,6 +56,8 @@ import { readdir } from 'node:fs/promises';
 import { basename, join, relative, sep } from 'node:path';
 
 type AdoptionServiceOptions = {
+   operations: OperationRegistry;
+   isLaunchActive?: () => boolean;
    registry: InstallRegistry;
    settingsStore: SettingsStore;
    converter: BSManagerSharedContentConverter;
@@ -60,6 +67,9 @@ type AdoptionServiceOptions = {
 type DescribedBSManagerVersion = Omit<BSManagerVersion, 'folders'> & { exists: boolean };
 
 export function createBSManagerAdoptionService(options: AdoptionServiceOptions) {
+   const prefixCopies = createSerialQueue();
+   let pendingPrefixCopies = 0;
+
    async function detect(): Promise<BSManagerDetection> {
       const resolved = await resolveRoot();
 
@@ -105,6 +115,9 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
          versionsPath,
          sharedContentPath,
          currentSharedRootPath,
+         ...(options.locations.platform === 'linux'
+            ? await inspectBSManagerPrefix(sharedContentPath, settings.diagnostics.dataPath)
+            : { prefixPath: null, existingPrefix: false }),
          sharedRootAdopted: isSamePath(currentSharedRootPath, sharedContentPath),
          useSymlinks: appConfig['use-symlinks'] ?? false,
          customFolders: described.customFolders,
@@ -112,13 +125,54 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       };
    }
 
-   async function adopt(request: BSManagerAdoptInput) {
+   function adopt(request: BSManagerAdoptInput) {
+      if (!request.copyPrefix) return adoptVersions(request);
+
+      const operation = options.operations.create({
+         kind: 'copy',
+         title: translate('bsmanager.copyingPrefix'),
+         progress: { phase: bsmanagerPrefixCopyPhase }
+      });
+      pendingPrefixCopies += 1;
+      return prefixCopies
+         .run(async () => {
+            try {
+               const adopted = await adoptVersions(request);
+               if (Result.isError(adopted)) options.operations.fail(operation.id, adopted.error);
+               else options.operations.complete(operation.id);
+               return adopted;
+            } catch (cause) {
+               const error = createProblem('bsmanager.adopt-failed', { cause });
+               options.operations.fail(operation.id, error);
+               return Result.err(error);
+            }
+         })
+         .finally(() => {
+            pendingPrefixCopies -= 1;
+         });
+   }
+
+   async function adoptVersions(request: BSManagerAdoptInput) {
       const planned = await plan();
       if (planned.status === 'invalid') return failure(planned.issue, planned.detail);
+      if (!isSamePath(request.rootPath, planned.rootPath)) return failure('not-bsmanager');
 
       const wanted = new Set(request.versionIds);
       const selected = planned.versions.filter((version) => wanted.has(version.id) && version.status === 'ready');
-      if (selected.length === 0) return failure('nothing-selected');
+      if (selected.length === 0 && !request.copyPrefix) return failure('nothing-selected');
+
+      if (request.copyPrefix) {
+         if (!planned.prefixPath) return failure('prefix-copy-unavailable');
+         if (options.isLaunchActive?.()) return failure('prefix-copy-game-active');
+         if (planned.existingPrefix && !request.replacePrefix) return failure('prefix-replace-confirmation-required');
+
+         const settings = await options.settingsStore.getSnapshot();
+         try {
+            await copyBSManagerPrefix(planned.prefixPath, settings.diagnostics.dataPath, request.replacePrefix === true);
+         } catch (cause) {
+            return failure('prefix-copy-failed', causeMessage(cause));
+         }
+      }
 
       let adopted = 0;
 
@@ -132,6 +186,15 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
          if (Result.isError(registered)) return failure('register-failed', registered.error.detail ?? registered.error.message);
 
          adopted += 1;
+      }
+
+      if (adopted === 0) {
+         return Result.ok({
+            rootPath: planned.rootPath,
+            sharedRootPath: planned.currentSharedRootPath,
+            adopted,
+            skipped: planned.versions.length
+         });
       }
 
       const settings = await options.settingsStore.getSnapshot();
@@ -292,7 +355,7 @@ export function createBSManagerAdoptionService(options: AdoptionServiceOptions) 
       return (await pathExistsSafely(bsmanagerVersionsPath(candidate))) || (await pathExistsSafely(bsmanagerConfigPath(candidate)));
    }
 
-   return { detect, plan, adopt, cleanup, migrateAdoptedSetup };
+   return { detect, plan, adopt, cleanup, migrateAdoptedSetup, waitForPrefixCopy: () => (pendingPrefixCopies > 0 ? prefixCopies.idle() : undefined) };
 }
 
 async function discoverCustomFolders(versions: DescribedBSManagerVersion[], sharedContentPath: string, configured: CustomSharedFolder[]) {
