@@ -16,6 +16,7 @@ test('passes launch options as argv entries and rejects ones that could carry a 
    const options = (overrides: Partial<LaunchOptions>): LaunchOptions => ({
       flags: [],
       args: [],
+      wrapper: [],
       environment: {},
       runAsAdmin: false,
       closeEncore: false,
@@ -46,12 +47,12 @@ test('runs the Windows build through Proton on Linux', async () => {
    await chmod(join(protonPath, 'proton'), 0o755);
    await harness.settingsStore.updateLibrarySettings({ protonPath });
 
-   await harness.start({ flags: [], args: [], environment: {}, runAsAdmin: true, closeEncore: false });
+   await harness.start({ flags: [], args: [], wrapper: ['mangohud', 'gamemoderun'], environment: {}, runAsAdmin: true, closeEncore: false });
 
    expect(harness.spawned).toMatchObject([
       {
-         executablePath: join(protonPath, 'proton'),
-         args: ['run', join(harness.install.path, 'Beat Saber.exe'), '--no-yeet'],
+         executablePath: 'mangohud',
+         args: ['gamemoderun', join(protonPath, 'proton'), 'run', join(harness.install.path, 'Beat Saber.exe'), '--no-yeet'],
          runAsAdmin: false,
          env: {
             WINEDLLOVERRIDES: 'winhttp=n,b',
@@ -91,7 +92,7 @@ test('stops the close-encore watchdog once an uncancelable operation starts', as
    let stopped = false;
    void harness.watchdogExited.then(() => (stopped = true));
 
-   await harness.start({ flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: true });
+   await harness.start({ flags: [], args: [], wrapper: [], environment: {}, runAsAdmin: false, closeEncore: true });
    await Promise.resolve();
    expect(stopped).toBe(false);
 

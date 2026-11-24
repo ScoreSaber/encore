@@ -8,23 +8,37 @@ import { launchOptionsQueryOptions } from '@/modules/launch/renderer/launch-quer
 import { unwrapIpc, unwrapTarget } from '@/renderer/ipc-result';
 import { useOptimisticMutation } from '@/renderer/query/api-query';
 
-function formatEnvironment(environment: LaunchOptions['environment']) {
-   return formatLaunchArgs(Object.entries(environment).map(([name, value]) => `${name}=${value}`));
+const gameToken = '%command%';
+
+function formatLaunchLine({ environment, wrapper, args }: LaunchOptions) {
+   const prefix = [...Object.entries(environment).map(([name, value]) => `${name}=${value}`), ...wrapper];
+   return formatLaunchArgs(prefix.length > 0 ? [...prefix, gameToken, ...args] : args);
 }
 
-function parseEnvironment(input: string) {
-   return Object.fromEntries(
-      parseLaunchArgs(input).map((assignment) => {
-         const separator = assignment.indexOf('=');
-         return separator === -1 ? [assignment, ''] : [assignment.slice(0, separator), assignment.slice(separator + 1)];
-      })
-   );
+function parseLaunchLine(input: string) {
+   const tokens = parseLaunchArgs(input);
+   const gameIndex = tokens.indexOf(gameToken);
+   if (gameIndex === -1) return { environment: {}, wrapper: [], args: tokens };
+
+   const prefix = tokens.slice(0, gameIndex);
+   const wrapperIndex = prefix.findIndex((token) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(token));
+   const environmentEnd = wrapperIndex === -1 ? prefix.length : wrapperIndex;
+   return {
+      environment: Object.fromEntries(
+         prefix.slice(0, environmentEnd).map((assignment) => {
+            const separator = assignment.indexOf('=');
+            return [assignment.slice(0, separator), assignment.slice(separator + 1)];
+         })
+      ),
+      wrapper: prefix.slice(environmentEnd),
+      args: tokens.slice(gameIndex + 1)
+   };
 }
 
 export function useLaunchOptions(request: InstallActionRequest, legacyOptions: LaunchOptions | null) {
    const stored = useQuery(launchOptionsQueryOptions(request));
    const requestKey = `${request.targetId}\0${request.installId}`;
-   const [typedState, setTypedState] = useState<{ requestKey: string; args?: string; environment?: string }>({ requestKey });
+   const [typedState, setTypedState] = useState<{ requestKey: string; line?: string }>({ requestKey });
    const save = useOptimisticMutation({
       queryKey: launchOptionsQueryOptions(request).queryKey,
       run: async (options: LaunchOptions) => unwrapIpc(unwrapTarget(await window.encore.launch.updateOptions({ ...request, options }))),
@@ -44,15 +58,10 @@ export function useLaunchOptions(request: InstallActionRequest, legacyOptions: L
       options,
       ready: !stored.isPending,
       failure: save.error?.message ?? null,
-      argsInput: typed.args ?? formatLaunchArgs(options.args),
-      environmentInput: typed.environment ?? formatEnvironment(options.environment),
-      setArgsInput: (args: string) => {
-         setTypedState({ ...typed, args });
-         update({ ...options, args: parseLaunchArgs(args) });
-      },
-      setEnvironmentInput: (environment: string) => {
-         setTypedState({ ...typed, environment });
-         update({ ...options, environment: parseEnvironment(environment) });
+      launchLine: typed.line ?? formatLaunchLine(options),
+      setLaunchLine: (line: string) => {
+         setTypedState({ requestKey, line });
+         update({ ...options, ...parseLaunchLine(line) });
       },
       setRunAsAdmin: (runAsAdmin: boolean) => update({ ...options, runAsAdmin }),
       setCloseEncore: (closeEncore: boolean) => update({ ...options, closeEncore }),

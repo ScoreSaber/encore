@@ -92,14 +92,18 @@ export function buildProtonCommand(input: {
    verb?: 'run' | 'runinprefix' | 'getcompatpath';
    executablePath: string;
    args: readonly string[];
+   wrapper?: readonly string[];
    workingDirectory: string;
    env: LaunchEnvironment;
 }) {
    const verb = input.verb ?? 'run';
    const protonArgs = [input.proton.protonBinaryPath, verb, input.executablePath, ...input.args];
-   const protonCommand = input.proton.steamRunWrapper
-      ? { executablePath: steamRunCommand, args: protonArgs }
-      : { executablePath: input.proton.protonBinaryPath, args: protonArgs.slice(1) };
+   const [protonCommandPath = input.proton.protonBinaryPath, ...protonCommandArgs] = [
+      ...(input.wrapper ?? []),
+      ...(input.proton.steamRunWrapper ? [steamRunCommand] : []),
+      ...protonArgs
+   ];
+   const protonCommand = { executablePath: protonCommandPath, args: protonCommandArgs };
    const command =
       verb === 'run' && input.proton.reaperPath
          ? {

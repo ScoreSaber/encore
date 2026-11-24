@@ -36,7 +36,7 @@ test('adds a Steam shortcut without touching the entries Steam already had', asy
       targetId: 'local',
       installId: 'install_abcdef012345',
       kind: 'steam',
-      options: { flags: [], args: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: false, closeEncore: false }
+      options: { flags: [], args: [], wrapper: [], environment: { SOME_ENV_VAR: '1' }, runAsAdmin: false, closeEncore: false }
    };
 
    expect(Result.isOk(await shortcuts.create(request))).toBe(true);
@@ -69,7 +69,7 @@ test('writes a desktop entry Exec line that survives percent-encoded args and re
       targetId: 'local',
       installId: 'install_abcdef012345',
       kind: 'desktop',
-      options: { flags: [], args: ['100%', 'C:\\x'], environment: {}, runAsAdmin: false, closeEncore: false }
+      options: { flags: [], args: ['100%', 'C:\\x'], wrapper: [], environment: {}, runAsAdmin: false, closeEncore: false }
    });
    if (Result.isError(created)) throw new Error('the shortcut was not written');
 

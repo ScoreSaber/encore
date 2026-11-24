@@ -93,6 +93,7 @@ const launchEnvironmentSchema = z
 export const launchOptionsSchema = z.object({
    flags: z.array(launchFlagSchema).max(launchFlags.length),
    args: launchArgsSchema,
+   wrapper: launchArgsSchema.default([]),
    environment: launchEnvironmentSchema.default({}),
    runAsAdmin: z.boolean(),
    closeEncore: z.boolean().default(false)
@@ -196,7 +197,7 @@ export function launchFlagsFor(platform: LaunchPlatform, steamFrame: boolean): r
 }
 
 export function createDefaultLaunchOptions(): LaunchOptions {
-   return { flags: [], args: [], environment: {}, runAsAdmin: false, closeEncore: false };
+   return { flags: [], args: [], wrapper: [], environment: {}, runAsAdmin: false, closeEncore: false };
 }
 
 export function unavailableLaunchPreview(request: { installId: InstallId }, issue: LaunchIssue, detail?: string): UnavailableLaunchPreview {

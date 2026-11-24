@@ -1040,13 +1040,10 @@
             "description": "Closes Encore while Beat Saber is running to conserve system resources"
          }
       },
-      "args": {
-         "label": "Extra arguments",
-         "placeholder": "--example value"
-      },
-      "environment": {
-         "label": "Environment variables",
-         "placeholder": "SOME_ENV_VAR=1"
+      "line": {
+         "label": "Launch options",
+         "placeholder": "SOME_ENV_VAR=1 %command% --example",
+         "placeholderLinux": "SOME_ENV_VAR=1 mangohud %command% --example"
       },
       "preview": {
          "executable": "Executable",
@@ -1058,6 +1055,7 @@
          "compatData": "Compatibility data",
          "protonLogs": "Proton log folder",
          "wrapper": "Wrapper",
+         "wrapperCommand": "Wrapper command",
          "steamRun": "steam-run, picked because NixOS was detected",
          "flatpakHost": "flatpak-spawn, running Proton on the host",
          "flatpakSteamRun": "flatpak-spawn -> steam-run, running Proton on the NixOS host"

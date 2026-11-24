@@ -135,30 +135,16 @@ export function LaunchAdvanced({ launch }: { launch: InstallLaunch }) {
       <CollapsibleContent className="flex flex-col gap-3 pb-1">
          <LaunchProton launch={launch} when="ready" />
          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="launch-environment" className="text-xs">
-               {t('environment.label')}
+            <Label htmlFor="launch-line" className="text-xs">
+               {t('line.label')}
             </Label>
             <Input
-               id="launch-environment"
-               className="max-w-md"
-               value={launch.environmentInput}
+               id="launch-line"
+               className="max-w-xl font-mono text-xs"
+               value={launch.launchLine}
                disabled={disabled}
-               placeholder={t('environment.placeholder')}
-               onChange={(event) => launch.setEnvironmentInput(event.target.value)}
-            />
-         </div>
-
-         <div className="flex flex-col gap-1.5">
-            <Label htmlFor="launch-args" className="text-xs">
-               {t('args.label')}
-            </Label>
-            <Input
-               id="launch-args"
-               className="max-w-md"
-               value={launch.argsInput}
-               disabled={disabled}
-               placeholder={t('args.placeholder')}
-               onChange={(event) => launch.setArgsInput(event.target.value)}
+               placeholder={t(launch.platform === 'linux' ? 'line.placeholderLinux' : 'line.placeholder')}
+               onChange={(event) => launch.setLaunchLine(event.target.value)}
             />
          </div>
 
@@ -262,6 +248,9 @@ function LaunchCommand({ preview }: { preview: ReadyLaunchPreview }) {
 
          {preview.proton ? (
             <>
+               {preview.options.wrapper.length > 0 ? (
+                  <CommandRow label={t('preview.wrapperCommand')} value={formatLaunchArgs(preview.options.wrapper)} />
+               ) : null}
                <CommandRow label={t('preview.proton')} value={preview.proton.protonBinaryPath} />
                <CommandRow label={t('preview.compatData')} value={preview.proton.compatDataPath} />
                {preview.proton.logPath ? <CommandRow label={t('preview.protonLogs')} value={preview.proton.logPath} /> : null}

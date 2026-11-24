@@ -286,6 +286,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
               proton: previewed.proton,
               executablePath: previewed.executablePath,
               args: previewed.args,
+              wrapper: previewed.options.wrapper,
               workingDirectory: previewed.workingDirectory,
               env
            })
@@ -347,7 +348,8 @@ export function createLaunchService(options: LaunchServiceOptions) {
 
       return {
          ...launchOptions,
-         flags: launchFlags.filter((flag) => supportedFlags.includes(flag) && launchOptions.flags.includes(flag))
+         flags: launchFlags.filter((flag) => supportedFlags.includes(flag) && launchOptions.flags.includes(flag)),
+         wrapper: platform === 'linux' ? launchOptions.wrapper : []
       };
    }
 
