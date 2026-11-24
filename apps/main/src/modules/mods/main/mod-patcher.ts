@@ -2,7 +2,7 @@ import { Result } from 'better-result';
 
 import { requireThirtyTwoBit } from '@/lib/dotnet/clr-header';
 import { createProblem, type Problem } from '@/lib/errors';
-import { beatSaberExecutablePath } from '@/modules/installs/main/beat-saber-files';
+import { beatSaberExecutablePath, isArm64BeatSaberInstall } from '@/modules/installs/main/beat-saber-files';
 import type { ProtonLaunchPlan } from '@/modules/launch/contract';
 import { buildProtonCommand, buildProtonEnv } from '@/modules/launch/main/launch-options';
 import { bsipaLoaderName, bsipaPatcherName } from '@/modules/mods/main/mod-paths';
@@ -69,6 +69,9 @@ export function createModPatcher(options: ModPatcherOptions = {}) {
       const gamePath = beatSaberExecutablePath(installPath);
       if (!(await fileExists(executablePath)) || !(await fileExists(gamePath))) {
          return Result.err<void, Problem>(createProblem('mods.patcher.missing'));
+      }
+      if (await isArm64BeatSaberInstall(installPath)) {
+         return Result.err<void, Problem>(createProblem('launch.arm64-unsupported'));
       }
 
       if (!proton) return run({ executablePath, args: [gamePath, ...args], cwd: installPath, timeoutMs: patcherTimeoutMs });

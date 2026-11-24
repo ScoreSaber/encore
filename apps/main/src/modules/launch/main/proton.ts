@@ -4,6 +4,7 @@ import { causeCode, createProblem } from '@/lib/errors';
 import { resolveFilesystemPath, pathExists } from '@/lib/filesystem/path';
 import { isSteamFrame } from '@/lib/platform/steam-frame';
 import type { ProtonIssue, ProtonValidation } from '@/modules/launch/contract';
+import { readSteamLibraryPaths } from '@/modules/stores/main/steam';
 import { findSteamClientRoot, openSteamLink } from '@/modules/stores/main/steam-client';
 
 import { constants } from 'node:fs';
@@ -11,30 +12,44 @@ import { access, mkdir, readdir, stat } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 
 const protonBinaryName = 'proton';
+const arm64WineBinarySegments = ['files', 'bin-arm64', 'wine'];
 
 export type LinuxLaunchHost = {
    steamClientPath: string | null;
    nixOs: boolean;
    flatpak: boolean;
    steamFrame: boolean;
+   reaperPath: string | null;
 };
 
 export async function findInstalledProton(steamClientPath: string, arch: string) {
-   const commonPath = join(steamClientPath, 'steamapps', 'common');
-   const listed = await Result.tryPromise(() => readdir(commonPath, { withFileTypes: true }));
-   if (Result.isError(listed)) return null;
+   const libraries = await readSteamLibraryPaths(steamClientPath);
+   const candidates: { name: string; path: string }[] = [];
 
-   const candidates = listed.value.filter((entry) => entry.isDirectory() && entry.name.startsWith('Proton')).map((entry) => entry.name);
+   for (const libraryPath of libraries) {
+      const commonPath = join(libraryPath, 'steamapps', 'common');
+      const listed = await Result.tryPromise(() => readdir(commonPath, { withFileTypes: true }));
+      if (Result.isError(listed)) continue;
+
+      for (const entry of listed.value) {
+         if (entry.isDirectory() && entry.name.startsWith('Proton')) {
+            candidates.push({ name: entry.name, path: join(commonPath, entry.name) });
+         }
+      }
+   }
+
    const rank = (name: string) => (arch === 'arm64' && name.includes('ARM64') ? 2 : 0) + (name.includes('Experimental') ? 1 : 0);
-   const ordered = candidates.toSorted((first, second) => rank(second) - rank(first) || second.localeCompare(first, undefined, { numeric: true }));
-   for (const name of ordered) {
-      const validation = await validateProtonFolder(join(commonPath, name));
+   const ordered = candidates.toSorted(
+      (first, second) => rank(second.name) - rank(first.name) || second.name.localeCompare(first.name, undefined, { numeric: true })
+   );
+   for (const candidate of ordered) {
+      const validation = await validateProtonFolder(candidate.path, arch);
       if (validation.status === 'ok') return validation.path;
    }
    return null;
 }
 
-export async function validateProtonFolder(input: string): Promise<ProtonValidation> {
+export async function validateProtonFolder(input: string, arch?: string): Promise<ProtonValidation> {
    const trimmed = input.trim();
    if (!trimmed) return invalidProtonFolder(trimmed, 'empty');
    if (!isAbsolute(trimmed)) return invalidProtonFolder(trimmed, 'not-absolute');
@@ -64,7 +79,28 @@ export async function validateProtonFolder(input: string): Promise<ProtonValidat
    });
    if (Result.isError(executable)) return invalidProtonFolder(path, 'proton-binary-not-executable');
 
+   if (arch === 'arm64' && !(await isExecutableFile(join(path, ...arm64WineBinarySegments)))) {
+      return invalidProtonFolder(path, 'proton-arm64-required');
+   }
+
    return { status: 'ok', path, protonBinaryPath };
+}
+
+async function findSteamReaper(steamClientPath: string, arch: string) {
+   const directories = arch === 'arm64' ? ['steamrtarm64', 'ubuntu12_32'] : ['ubuntu12_32', 'steamrtarm64'];
+   for (const directory of directories) {
+      const candidate = join(steamClientPath, directory, 'reaper');
+      if (await isExecutableFile(candidate)) return candidate;
+   }
+   return null;
+}
+
+async function isExecutableFile(filePath: string) {
+   const stats = await Result.tryPromise(() => stat(filePath));
+   if (Result.isError(stats) || !stats.value.isFile()) return false;
+
+   const executable = await Result.tryPromise(() => access(filePath, constants.X_OK));
+   return Result.isOk(executable);
 }
 
 function invalidProtonFolder(path: string, issue: ProtonIssue): ProtonValidation {
@@ -87,7 +123,8 @@ export async function readLinuxLaunchHost(): Promise<LinuxLaunchHost> {
       isFlatpak(),
       Promise.resolve(isSteamFrame())
    ]);
-   return { steamClientPath, nixOs, flatpak, steamFrame };
+   const reaperPath = steamClientPath ? await findSteamReaper(steamClientPath, process.arch) : null;
+   return { steamClientPath, nixOs, flatpak, steamFrame, reaperPath };
 }
 
 async function isNixOs() {
@@ -114,7 +151,7 @@ export function requestSteamProton(arch: string) {
 
 export async function ensureSteamProton(protonPath: string | null, arch: string) {
    if (process.platform !== 'linux') return false;
-   if (protonPath && (await validateProtonFolder(protonPath)).status === 'ok') return false;
+   if (protonPath && (await validateProtonFolder(protonPath, arch)).status === 'ok') return false;
    const host = await readLinuxLaunchHost();
    if (!host.steamFrame || !host.steamClientPath || (await findInstalledProton(host.steamClientPath, arch))) return false;
    return requestSteamProton(arch);

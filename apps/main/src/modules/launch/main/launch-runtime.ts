@@ -58,7 +58,7 @@ export function createLaunchRuntime({ prepareWatchdog }: { prepareWatchdog: Prep
       readSteamClient: readSteamClientState,
       readOculusClient: readOculusClientState,
       readLinuxHost: readLinuxLaunchHost,
-      validateProtonFolder,
+      validateProtonFolder: (path) => validateProtonFolder(path, process.arch),
       findProton: (steamClientPath) => findInstalledProton(steamClientPath, process.arch),
       prepareProtonCompatData: ensureProtonCompatData,
       startSteamClient: async () => {

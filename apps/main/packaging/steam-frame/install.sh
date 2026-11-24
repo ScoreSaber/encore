@@ -16,7 +16,7 @@ cat > "$data/applications/com.scoresaber.encore.desktop" <<DESKTOP
 Type=Application
 Name=Encore
 Comment=Beat Saber companion
-Exec=env APPIMAGE_EXTRACT_AND_RUN=1 $apps/Encore.AppImage %U
+Exec=env APPIMAGE_EXTRACT_AND_RUN=1 "$apps/Encore.AppImage" %U
 Icon=encore
 Terminal=false
 Categories=Utility;

@@ -42,6 +42,11 @@ export async function findSteamInstalls() {
    return candidates;
 }
 
+export async function readSteamLibraryPaths(steamClientPath: string) {
+   const configured = await readSteamLibraries(join(steamClientPath, 'steamapps', 'libraryfolders.vdf'));
+   return [...new Set([steamClientPath, ...configured])];
+}
+
 async function findLibraryFoldersFile() {
    for (const root of await getSteamClientRoots()) {
       const libraryFoldersPath = join(root, 'steamapps', 'libraryfolders.vdf');

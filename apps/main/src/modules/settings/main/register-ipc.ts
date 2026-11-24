@@ -35,7 +35,7 @@ async function readProtonState(settingsStore: SettingsStore): Promise<ProtonStat
    return {
       supported,
       path: protonPath,
-      validation: protonPath ? await validateProtonFolder(protonPath) : null,
+      validation: protonPath ? await validateProtonFolder(protonPath, process.arch) : null,
       detectedPath: host.steamClientPath ? await findInstalledProton(host.steamClientPath, process.arch) : null,
       nixOs: host.nixOs,
       flatpak: host.flatpak
@@ -53,7 +53,7 @@ async function chooseProtonFolder(event: IpcMainInvokeEvent, settingsStore: Sett
    });
    if (picked.canceled || !picked.filePaths[0]) return { status: 'cancelled' };
 
-   return { status: 'selected', selected: await validateProtonFolder(picked.filePaths[0]) };
+   return { status: 'selected', selected: await validateProtonFolder(picked.filePaths[0], process.arch) };
 }
 
 async function chooseInstallRoot(event: IpcMainInvokeEvent, settingsStore: SettingsStore): Promise<InstallRootChoice> {

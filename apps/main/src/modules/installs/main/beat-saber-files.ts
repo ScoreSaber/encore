@@ -10,6 +10,10 @@ import { isAbsolute, join } from 'node:path';
 export const beatSaberExecutableName = 'Beat Saber.exe';
 export const beatSaberDataDirectoryName = 'Beat Saber_Data';
 
+const bsArm64MarkerDirectory = '.bs-arm64';
+const peHeaderScanBytes = 4096;
+const peMachineArm64 = 0xaa64;
+const peMachineArm64Ec = 0xa641;
 const versionAnchor = 'public.app-category.games';
 const versionWindowBytes = 256;
 const maxScanBytes = 512 * 1024;
@@ -23,28 +27,49 @@ export function beatSaberExecutablePath(installPath: string) {
    return join(installPath, beatSaberExecutableName);
 }
 
+export async function isArm64BeatSaberInstall(installPath: string) {
+   const marker = await pathExists(join(installPath, bsArm64MarkerDirectory));
+   if (Result.isOk(marker) && marker.value) return true;
+
+   const read = await readFileHead(beatSaberExecutablePath(installPath), peHeaderScanBytes);
+   if (Result.isError(read)) return false;
+
+   const header = read.value;
+   if (header.length < 0x40 || header.toString('latin1', 0, 2) !== 'MZ') return false;
+   const peOffset = header.readUInt32LE(0x3c);
+   if (peOffset + 6 > header.length || header.toString('latin1', peOffset, peOffset + 4) !== 'PE\0\0') return false;
+
+   const machine = header.readUInt16LE(peOffset + 4);
+   return machine === peMachineArm64 || machine === peMachineArm64Ec;
+}
+
 export async function readBeatSaberVersion(installPath: string) {
-   const contents = await Result.tryPromise({
+   const read = await readFileHead(join(installPath, beatSaberDataDirectoryName, 'globalgamemanagers'), maxScanBytes);
+   if (Result.isError(read)) return null;
+
+   const contents = read.value.toString('latin1');
+   const anchorIndex = contents.indexOf(versionAnchor);
+   if (anchorIndex < 0) return null;
+
+   const start = anchorIndex + versionAnchor.length;
+   return versionPattern.exec(contents.slice(start, start + versionWindowBytes))?.[0] ?? null;
+}
+
+function readFileHead(filePath: string, maxBytes: number) {
+   return Result.tryPromise({
       try: async () => {
-         const handle = await open(join(installPath, beatSaberDataDirectoryName, 'globalgamemanagers'), 'r');
+         const handle = await open(filePath, 'r');
 
          try {
-            const buffer = Buffer.alloc(maxScanBytes);
-            const { bytesRead } = await handle.read(buffer, 0, maxScanBytes, 0);
-            return buffer.subarray(0, bytesRead).toString('latin1');
+            const buffer = Buffer.alloc(maxBytes);
+            const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+            return buffer.subarray(0, bytesRead);
          } finally {
             await handle.close();
          }
       },
       catch: () => null
    });
-   if (Result.isError(contents)) return null;
-
-   const anchorIndex = contents.value.indexOf(versionAnchor);
-   if (anchorIndex < 0) return null;
-
-   const start = anchorIndex + versionAnchor.length;
-   return versionPattern.exec(contents.value.slice(start, start + versionWindowBytes))?.[0] ?? null;
 }
 
 export async function inspectInstallFolder(sourcePath: string): Promise<InstallFolderInspection> {

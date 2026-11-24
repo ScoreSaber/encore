@@ -6,7 +6,7 @@ import { pathExists } from '@/lib/filesystem/path';
 import { translate } from '@/lib/messages';
 import { createLatestGuard } from '@/lib/state/machine';
 import type { InstallDetail } from '@/modules/installs/contract';
-import { beatSaberExecutablePath } from '@/modules/installs/main/beat-saber-files';
+import { beatSaberExecutablePath, isArm64BeatSaberInstall } from '@/modules/installs/main/beat-saber-files';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
    createDefaultLaunchOptions,
@@ -105,6 +105,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
       const exists = await pathExists(executablePath);
       if (Result.isError(exists)) return unavailableLaunchPreview(request, 'inspect-failed', exists.error.detail);
       if (!exists.value) return unavailableLaunchPreview(request, 'executable-missing', executablePath);
+      if (await isArm64BeatSaberInstall(install.path)) return unavailableLaunchPreview(request, 'arm64-unsupported');
 
       const warnings: LaunchWarning[] = [];
       let proton: ProtonLaunchPlan | null = null;
@@ -196,6 +197,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
             steamRunWrapper: host.nixOs,
             flatpakHost: host.flatpak,
             steamFrame: host.steamFrame,
+            reaperPath: host.steamFrame ? host.reaperPath : null,
             logPath: null
          }
       };

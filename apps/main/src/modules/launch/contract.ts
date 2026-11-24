@@ -11,6 +11,7 @@ const protonIssueSchema = z.enum([
    'not-a-directory',
    'not-absolute',
    'not-found',
+   'proton-arm64-required',
    'proton-binary-not-executable',
    'proton-binary-missing'
 ]);
@@ -35,6 +36,7 @@ const protonLaunchPlanSchema = z.object({
    steamRunWrapper: z.boolean(),
    flatpakHost: z.boolean(),
    steamFrame: z.boolean(),
+   reaperPath: z.string().nullable().default(null),
    logPath: z.string().nullable()
 });
 
@@ -105,6 +107,7 @@ export const launchRequestBodySchema = launchOptionsRequestSchema.extend({
 });
 
 const launchIssueSchema = z.enum([
+   'arm64-unsupported',
    'executable-missing',
    'inspect-failed',
    'invalid-options',

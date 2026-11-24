@@ -27,6 +27,27 @@ export function buildLaunchArgs(input: { flags: readonly LaunchFlag[]; args: rea
    return [...args, ...input.args];
 }
 
+function cleanLinuxSearchPath(searchPath: string | undefined, excludeDir?: string) {
+   if (!searchPath) return searchPath;
+
+   const normalize = (dir: string) => dir.replace(/\/+$/, '') || '/';
+   const excluded = excludeDir ? normalize(excludeDir) : undefined;
+   const seen = new Set<string>();
+   const dirs: string[] = [];
+
+   for (const dir of searchPath.split(':')) {
+      if (!dir) continue;
+      const normalized = normalize(dir);
+      if (seen.has(normalized)) continue;
+      if (excluded && (normalized === excluded || normalized.startsWith(`${excluded}/`))) continue;
+
+      seen.add(normalized);
+      dirs.push(dir);
+   }
+
+   return dirs.join(':');
+}
+
 export function buildLaunchEnv(input: {
    store: StoreKind | null;
    installPath: string;
@@ -43,22 +64,27 @@ export function buildLaunchEnv(input: {
    if (!input.proton) return environment;
 
    environment.SteamEnv = '1';
-   if (input.proton.steamFrame) environment.DISABLE_VULKAN_FDM_INJECTION_LAYER = '1';
+   if (input.proton.steamFrame) environment.DISABLE_VULKAN_FDM_INJECTION_LAYER ??= '1';
    if (input.proton.logPath) {
       environment.PROTON_LOG = '1';
       environment.PROTON_LOG_DIR = input.proton.logPath;
    }
-   return { ...environment, ...buildProtonEnv(input.proton, input.installPath) };
+   return { ...environment, ...buildProtonEnv(input.proton, input.installPath, 'XDG_DATA_DIRS' in environment) };
 }
 
-export function buildProtonEnv(proton: ProtonLaunchPlan, installPath: string): LaunchEnvironment {
-   return {
+export function buildProtonEnv(proton: ProtonLaunchPlan, installPath: string, preserveXdgDataDirs = false): LaunchEnvironment {
+   const env: LaunchEnvironment = {
       WINEDLLOVERRIDES: wineDllOverrides,
       STEAM_COMPAT_DATA_PATH: proton.compatDataPath,
       STEAM_COMPAT_INSTALL_PATH: installPath,
       STEAM_COMPAT_CLIENT_INSTALL_PATH: proton.steamClientPath,
       STEAM_COMPAT_APP_ID: beatSaberSteamAppId
    };
+   if (!preserveXdgDataDirs) {
+      const cleaned = cleanLinuxSearchPath(process.env.XDG_DATA_DIRS, process.env.APPDIR);
+      if (cleaned && cleaned !== process.env.XDG_DATA_DIRS) env.XDG_DATA_DIRS = cleaned;
+   }
+   return env;
 }
 
 export function buildProtonCommand(input: {
@@ -69,10 +95,18 @@ export function buildProtonCommand(input: {
    workingDirectory: string;
    env: LaunchEnvironment;
 }) {
-   const protonArgs = [input.proton.protonBinaryPath, input.verb ?? 'run', input.executablePath, ...input.args];
-   const command = input.proton.steamRunWrapper
+   const verb = input.verb ?? 'run';
+   const protonArgs = [input.proton.protonBinaryPath, verb, input.executablePath, ...input.args];
+   const protonCommand = input.proton.steamRunWrapper
       ? { executablePath: steamRunCommand, args: protonArgs }
       : { executablePath: input.proton.protonBinaryPath, args: protonArgs.slice(1) };
+   const command =
+      verb === 'run' && input.proton.reaperPath
+         ? {
+              executablePath: input.proton.reaperPath,
+              args: ['SteamLaunch', `AppId=${beatSaberSteamAppId}`, '--', protonCommand.executablePath, ...protonCommand.args]
+           }
+         : protonCommand;
 
    if (!input.proton.flatpakHost) return command;
 

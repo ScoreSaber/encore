@@ -1088,6 +1088,7 @@
             "not-a-directory": "That path isn't a folder",
             "not-absolute": "Pick a full folder path",
             "not-found": "That folder doesn't exist",
+            "proton-arm64-required": "This device needs an ARM64 Proton build such as Proton 11.0 (ARM64)",
             "proton-binary-not-executable": "The proton launch script in that folder isn't executable",
             "proton-binary-missing": "That folder has no proton launch script, so it isn't a Proton build"
          },
@@ -2535,6 +2536,7 @@
          "invalid-config": "The daemon address or port is invalid"
       },
       "launch": {
+         "arm64-unsupported": "Encore doesn't support unofficial ARM64 Beat Saber builds. Use a standard PC copy or restore the x64 files first",
          "executable-missing": "The Beat Saber executable isn't in this install folder",
          "inspect-failed": "This install folder couldn't be read",
          "invalid-options": "These launch options aren't something Encore can pass to Beat Saber",

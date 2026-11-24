@@ -109,7 +109,8 @@ async function createHarness(platform: NodeJS.Platform) {
       steamFrame: false,
       readSteamClient: () => Promise.resolve({ status: 'missing' }),
       readOculusClient: () => Promise.resolve({ status: 'missing' }),
-      readLinuxHost: () => Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: false, flatpak: false, steamFrame: false }),
+      readLinuxHost: () =>
+         Promise.resolve({ steamClientPath: join(dataPath, 'steam'), nixOs: false, flatpak: false, steamFrame: false, reaperPath: null }),
       validateProtonFolder,
       findProton: () => Promise.resolve(null),
       prepareProtonCompatData: ensureProtonCompatData,
