@@ -6,12 +6,12 @@ import { createProblem } from '@/lib/errors';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 
-export function hashFile(filePath: string, algorithm: ContentHashAlgorithm = 'sha256') {
+export function hashFile(filePath: string, algorithm: ContentHashAlgorithm = 'sha256', end?: number) {
    return Result.tryPromise({
       try: async () => {
          const hash = createHash(algorithm);
 
-         for await (const chunk of createReadStream(filePath)) {
+         for await (const chunk of createReadStream(filePath, { end })) {
             if (!(chunk instanceof Uint8Array)) throw new TypeError('Expected binary chunk');
             hash.update(chunk);
          }

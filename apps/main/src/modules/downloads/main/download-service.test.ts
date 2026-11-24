@@ -11,7 +11,8 @@ import { waitForOperation } from '@/modules/operations/main/operation-waiting.fi
 import { createAppLogWriter } from '@/modules/support/main/app-log';
 
 import { createHash } from 'node:crypto';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { mkdir, open, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
@@ -22,15 +23,20 @@ const gameFiles = {
 };
 const steamFiles = { ...gameFiles, 'UnityPlayer.dll': 'engine' };
 
-test('copies a settled Steam depot into the install root and leaves existing depot content in place', async () => {
+test('copies a settled Steam depot without trailing bytes and leaves existing depot content in place', async () => {
+   const staleSuffix = ' from an older build';
+   const binary = steamFiles['Beat Saber.exe'];
    const { downloads, operations, registry, installRoot, depotPath } = await createHarness();
    await mkdir(join(depotPath, 'Beat Saber_Data'), { recursive: true });
+   await writeFile(join(depotPath, 'Beat Saber.exe'), 'x'.repeat(binary.length) + staleSuffix, 'utf8');
    await writeFile(join(depotPath, 'leftover.bin'), 'stale', 'utf8');
 
    const installPath = join(installRoot, 'Beat Saber 1.37.0');
    expect(await download(downloads, operations, 'steam')).toMatchObject({ status: 'completed', result: { store: 'steam', path: installPath } });
-   expect((await readdir(depotPath)).sort()).toEqual(['Beat Saber_Data', 'leftover.bin']);
+   expect((await readdir(depotPath)).sort()).toEqual(['Beat Saber.exe', 'Beat Saber_Data', 'leftover.bin']);
    expect(await readdir(installPath)).toEqual(expect.arrayContaining(['Beat Saber.exe', 'leftover.bin']));
+   expect(await readFile(join(installPath, 'Beat Saber.exe'), 'utf8')).toBe(binary);
+   expect(await readFile(join(depotPath, 'Beat Saber.exe'), 'utf8')).toBe(binary + staleSuffix);
    expect((await registry.list()).installs).toMatchObject([{ status: 'ready', store: 'steam', path: installPath }]);
 });
 
@@ -172,8 +178,10 @@ async function readLogs(logsPath: string) {
 
 async function writeFiles(root: string, files: Record<string, string>) {
    for (const [name, content] of Object.entries(files)) {
-      await mkdir(join(root, name, '..'), { recursive: true });
-      await writeFile(join(root, name), content, 'latin1');
+      const path = join(root, name);
+      await mkdir(join(path, '..'), { recursive: true });
+      await using file = await open(path, constants.O_WRONLY | constants.O_CREAT);
+      await file.writeFile(content, 'latin1');
    }
 }
 

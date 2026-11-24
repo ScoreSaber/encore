@@ -257,6 +257,6 @@ function pathKindFromStats(stats: Stats): FilesystemPathKind {
    return 'other';
 }
 
-function pathKey(targetPath: string) {
+export function pathKey(targetPath: string) {
    return process.platform === 'win32' || process.platform === 'darwin' ? targetPath.toLowerCase() : targetPath;
 }

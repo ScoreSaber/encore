@@ -3,7 +3,7 @@ import { Result } from 'better-result';
 import { abortableSleep } from '@/lib/async';
 import { createProblem, type Problem } from '@/lib/errors';
 import { copyPathWithProgress, deletePathWithProgress } from '@/lib/filesystem/operations';
-import { removeQuietly } from '@/lib/filesystem/path';
+import { pathKey } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
 import { translate } from '@/lib/messages';
 import { createSerialQueue } from '@/lib/state/machine';
@@ -76,8 +76,8 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
          const launched = await launch({ executablePath: previewed.steamPath, manifestId: previewed.manifestId });
          if (Result.isError(launched)) return Result.err(createProblem('downloads.steam.launch-failed', { cause: launched.error }));
 
-         const watched = await watchDepot(operationId, previewed.depotPath, previewed.manifestId, initial, signal);
-         if (Result.isError(watched)) return Result.err(watched.error);
+         const manifest = await watchDepot(operationId, previewed.depotPath, previewed.manifestId, initial, signal);
+         if (manifest.status === 'error') return Result.err(manifest.error);
 
          const prepared = await Result.tryPromise({
             try: () => mkdir(previewed.installRoot, { recursive: true }),
@@ -89,13 +89,11 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
             sourcePath: previewed.depotPath,
             destinationPath: previewed.destinationPath,
             destinationRoot: previewed.installRoot,
+            fileByteLimits: new Map(manifest.value.map((file) => [pathKey(resolve(previewed.depotPath, ...file.segments)), file.size])),
             onProgress: (progress) => options.operations.update(operationId, { progress }),
             signal
          });
-         if (Result.isError(copied)) {
-            await removeQuietly(previewed.destinationPath);
-            return Result.err(copied.error);
-         }
+         if (Result.isError(copied)) return Result.err(copied.error);
 
          await clearDownloadedDepot(operationId, previewed.depotPath, preexisting, signal);
 
@@ -148,21 +146,21 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
 
          if (now - changedAt >= settleMs) {
             manifest ??= await readDepotManifest(depotPath, manifestId);
-            if (manifest && (await isSteamDepotComplete(depotPath, manifest))) return Result.ok<DepotSummary, Problem>(summary);
-            if (!manifest && watchPhase === 'downloading') return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.unverified'));
+            if (manifest && (await isSteamDepotComplete(depotPath, manifest))) return Result.ok(manifest);
+            if (!manifest && watchPhase === 'downloading') return Result.err(createProblem('downloads.steam.unverified'));
             changedAt = Date.now();
          }
          if (watchPhase === 'waiting-for-start' && now - startedAt >= firstBytesTimeoutMs) {
-            return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.manifest-unavailable'));
+            return Result.err(createProblem('downloads.steam.manifest-unavailable'));
          }
          if (now - startedAt >= timeoutMs) {
-            return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.timed-out'));
+            return Result.err(createProblem('downloads.steam.timed-out'));
          }
 
          await abortableSleep(pollIntervalMs, signal);
       }
 
-      return Result.err<DepotSummary, Problem>(createProblem('downloads.steam.cancelled'));
+      return Result.err(createProblem('downloads.steam.cancelled'));
    }
 
    async function clearDownloadedDepot(operationId: OperationId, depotPath: string, preexisting: Set<string>, signal: AbortSignal) {

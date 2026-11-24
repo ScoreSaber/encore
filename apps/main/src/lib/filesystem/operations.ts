@@ -6,6 +6,7 @@ import { publishFileExclusive } from '@/lib/filesystem/atomic-write';
 import {
    assertCanCopyToDestination,
    createTempPath,
+   pathKey,
    resolveFilesystemPath,
    pathExists,
    readPathInfo,
@@ -19,8 +20,10 @@ import { getDirectorySize } from '@/lib/filesystem/scan';
 import { bytesProgress, throttleReports } from '@/lib/progress';
 import type { OperationProgress } from '@/modules/operations/contract';
 
-import { copyFile, mkdir, readdir, readlink, rename, rm, symlink, unlink } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import { copyFile, mkdir, readdir, readlink, rename, rm, symlink, unlink, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 type ProgressReporter = (progress: OperationProgress) => void;
 
@@ -35,6 +38,7 @@ type CopyPathOptions = FilesystemWriteOptions & {
    destinationRoot: string;
    sourceRoot?: string;
    overwrite?: boolean;
+   fileByteLimits?: ReadonlyMap<string, number>;
 };
 
 type MovePathOptions = FilesystemWriteOptions & {
@@ -80,6 +84,7 @@ export async function copyPathWithProgress(options: CopyPathOptions) {
          const summary = await performCopy({
             ...prepared.value,
             overwrite: options.overwrite ?? false,
+            fileByteLimits: options.fileByteLimits,
             report: createProgressReporter(options, 'copying'),
             signal: options.signal
          });
@@ -225,7 +230,12 @@ type PreparedCopy = {
    destinationPath: string;
 };
 
-type CopyRequest = PreparedCopy & { overwrite: boolean; report: ProgressReporter; signal?: AbortSignal };
+type CopyRequest = PreparedCopy & {
+   overwrite: boolean;
+   report: ProgressReporter;
+   signal?: AbortSignal;
+   fileByteLimits?: ReadonlyMap<string, number>;
+};
 
 type CopyInput = CopyRequest & { sourceInfo: PathInfo };
 
@@ -323,7 +333,7 @@ async function copyToDestination(input: CopyInput, state: WriteState): Promise<R
       parentPath: dirname(input.destinationPath),
       prefix: 'copy'
    });
-   const copyResult = await copyNode(input.sourcePath, temporaryPath, state);
+   const copyResult = await copyNode(input.sourcePath, temporaryPath, state, input.fileByteLimits);
    if (Result.isError(copyResult)) {
       await removeQuietly(temporaryPath);
       return copyResult;
@@ -429,7 +439,12 @@ function symlinkTypeForTarget(sourceInfo: PathInfo) {
    return process.platform === 'win32' && sourceInfo.targetKind === 'directory' ? 'junction' : undefined;
 }
 
-async function copyNode(sourcePath: string, destinationPath: string, state: WriteState): Promise<Result<void, FilesystemProblem>> {
+async function copyNode(
+   sourcePath: string,
+   destinationPath: string,
+   state: WriteState,
+   fileByteLimits?: ReadonlyMap<string, number>
+): Promise<Result<void, FilesystemProblem>> {
    const abort = getAbortProblem(state.signal);
    if (Result.isError(abort)) return abort;
 
@@ -448,7 +463,7 @@ async function copyNode(sourcePath: string, destinationPath: string, state: Writ
       if (Result.isError(entries)) return Result.err<void, FilesystemProblem>(entries.error);
 
       for (const entry of entries.value) {
-         const childResult = await copyNode(join(sourcePath, entry.name), join(destinationPath, entry.name), state);
+         const childResult = await copyNode(join(sourcePath, entry.name), join(destinationPath, entry.name), state, fileByteLimits);
          if (Result.isError(childResult)) return childResult;
       }
 
@@ -473,17 +488,25 @@ async function copyNode(sourcePath: string, destinationPath: string, state: Writ
 
    if (sourceInfo.value.kind !== 'file') return Result.ok<void, FilesystemProblem>(undefined);
 
-   const fileResult = await copyFileWithRetry(sourcePath, destinationPath, state.signal);
+   const byteLimit = fileByteLimits?.get(pathKey(sourcePath));
+   const fileResult = await copyFileWithRetry(sourcePath, destinationPath, state.signal, byteLimit);
    if (Result.isError(fileResult)) return fileResult;
 
-   state.bytes += sourceInfo.value.sizeBytes;
+   const copiedBytes = byteLimit ?? sourceInfo.value.sizeBytes;
+   state.totalBytes += copiedBytes - sourceInfo.value.sizeBytes;
+   state.bytes += copiedBytes;
    state.files += 1;
    reportProgress(state, 'copying');
 
    return Result.ok<void, FilesystemProblem>(undefined);
 }
 
-async function copyFileWithRetry(sourcePath: string, destinationPath: string, signal?: AbortSignal): Promise<Result<void, FilesystemProblem>> {
+async function copyFileWithRetry(
+   sourcePath: string,
+   destinationPath: string,
+   signal?: AbortSignal,
+   byteLimit?: number
+): Promise<Result<void, FilesystemProblem>> {
    for (const delayMs of [0, ...copyRetryDelaysMs]) {
       if (delayMs > 0) await abortableSleep(delayMs, signal);
 
@@ -491,9 +514,17 @@ async function copyFileWithRetry(sourcePath: string, destinationPath: string, si
       if (Result.isError(abort)) return abort;
 
       const copied = await Result.tryPromise({
-         try: () => copyFile(sourcePath, destinationPath),
+         try: async () => {
+            if (byteLimit === undefined) return copyFile(sourcePath, destinationPath);
+            if (byteLimit === 0) return writeFile(destinationPath, '', { signal });
+
+            const output = createWriteStream(destinationPath);
+            await pipeline(createReadStream(sourcePath, { end: byteLimit - 1 }), output, { signal });
+            if (output.bytesWritten !== byteLimit) throw new Error('Source file ended before the expected size');
+         },
          catch: (cause) => cause
       });
+      if (signal?.aborted) return getAbortProblem(signal);
       if (Result.isOk(copied)) return Result.ok<void, FilesystemProblem>(undefined);
       if (causeCode(copied.error) !== 'EBUSY' || delayMs === copyRetryDelaysMs.at(-1)) {
          return Result.err<void, FilesystemProblem>(

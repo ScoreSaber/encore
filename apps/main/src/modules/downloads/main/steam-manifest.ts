@@ -24,12 +24,12 @@ export async function readSteamManifest(manifestPath: string) {
 export async function isSteamDepotComplete(depotPath: string, files: SteamManifestFile[]) {
    for (const file of files) {
       const info = await Result.tryPromise(() => lstat(join(depotPath, ...file.segments)));
-      if (Result.isError(info) || !info.value.isFile() || info.value.size !== file.size) return false;
+      if (Result.isError(info) || !info.value.isFile() || info.value.size < file.size) return false;
    }
 
    for (const file of files) {
       if (file.size === 0) continue;
-      const digest = await hashFile(join(depotPath, ...file.segments), 'sha1');
+      const digest = await hashFile(join(depotPath, ...file.segments), 'sha1', file.size - 1);
       if (Result.isError(digest) || digest.value !== file.sha1) return false;
    }
 
