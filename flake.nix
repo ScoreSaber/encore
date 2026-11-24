@@ -60,7 +60,7 @@
         }
       );
       overlays.default = final: prev: {
-        encore = final.callPackage ./nix/package.nix { rev = self.shortRev or self.dirtyShortRev or null; };
+        encore = self.packages.${final.stdenv.hostPlatform.system}.default;
       };
     };
 }
