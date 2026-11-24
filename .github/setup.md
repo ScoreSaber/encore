@@ -33,6 +33,14 @@ pnpm exec vp dev
 
 `pnpm install` installs the project-local Vite+ CLI. The global CLI is recommended because it also manages the pinned Node and pnpm versions
 
+### Nix (optional)
+
+The dev shell provides the compatible Node and pnpm packages:
+
+```sh
+nix develop
+```
+
 ## Run Encore
 
 Install dependencies:
