@@ -6,6 +6,20 @@
 
 ![Encore desktop app](assets/encore-app.webp)
 
+## Download
+
+Grab the latest build for your platform from [encore.scoresaber.com](https://encore.scoresaber.com) or [Releases](https://github.com/ScoreSaber/encore/releases/latest)
+
+### Install from the terminal (optional)
+
+On Linux, macOS or the Steam Frame you can skip the download and run this in a terminal instead:
+
+```sh
+curl -fsSL https://encore.scoresaber.com/install.sh | sh
+```
+
+This installs the latest Encore for your system and launches it
+
 ## Getting Started
 
 See [.github/setup.md](.github/setup.md) for the local development guide

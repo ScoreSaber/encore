@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { Check, ChevronDown, Copy } from "lucide-react";
 import { z } from "zod";
 
 const ASSET_SUFFIXES = {
@@ -39,6 +40,7 @@ const RELEASE_API_URL =
   import.meta.env.VITE_ENCORE_RELEASE_URL ??
   "https://api.github.com/repos/ScoreSaber/encore/releases/latest";
 const RELEASE_CACHE_KEY = "encore-latest-release";
+const INSTALL_COMMAND = "curl -fsSL https://encore.scoresaber.com/install.sh | sh";
 
 async function detectPlatforms(): Promise<Platform[]> {
   const userAgent = navigator.userAgent.toLowerCase();
@@ -147,8 +149,77 @@ function PlatformIcon({ platform }: { platform: Platform }) {
   );
 }
 
-const BUTTON_CLASS_NAME =
-  "inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border [border-color:color-mix(in_srgb,var(--accent)_72%,white)] px-3.25 font-semibold text-[#06101a] no-underline [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]";
+const BUTTON_STYLE =
+  "border [border-color:color-mix(in_srgb,var(--accent)_72%,white)] font-semibold text-[#06101a] no-underline [background:color-mix(in_srgb,var(--accent)_84%,white_16%)]";
+const BUTTON_CLASS_NAME = `inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] px-3.25 ${BUTTON_STYLE}`;
+
+function InstallCommandButton({ platform, href }: { platform: Platform; href: string }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={root} className="relative inline-flex" data-install-command>
+      <a
+        className={`inline-flex min-h-8 items-center gap-2.25 rounded-l-[calc(var(--spacing)*1.75)] pr-2.75 pl-3.25 ${BUTTON_STYLE}`}
+        href={href}
+      >
+        <PlatformIcon platform={platform} />
+        Download for {platform}
+      </a>
+      <button
+        type="button"
+        className={`-ml-px inline-flex min-h-8 cursor-pointer items-center rounded-r-[calc(var(--spacing)*1.75)] px-1.75 ${BUTTON_STYLE}`}
+        aria-label="More install options"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronDown className={`size-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 z-50 mt-1.5 w-max rounded-[calc(var(--spacing)*2.25)] border border-white/12 bg-[#0b0d13]/95 p-1 text-left shadow-[0_12px_32px_rgb(0_0_0/45%)] backdrop-blur-md">
+          <button
+            type="button"
+            className="flex w-full cursor-pointer flex-col gap-1 rounded-[calc(var(--spacing)*1.5)] px-2.5 py-2 text-left text-white transition-colors hover:bg-white/6 focus-visible:bg-white/6 focus-visible:outline-none"
+            onClick={() =>
+              void navigator.clipboard.writeText(INSTALL_COMMAND).then(() => {
+                setCopied(true);
+                setTimeout(() => {
+                  setCopied(false);
+                  setOpen(false);
+                }, 1200);
+              })
+            }
+          >
+            <span className="inline-flex items-center gap-2 text-[0.8rem] font-semibold">
+              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+              {copied ? "Copied" : "Copy install command"}
+            </span>
+            <code className="font-mono text-[0.7rem] whitespace-nowrap text-white/45">
+              {INSTALL_COMMAND}
+            </code>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 type DownloadState =
   | { status: "loading" }
@@ -196,12 +267,20 @@ export function DownloadButton() {
 
   return (
     <div className="flex flex-wrap justify-center gap-2.5">
-      {state.platforms.map((platform) => (
-        <a key={platform} className={BUTTON_CLASS_NAME} href={pickAsset(state.assets, platform)}>
-          <PlatformIcon platform={platform} />
-          Download for {platform}
-        </a>
-      ))}
+      {state.platforms.map((platform) =>
+        platform === "Windows" || platform === "Quest" ? (
+          <a key={platform} className={BUTTON_CLASS_NAME} href={pickAsset(state.assets, platform)}>
+            <PlatformIcon platform={platform} />
+            Download for {platform}
+          </a>
+        ) : (
+          <InstallCommandButton
+            key={platform}
+            platform={platform}
+            href={pickAsset(state.assets, platform)}
+          />
+        ),
+      )}
     </div>
   );
 }

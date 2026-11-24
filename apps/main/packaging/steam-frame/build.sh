@@ -20,10 +20,9 @@ command=encore-installer
 METADATA
 
 install -m755 "$here/encore-installer" "$app/files/bin/encore-installer"
-install -m644 "$here/install.sh" "$app/files/share/encore/install.sh"
+install -m644 "$here/../../../web/public/install.sh" "$app/files/share/encore/install.sh"
 install -m755 "$appimage" "$app/files/share/encore/Encore.AppImage"
-uv run --quiet --with pillow python -c "import sys; from PIL import Image; Image.open(sys.argv[1]).resize((512, 512), Image.LANCZOS).save(sys.argv[2])" "$icon" "$app/files/share/encore/encore.png"
-cp "$app/files/share/encore/encore.png" "$app/files/share/icons/hicolor/512x512/apps/$id.png"
+uv run --quiet --with pillow python -c "import sys; from PIL import Image; Image.open(sys.argv[1]).resize((512, 512), Image.LANCZOS).save(sys.argv[2])" "$icon" "$app/files/share/icons/hicolor/512x512/apps/$id.png"
 install -m644 "$here/$id.desktop" "$app/files/share/applications/$id.desktop"
 install -m644 "$here/$id.metainfo.xml" "$app/files/share/metainfo/$id.metainfo.xml"
 

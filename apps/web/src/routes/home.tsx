@@ -46,7 +46,7 @@ export default function Home() {
             className="@container w-full max-w-[1280px] min-[877px]:w-[min(74.32vw,124.45svh)]! min-[877px]:max-w-none! min-[877px]:[--spacing:max(0.25rem,0.3125cqw)]"
             aria-labelledby="hero-title"
           >
-            <div className="flex w-full translate-y-1.5 items-end justify-between pr-4 pl-[clamp(20px,1.875vw,30px)] max-[1100px]:flex-col max-[1100px]:items-center max-[1100px]:px-0 min-[877px]:pl-7.5">
+            <div className="relative z-20 flex w-full translate-y-1.5 items-end justify-between pr-4 pl-[clamp(20px,1.875vw,30px)] max-[1100px]:flex-col max-[1100px]:items-center max-[1100px]:px-0 min-[877px]:pl-7.5">
               <div className="relative flex min-w-0 translate-y-1.5 items-center justify-start gap-[clamp(2px,0.35vw,6px)] max-[540px]:flex-col min-[877px]:gap-1.5">
                 <img
                   className="aspect-square h-auto w-[clamp(96px,9vw,128px)] shrink-0 -translate-y-1.75 shadow-none [filter:none] max-[540px]:w-[76px] min-[877px]:w-32"
@@ -83,19 +83,22 @@ export default function Home() {
               </div>
 
               <div className="flex items-end text-[0.82rem] max-[1100px]:mt-5 max-[1100px]:items-center min-[877px]:text-[calc(var(--spacing)*3.28)]">
-                <div id="hero-actions" className="flex flex-wrap justify-center gap-2.5">
+                <div id="hero-actions" className="group flex flex-wrap justify-center gap-2.5">
                   <div className="max-[876px]:hidden">
                     <DownloadButton />
                   </div>
                   <div className="flex items-center gap-2.5">
                     <a
-                      className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border border-white bg-white px-3.25 font-semibold text-[#09090b] no-underline"
+                      className="inline-flex min-h-8 items-center justify-center gap-2.25 rounded-[calc(var(--spacing)*1.75)] border border-white bg-white px-3.25 font-semibold text-[#09090b] no-underline min-[877px]:group-has-[[data-install-command]]:px-2"
                       href="https://github.com/ScoreSaber/encore"
                       target="_blank"
                       rel="noreferrer"
+                      aria-label="Open source"
                     >
                       <GitHubIcon className="size-4" />
-                      Open source
+                      <span className="min-[877px]:group-has-[[data-install-command]]:hidden">
+                        Open source
+                      </span>
                     </a>
                     <a
                       className="inline-flex min-h-8 w-4.5 items-center justify-center bg-transparent p-0 font-bold [color:color-mix(in_srgb,var(--foreground)_52%,transparent)] no-underline transition-colors hover:text-[var(--foreground)] focus-visible:text-[var(--foreground)]"
