@@ -211,11 +211,15 @@ export function createSharedContentService(options: SharedContentServiceOptions)
    }
 
    async function getFolderPath(request: SharedFolderRequest) {
+      const install = await options.registry.get(request.installId);
       const library = await sharedLibrary.read();
       const definition = library.definitions.find((candidate) => candidate.id === request.folderId);
-      if (!definition) return null;
+      if (!install || !definition) return null;
 
-      return sharedFolderPath(library.sharedRootPath, definition);
+      const status = await readFolderStatus(install.path, library.sharedRootPath, definition, library.rootPaths);
+      if (status.state === 'unlinked') return status.installFolderPath;
+
+      return status.linkTargetPath ?? status.sharedFolderPath;
    }
 
    async function preview(request: SharedContentActionRequest, rootPath?: string): Promise<SharedContentPreview> {
