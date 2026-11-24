@@ -23,7 +23,11 @@ export function PairingQrCode({ value, className }: { value: string; className?:
    const path = data.flatMap((row, y) => row.map((dark, x) => (dark ? `M${x} ${y}h1v1h-1z` : ''))).join('');
 
    return (
-      <svg viewBox={`0 0 ${size} ${size}`} className={cn('shrink-0 rounded-md bg-white [shape-rendering:crispEdges]', className)} aria-hidden="true">
+      <svg
+         viewBox={`0 0 ${size} ${size}`}
+         className={cn('shrink-0 rounded-md bg-[#7ab8ff] [shape-rendering:crispEdges]', className)}
+         aria-hidden="true"
+      >
          <path d={path} fill="#000" />
       </svg>
    );

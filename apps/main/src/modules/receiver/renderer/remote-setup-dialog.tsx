@@ -133,6 +133,9 @@ export function RemoteSetupDialog({
                <div className="flex flex-col gap-2 text-sm">
                   <p className="font-medium">{t('remote.setup.done.manageTitle', { name: state.target.name })}</p>
                   <p className="text-muted-foreground">{t('remote.setup.done.manageDescription')}</p>
+                  {state.target.hardware === 'steam-frame' ? (
+                     <p className="text-muted-foreground">{t('remote.setup.done.frameNote', { name: state.target.name })}</p>
+                  ) : null}
                </div>
             ) : null}
 

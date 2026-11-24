@@ -105,6 +105,7 @@ export function createRemoteSessionManager(options: { store: RemoteTargetStore; 
             ...session.target,
             status: completed.target.status,
             capabilities: completed.target.capabilities,
+            hardware: completed.target.hardware,
             message: completed.target.message ?? (tokenState.persisted ? undefined : insecureStorageMessage)
          };
          sessions.set(targetId, session);
@@ -178,6 +179,7 @@ export function createRemoteSessionManager(options: { store: RemoteTargetStore; 
       options.events.updateTarget(session, {
          status: capabilities.value.target.status,
          capabilities: capabilities.value.target.capabilities,
+         hardware: capabilities.value.target.hardware,
          message: capabilities.value.target.message ?? (session.tokenPersisted ? undefined : insecureStorageMessage)
       });
       if (session.target.status === 'ready') options.events.updateAttached(session, capabilities.value.attached);

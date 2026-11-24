@@ -163,8 +163,10 @@
       },
       "frame": {
          "pairTitle": "Got a gaming PC?",
-         "pairDescription": "Pair Encore on it to stream Beat Saber from your PC and copy its setup onto this Frame",
+         "pairDescription": "Create a pairing code in Encore on your PC, then add it here to stream Beat Saber from it and copy its setup onto this Frame",
          "pairAction": "Pair a PC",
+         "reversedTitle": "Pair from this Frame instead",
+         "reversedDescription": "{device} is paired to this Frame the other way round, so this Frame can't see its Beat Saber. Create a pairing code on {device} and add it here",
          "mirrorTitle": "Play {device}'s Beat Saber standalone too",
          "mirrorDescription": "Copy a version from {device} onto this Frame with its mods, maps and settings, or keep it on {device} and stream it",
          "version": "Version",
@@ -1536,7 +1538,7 @@
             "showQr": "Show QR code",
             "qr": {
                "title": "Scan to pair",
-               "description": "On your Steam Frame or another device with a camera, open Add an Encore remote, choose Scan code and look at this",
+               "description": "On your Steam Frame or another device with a camera, choose Add device, then Scan code and look at this",
                "pairedTitle": "Paired",
                "pairedDescription": "{name} is paired. You can go back to it now",
                "finishing": "Finishing pairing"
@@ -1621,7 +1623,8 @@
             "done": {
                "manageTitle": "Connected to {name}",
                "manageDescription": "Its Beat Saber installs and content now show up in Encore",
-               "finish": "Done"
+               "finish": "Done",
+               "frameNote": "To copy this PC's Beat Saber onto {name}, also pair this PC from Encore on {name}"
             },
             "scan": {
                "start": "Scan code",

@@ -16,6 +16,7 @@ import { localTargetId, runsOnSteamFrame } from '@/modules/targets/contract';
 import { useTargets } from '@/modules/targets/renderer/use-targets';
 
 const pairHint = 'frame-pair-pc';
+const reversedPairHint = 'frame-pair-reversed';
 const mirrorHint = 'frame-mirror-pc';
 
 export function FrameSetupCard() {
@@ -74,16 +75,18 @@ function FrameSetupHint({ onMirror, pcId }: { onMirror: InstallMirror['open']; p
    if (!app || !runsOnSteamFrame(targets)) return null;
 
    if (!pcId && !targets.some((target) => target.kind === 'remote')) {
-      if (dismissed.includes(pairHint)) return null;
+      const pairedFrom = app.receiver.pairedDevices[0]?.name;
+      const hint = pairedFrom ? reversedPairHint : pairHint;
+      if (dismissed.includes(hint)) return null;
       return (
          <HintCard
-            title={t('pairTitle')}
-            description={t('pairDescription')}
-            onDismiss={() => void settings.updateApp({ dismissedHints: [...dismissed, pairHint] })}
+            title={pairedFrom ? t('reversedTitle') : t('pairTitle')}
+            description={pairedFrom ? t('reversedDescription', { device: pairedFrom }) : t('pairDescription')}
+            onDismiss={() => void settings.updateApp({ dismissedHints: [...dismissed, hint] })}
             dismissLabel={common('notNow')}
          >
             <Button asChild size="sm">
-               <AppLink to="/settings/remote">
+               <AppLink to="/settings/remote" search={{ add: true }}>
                   <Cable data-icon="inline-start" />
                   {t('pairAction')}
                </AppLink>

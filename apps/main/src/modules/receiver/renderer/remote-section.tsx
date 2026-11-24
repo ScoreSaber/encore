@@ -27,6 +27,7 @@ import { useUpdate } from '@/modules/updates/renderer/use-update';
 
 export function RemoteSection({
    receiverSettings,
+   startAdding,
    disabled,
    canShareThisComputer,
    remoteTargets,
@@ -35,6 +36,7 @@ export function RemoteSection({
    onRemotePaired
 }: {
    receiverSettings: ReceiverSettings;
+   startAdding: boolean;
    disabled: boolean;
    canShareThisComputer: boolean;
    remoteTargets: Target[];
@@ -44,7 +46,7 @@ export function RemoteSection({
 }) {
    const t = useTranslations('settings.remote');
    const receiver = useReceiver();
-   const [addOpen, setAddOpen] = useState(false);
+   const [addOpen, setAddOpen] = useState(startAdding);
    const controlsDisabled = disabled || receiver.busy;
 
    return (
