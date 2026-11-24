@@ -64,7 +64,10 @@ export function buildLaunchEnv(input: {
    if (!input.proton) return environment;
 
    environment.SteamEnv = '1';
-   if (input.proton.steamFrame) environment.DISABLE_VULKAN_FDM_INJECTION_LAYER ??= '1';
+   if (input.proton.steamFrame) {
+      environment.DISABLE_VULKAN_FDM_INJECTION_LAYER ??= '1';
+      environment.FEX_MONOHACKS ??= '0';
+   }
    if (input.proton.logPath) {
       environment.PROTON_LOG = '1';
       environment.PROTON_LOG_DIR = input.proton.logPath;
