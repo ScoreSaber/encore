@@ -569,6 +569,7 @@
       "unreadable": "Unreadable",
       "columns": {
          "title": "Playlist",
+         "folder": "Folder",
          "author": "Author",
          "songs": "Songs",
          "missing": "Missing",

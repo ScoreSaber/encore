@@ -150,6 +150,13 @@ function InstallPlaylistsPanel({
          )
       },
       {
+         id: 'folder',
+         size: 160,
+         header: t('columns.folder'),
+         accessorFn: (playlist) => playlist.fileName.split('/').slice(0, -1).join('/'),
+         meta: { cellClassName: 'text-muted-foreground' }
+      },
+      {
          id: 'author',
          size: 160,
          header: t('columns.author'),

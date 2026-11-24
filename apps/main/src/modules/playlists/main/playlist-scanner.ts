@@ -8,7 +8,7 @@ import { maxPlaylistBytes, parsePlaylistDocument } from '@/modules/playlists/mai
 import { isPlaylistFileName, playlistsPath } from '@/modules/playlists/main/playlist-paths';
 
 import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 
 export type PlaylistRecord = {
    summary: LocalPlaylistSummary;
@@ -38,7 +38,7 @@ type PlaylistScanResult = {
 export async function scanPlaylists(options: PlaylistScanOptions): Promise<PlaylistScanResult> {
    const rootPath = playlistsPath(options.installPath);
    const entries = await Result.tryPromise({
-      try: () => readdir(rootPath, { withFileTypes: true }),
+      try: () => readdir(rootPath, { recursive: true, withFileTypes: true }),
       catch: (cause) => createProblem('playlists.root.unreadable', { cause })
    });
 
@@ -52,7 +52,9 @@ export async function scanPlaylists(options: PlaylistScanOptions): Promise<Playl
       };
    }
 
-   const fileNames = entries.value.filter((entry) => entry.isFile() && isPlaylistFileName(entry.name)).map((entry) => entry.name);
+   const fileNames = entries.value
+      .filter((entry) => entry.isFile() && isPlaylistFileName(entry.name))
+      .map((entry) => relative(rootPath, join(entry.parentPath, entry.name)).split(sep).join('/'));
    const records = await scanInBatches(fileNames, { ...options, batchSize: 4 }, (fileName) => scanPlaylistFile(rootPath, fileName, options.cache));
 
    records.sort(
