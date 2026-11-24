@@ -103,6 +103,7 @@ mkPnpmPackage {
     lib.optionalString stdenv.hostPlatform.isLinux ''
       makeWrapper ${electron}/bin/electron $out/bin/encore \
         --set ELECTRON_FORCE_IS_PACKAGED 1 \
+        --set ENCORE_EXECUTABLE $out/bin/encore \
         --add-flags $out/opt/Encore/resources/app.asar
     ''
     + lib.optionalString stdenv.hostPlatform.isDarwin ''
