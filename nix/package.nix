@@ -10,12 +10,12 @@
   pnpm_11,
   nodejs_24,
   imagemagick,
-  rev ? null,
+  rev ? "unknown",
 }:
 let
   electron = electron_43;
   baseVersion = (lib.importJSON ../apps/main/package.json).version;
-  version = baseVersion + lib.optionalString (rev != null) "+${rev}";
+  version = "${baseVersion}+${rev}";
 
   src = lib.fileset.toSource {
     root = ../.;

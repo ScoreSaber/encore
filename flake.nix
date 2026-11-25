@@ -16,51 +16,55 @@
       ...
     }:
     let
-      inherit (nixpkgs) lib;
-      forEachPkgs =
-        f:
-        lib.genAttrs [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ] (
-          s: f (nixpkgs.legacyPackages.${s}.extend pnpm2nix.overlays.default)
+      inherit (nixpkgs.lib) genAttrs;
+
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
+
+      rev = self.shortRev or self.dirtyShortRev or "unknown";
+
+      mkPnpmPackage = f: f.callPackage "${pnpm2nix}/derivation.nix" { };
+
+      forEachSystem =
+        perSystem:
+        genAttrs systems (
+          system:
+          let
+            pkgs = nixpkgs.legacyPackages.${system};
+          in
+          perSystem { inherit pkgs system; }
         );
     in
     {
-      formatter = forEachPkgs (pkgs: pkgs.nixfmt-tree);
+      formatter = forEachSystem ({ pkgs, ... }: pkgs.nixfmt-tree);
 
-      packages = forEachPkgs (pkgs: {
-        default = pkgs.callPackage ./nix/package.nix { rev = self.shortRev or self.dirtyShortRev or null; };
-      });
+      overlays.default = final: prev: {
+        encore = final.callPackage ./nix/package.nix {
+          inherit rev;
+          inherit (mkPnpmPackage final) mkPnpmPackage;
+        };
+      };
 
-      checks = forEachPkgs (pkgs: {
-        default = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-      });
-
-      devShells = forEachPkgs (
-        pkgs:
-        let
-          inherit (pkgs.stdenv.hostPlatform) isLinux;
-          package = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
-        in
+      packages = forEachSystem (
+        { pkgs, ... }:
         {
-          default = pkgs.mkShell {
-            # automatically pulls nativeBuildInputs + buildInputs
-            inputsFrom = [ package ];
-
-            packages = with pkgs; [
-              nixfmt
-
-              pnpm_11
-              nodejs_24
-            ];
-
-            env = lib.optionalAttrs isLinux {
-              ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
-              ELECTRON_OVERRIDE_DIST_PATH = "${pkgs.electron_43}/bin";
-            };
+          default = pkgs.callPackage ./nix/package.nix {
+            inherit rev;
+            inherit (mkPnpmPackage pkgs) mkPnpmPackage;
           };
         }
       );
-      overlays.default = final: prev: {
-        encore = self.packages.${final.stdenv.hostPlatform.system}.default;
-      };
+
+      devShells = forEachSystem (
+        { pkgs, system }:
+        {
+          default = pkgs.callPackage ./nix/devshell.nix {
+            encore = self.packages.${system}.default;
+          };
+        }
+      );
     };
 }
