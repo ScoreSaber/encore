@@ -90,6 +90,8 @@ mkPnpmPackage {
       mkdir -p $out/share/icons/hicolor/"$size"x"$size"/apps
       magick -background none ${../assets/encore-icon.png} -resize "$size"x"$size" $out/share/icons/hicolor/"$size"x"$size"/apps/encore.png
     done
+
+    install -Dm644 ${./mimetypes.xml} $out/share/mime/packages/com.scoresaber.encore.xml
   ''
   + lib.optionalString stdenv.hostPlatform.isDarwin ''
     mkdir -p $out/{Applications,bin}
