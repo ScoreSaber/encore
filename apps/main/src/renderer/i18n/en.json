@@ -940,6 +940,7 @@
       "authenticating": "Waiting for the Meta sign-in window",
       "downloading": "Downloaded {size} so far",
       "copying": "Copied {size}",
+      "verifying": "Checked {size}",
       "speed": "{speed}/s",
       "chooseAnother": "Choose another version",
       "stores": {
@@ -963,7 +964,7 @@
          "store": "Store",
          "destination": "Folder",
          "warnings": {
-            "depot-not-empty": "The Steam depot folder already has leftover files that will be copied with this download",
+            "depot-not-empty": "The Steam depot folder has leftover files. Encore leaves them out of this install and removes them once it's done",
             "meta-sign-in-opens": "A Meta sign-in window opens to start this download",
             "name-conflict": "A folder with that version name already exists, so Encore chose a unique folder",
             "steam-console-opens": "Steam opens with its console while downloading this version"
@@ -2325,6 +2326,7 @@
             "manifest-unavailable": "Steam didn't start this download. This build may no longer be available to this Steam account",
             "timed-out": "Steam didn't finish this download in time",
             "unverified": "Steam's manifest for this build couldn't be found, so Encore can't check the download is complete",
+            "incomplete": "Steam finished this download but files are missing or damaged",
             "cancelled": "Encore stopped waiting for this download. Steam keeps downloading it in the background"
          },
          "oculus": {

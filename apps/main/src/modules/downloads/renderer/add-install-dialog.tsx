@@ -430,7 +430,7 @@ function OperationResult({ operation }: { operation: OperationSnapshot }) {
 
    const progress = operation.progress;
    const phase = progress?.phase;
-   const active = phase === 'authenticating' || phase === 'copying' || phase === 'downloading';
+   const active = phase === 'authenticating' || phase === 'copying' || phase === 'downloading' || phase === 'verifying';
    const label = active ? t(phase, { size: format.bytes(progress?.current ?? 0) }) : t('preparing');
    const speed = progress?.perSecond === undefined ? null : t('speed', { speed: format.bytes(progress.perSecond) });
 

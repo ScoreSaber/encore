@@ -3,7 +3,7 @@ import { Result } from 'better-result';
 import { abortableSleep } from '@/lib/async';
 import { createProblem, type Problem } from '@/lib/errors';
 import { copyPathWithProgress, deletePathWithProgress } from '@/lib/filesystem/operations';
-import { pathKey } from '@/lib/filesystem/path';
+import { pathKey, removeQuietly } from '@/lib/filesystem/path';
 import { getDirectorySize } from '@/lib/filesystem/scan';
 import { translate } from '@/lib/messages';
 import { createSerialQueue } from '@/lib/state/machine';
@@ -14,7 +14,7 @@ import type { OperationRegistry } from '@/modules/operations/main/operation-regi
 import { beatSaberSteamAppId, beatSaberSteamDepotId, readSteamClientState, type SteamClientState } from '@/modules/stores/main/steam-client';
 
 import { spawn } from 'node:child_process';
-import { mkdir, readdir } from 'node:fs/promises';
+import { mkdir, readdir, readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 type SteamLaunch = (input: { executablePath: string; manifestId: string }) => Promise<Result<void, string>>;
@@ -70,13 +70,11 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
       return depotQueue.run(async () => {
          if (signal.aborted) return Result.err(createProblem('downloads.steam.cancelled'));
 
-         const preexisting = new Set(await readDepotEntries(previewed.depotPath));
-         const initial = await readDepotSummary(previewed.depotPath);
-
-         const launched = await launch({ executablePath: previewed.steamPath, manifestId: previewed.manifestId });
-         if (Result.isError(launched)) return Result.err(createProblem('downloads.steam.launch-failed', { cause: launched.error }));
-
-         const manifest = await watchDepot(operationId, previewed.depotPath, previewed.manifestId, initial, signal);
+         let manifest = await fetchDepot(previewed, operationId, signal);
+         if (manifest.status === 'error' && manifest.error.code === 'downloads.steam.incomplete') {
+            await clearDepot(operationId, previewed.depotPath);
+            manifest = await fetchDepot(previewed, operationId, signal);
+         }
          if (manifest.status === 'error') return Result.err(manifest.error);
 
          const prepared = await Result.tryPromise({
@@ -89,21 +87,31 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
             sourcePath: previewed.depotPath,
             destinationPath: previewed.destinationPath,
             destinationRoot: previewed.installRoot,
-            fileByteLimits: new Map(manifest.value.map((file) => [pathKey(resolve(previewed.depotPath, ...file.segments)), file.size])),
+            onlyFiles: new Map(manifest.value.map((file) => [pathKey(resolve(previewed.depotPath, ...file.segments)), file.size])),
             onProgress: (progress) => options.operations.update(operationId, { progress }),
             signal
          });
          if (Result.isError(copied)) return Result.err(copied.error);
 
-         await clearDownloadedDepot(operationId, previewed.depotPath, preexisting, signal);
+         await clearDepot(operationId, previewed.depotPath);
 
          return Result.ok({ bytes: copied.value.bytes, files: copied.value.files });
       });
    }
 
-   async function watchDepot(operationId: OperationId, depotPath: string, manifestId: string, initial: DepotSummary, signal: AbortSignal) {
+   async function fetchDepot({ depotPath, manifestId, steamPath }: SteamDownloadPreview, operationId: OperationId, signal: AbortSignal) {
+      const client = resolve(depotPath, '..', '..', '..', '..');
+      const steamRoots = [client, dirname(client)];
+
+      // Steam trusts a leftover state file and skips the download
+      await removeQuietly(join(dirname(depotPath), depotStateFile));
+      const readSteamLog = await followSteamLog(steamRoots.map((root) => join(root, 'logs', 'console_log.txt')));
+      let previous = await readDepotSummary(depotPath);
+
+      const launched = await launch({ executablePath: steamPath, manifestId });
+      if (Result.isError(launched)) return Result.err(createProblem('downloads.steam.launch-failed', { cause: launched.error }));
+
       const startedAt = Date.now();
-      let previous = initial;
       let changedAt = Date.now();
       let watchPhase: 'waiting-for-start' | 'downloading' = 'waiting-for-start';
       let lastReportedRate: number | undefined;
@@ -144,10 +152,23 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
             });
          }
 
+         const steamLog = await readSteamLog();
+         const failure = /Depot download failed : (.+)/.exec(steamLog)?.[1];
+         if (failure) return Result.err(createProblem('downloads.steam.manifest-unavailable', { detail: failure.trim() }));
+
          if (now - changedAt >= settleMs) {
-            manifest ??= await readDepotManifest(depotPath, manifestId);
-            if (manifest && (await isSteamDepotComplete(depotPath, manifest))) return Result.ok(manifest);
-            if (!manifest && watchPhase === 'downloading') return Result.err(createProblem('downloads.steam.unverified'));
+            manifest ??= await readDepotManifest(steamRoots, manifestId);
+            if (
+               manifest &&
+               (await isSteamDepotComplete(depotPath, manifest, signal, (progress) => options.operations.update(operationId, { progress })))
+            ) {
+               return Result.ok(manifest);
+            }
+            if (signal.aborted) break;
+
+            const reportedComplete = new RegExp(`Depot download complete.*\\(manifest ${manifestId}\\)`).test(steamLog);
+            if (!manifest && (reportedComplete || watchPhase === 'downloading')) return Result.err(createProblem('downloads.steam.unverified'));
+            if (reportedComplete) return Result.err(createProblem('downloads.steam.incomplete'));
             changedAt = Date.now();
          }
          if (watchPhase === 'waiting-for-start' && now - startedAt >= firstBytesTimeoutMs) {
@@ -163,10 +184,8 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
       return Result.err(createProblem('downloads.steam.cancelled'));
    }
 
-   async function clearDownloadedDepot(operationId: OperationId, depotPath: string, preexisting: Set<string>, signal: AbortSignal) {
+   async function clearDepot(operationId: OperationId, depotPath: string) {
       for (const entry of await readDepotEntries(depotPath)) {
-         if (preexisting.has(entry) || signal.aborted) continue;
-
          await deletePathWithProgress({
             targetPath: join(depotPath, entry),
             root: depotPath,
@@ -174,12 +193,14 @@ export function createSteamDownloader(options: SteamDownloaderOptions) {
             onProgress: (progress) => options.operations.update(operationId, { progress })
          });
       }
+      await removeQuietly(join(dirname(depotPath), depotStateFile));
    }
 
    return { preview, download };
 }
 
 const rateWindow = 5;
+const depotStateFile = `state_${beatSaberSteamAppId}_${beatSaberSteamDepotId}.patch`;
 
 function bytesPerSecond(recent: { at: number; bytes: number }[]) {
    const first = recent[0];
@@ -188,13 +209,32 @@ function bytesPerSecond(recent: { at: number; bytes: number }[]) {
    return Math.max(0, ((last.bytes - first.bytes) * 1000) / (last.at - first.at));
 }
 
-async function readDepotManifest(depotPath: string, manifestId: string) {
-   const steamappsParent = resolve(depotPath, '..', '..', '..', '..');
-   const name = `${beatSaberSteamDepotId}_${manifestId}.manifest`;
-   return (
-      (await readSteamManifest(join(steamappsParent, 'depotcache', name))) ??
-      (await readSteamManifest(join(dirname(steamappsParent), 'depotcache', name)))
-   );
+async function readDepotManifest(steamRoots: string[], manifestId: string) {
+   for (const root of steamRoots) {
+      const manifest = await readSteamManifest(join(root, 'depotcache', `${beatSaberSteamDepotId}_${manifestId}.manifest`));
+      if (manifest) return manifest;
+   }
+   return null;
+}
+
+async function followSteamLog(paths: string[]) {
+   const logs = paths.map((path) => ({ path, offset: 0 }));
+   let text = '';
+   const readNew = async () => {
+      for (const log of logs) {
+         const contents = await Result.tryPromise(() => readFile(log.path));
+         if (Result.isError(contents)) continue;
+
+         const rotated = contents.value.length < log.offset;
+         text += contents.value.subarray(rotated ? 0 : log.offset).toString('utf8');
+         log.offset = contents.value.length;
+      }
+      return text;
+   };
+
+   await readNew();
+   text = '';
+   return readNew;
 }
 
 async function readDepotSummary(depotPath: string): Promise<DepotSummary> {
