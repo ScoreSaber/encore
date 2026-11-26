@@ -301,6 +301,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
             installPath: previewed.workingDirectory,
             proton: previewed.proton,
             native: native !== null,
+            foveated: previewed.options.flags.includes('foveated-rendering'),
             environment: previewed.options.environment
          }),
          ...native

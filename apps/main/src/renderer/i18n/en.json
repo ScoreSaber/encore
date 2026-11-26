@@ -1033,6 +1033,10 @@
             "label": "Proton logs",
             "description": "Writes Proton and wine logs into the install Logs folder"
          },
+         "foveated-rendering": {
+            "label": "Foveated rendering",
+            "description": "Renders the edges of your view at lower detail. Only applies to the native ARM64 build"
+         },
          "emulate-x64": {
             "label": "Run the x64 build",
             "description": "Starts the original PC build through FEX emulation instead of the native ARM64 build"

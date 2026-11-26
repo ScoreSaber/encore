@@ -1,4 +1,4 @@
-import { Bug, ChevronRight, Cpu, Loader2, MemoryStick, Monitor, Play, ScrollText, ShieldCheck, SkipForward, SquarePen } from 'lucide-react';
+import { Bug, ChevronRight, Cpu, Eye, Loader2, MemoryStick, Monitor, Play, ScrollText, ShieldCheck, SkipForward, SquarePen } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { RiftIcon } from '@/components/headset-icons';
@@ -23,6 +23,7 @@ const optionIcons = {
    editor: SquarePen,
    'proton-logs': ScrollText,
    'emulate-x64': Cpu,
+   'foveated-rendering': Eye,
    'run-as-admin': ShieldCheck,
    'close-encore': MemoryStick
 };
@@ -36,6 +37,7 @@ const launchOptionOrder: (keyof typeof optionIcons)[] = [
    'close-encore',
    'debug',
    'proton-logs',
+   'foveated-rendering',
    'emulate-x64'
 ];
 

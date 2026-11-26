@@ -9,7 +9,8 @@ const flagArguments = {
    editor: ['editor'],
    'skip-steam': [],
    'proton-logs': [],
-   'emulate-x64': []
+   'emulate-x64': [],
+   'foveated-rendering': []
 };
 
 const managedCopyArgument = '--no-yeet';
@@ -54,6 +55,7 @@ export function buildLaunchEnv(input: {
    installPath: string;
    proton: ProtonLaunchPlan | null;
    native: boolean;
+   foveated: boolean;
    environment: LaunchEnvironment;
 }) {
    const environment = { ...input.environment };
@@ -69,6 +71,10 @@ export function buildLaunchEnv(input: {
    if (input.proton.steamFrame && !input.native) {
       environment.DISABLE_VULKAN_FDM_INJECTION_LAYER ??= '1';
       environment.FEX_MONOHACKS ??= '0';
+   }
+   if (input.native && input.foveated) {
+      environment.FDM_DEBUG ??= 'enable';
+      environment.VK_INSTANCE_LAYERS ??= 'VK_LAYER_VALVE_rpo:VK_LAYER_VALVE_fdm_injection';
    }
    if (input.proton.logPath) {
       environment.PROTON_LOG = '1';
