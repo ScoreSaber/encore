@@ -47,15 +47,22 @@ type ImportModRequest = {
 };
 
 export async function installModVersion(request: InstallModVersionRequest): Promise<Result<ModWriteSummary, ContentProblem>> {
-   const staged = await request.ingestion.ingestArchive({
-      source: { kind: 'url', url: request.entry.downloadUrl },
-      expectedHash: request.entry.archiveHash ?? undefined,
-      limits: modContentLimits,
-      urlPolicy: { allowedHosts: downloadHostsFor(request.entry.downloadHost) },
-      signal: request.signal,
-      onProgress: request.onProgress,
-      validate: ({ extractedPath }) => verifyModContents(extractedPath, request.entry.files)
-   });
+   const ingest = (url: string) =>
+      request.ingestion.ingestArchive({
+         source: { kind: 'url', url },
+         expectedHash: request.entry.archiveHash ?? undefined,
+         limits: modContentLimits,
+         urlPolicy: { allowedHosts: downloadHostsFor(request.entry.downloadHost) },
+         signal: request.signal,
+         onProgress: request.onProgress,
+         validate: ({ extractedPath }) => verifyModContents(extractedPath, request.entry.files)
+      });
+   const listed = await ingest(request.entry.downloadUrl);
+   const mirrored =
+      Result.isError(listed) && listed.error.code.startsWith('content.download.') && request.entry.mirrorUrl && !request.signal?.aborted
+         ? await ingest(request.entry.mirrorUrl)
+         : listed;
+   const staged = Result.isOk(mirrored) ? mirrored : listed;
    if (Result.isError(staged)) return Result.err(staged.error);
 
    const placed = await placeModFiles(staged.value.extractedPath, request);

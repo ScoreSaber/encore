@@ -162,7 +162,12 @@ export function AddInstallDialog({
                         ) : null}
                      </div>
                      <ScrollArea className="bg-muted/20 h-72 rounded-lg border">
-                        <VersionList versions={catalog.versions} store={step.store} onSelect={downloader.select} />
+                        <VersionList
+                           versions={catalog.versions}
+                           store={step.store}
+                           frame={target?.hardware === 'steam-frame'}
+                           onSelect={downloader.select}
+                        />
                      </ScrollArea>
                   </>
                ) : null}
@@ -349,26 +354,37 @@ function ChoiceTile({ icon, label, description, onClick }: { icon: React.ReactNo
    );
 }
 
-function VersionList({ versions, store, onSelect }: { versions: DownloadVersion[]; store: StoreKind; onSelect: (version: string) => void }) {
+function VersionList({
+   versions,
+   store,
+   frame,
+   onSelect
+}: {
+   versions: DownloadVersion[];
+   store: StoreKind;
+   frame: boolean;
+   onSelect: (version: string) => void;
+}) {
    const supported = versions.filter((version) => store !== 'oculus' || version.oculusBinaryId !== null);
-   const recommended = supported.find((version) => version.recommended);
+   const isRecommended = (version: DownloadVersion) => (frame ? version.recommendedOnFrame : version.recommended);
+   const recommended = supported.find(isRecommended);
 
    return (
       <div className="flex flex-col p-1">
          {recommended ? (
             <>
-               <VersionRow version={recommended} onSelect={() => onSelect(recommended.version)} />
+               <VersionRow version={recommended} recommended onSelect={() => onSelect(recommended.version)} />
                <Separator className="my-1" />
             </>
          ) : null}
          {supported.map((version) => (
-            <VersionRow key={version.version} version={version} onSelect={() => onSelect(version.version)} />
+            <VersionRow key={version.version} version={version} recommended={isRecommended(version)} onSelect={() => onSelect(version.version)} />
          ))}
       </div>
    );
 }
 
-function VersionRow({ version, onSelect }: { version: DownloadVersion; onSelect: () => void }) {
+function VersionRow({ version, recommended, onSelect }: { version: DownloadVersion; recommended: boolean; onSelect: () => void }) {
    const t = useTranslations('downloads');
 
    return (
@@ -378,7 +394,7 @@ function VersionRow({ version, onSelect }: { version: DownloadVersion; onSelect:
          onClick={onSelect}
       >
          <span className="min-w-0 truncate font-medium">{version.version}</span>
-         {version.recommended ? <Badge variant="secondary">{t('recommended')}</Badge> : null}
+         {recommended ? <Badge variant="secondary">{t('recommended')}</Badge> : null}
       </button>
    );
 }
@@ -414,7 +430,7 @@ function OperationResult({ operation }: { operation: OperationSnapshot }) {
 
    const progress = operation.progress;
    const phase = progress?.phase;
-   const active = phase === 'authenticating' || phase === 'copying' || phase === 'downloading';
+   const active = phase === 'authenticating' || phase === 'copying' || phase === 'downloading' || phase === 'verifying';
    const label = active ? t(phase, { size: format.bytes(progress?.current ?? 0) }) : t('preparing');
    const speed = progress?.perSecond === undefined ? null : t('speed', { speed: format.bytes(progress.perSecond) });
 

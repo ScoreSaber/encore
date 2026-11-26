@@ -17,6 +17,7 @@ import { createAppTray } from '@/modules/app/main/app-tray';
 import { backgroundLaunchFlag, createLoginItem, trayHostAvailable } from '@/modules/app/main/background';
 import { minimizeMainWindow, openMainWindow, setMainWindowCloseBehaviour, showMainWindow } from '@/modules/app/main/main-window';
 import { createAppInfo, createAppIpcModule } from '@/modules/app/main/register-ipc';
+import { createArm64Launch } from '@/modules/arm64/main/arm64-launch';
 import { bsmanagerApi } from '@/modules/bsmanager/api';
 import { createBSManagerAdoptionService } from '@/modules/bsmanager/main/adoption-service';
 import { createBSManagerSharedContentConverter } from '@/modules/bsmanager/main/shared-content-converter';
@@ -143,7 +144,8 @@ function composeEncore(log: AppLogWriter) {
       settingsStore,
       registry: installRegistry,
       operations: operationRegistry,
-      runtime: createLaunchRuntime({ prepareWatchdog: createLaunchWatchdog(dataPath) })
+      runtime: createLaunchRuntime({ prepareWatchdog: createLaunchWatchdog(dataPath) }),
+      prepareArm64: process.platform === 'linux' && process.arch === 'arm64' ? createArm64Launch({ cacheRoot: join(dataPath, 'arm64') }) : undefined
    });
    const ensureProton = async () => ensureSteamProton((await settingsStore.getSnapshot()).library.protonPath, process.arch);
    const downloadService = createLocalDownloads({

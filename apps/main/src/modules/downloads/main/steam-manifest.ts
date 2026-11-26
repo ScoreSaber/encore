@@ -1,6 +1,8 @@
 import { Result } from 'better-result';
 
 import { hashFile } from '@/lib/content/content-hash';
+import { bytesProgress, throttleReports } from '@/lib/progress';
+import type { OperationProgress } from '@/modules/operations/contract';
 
 import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -21,16 +23,29 @@ export async function readSteamManifest(manifestPath: string) {
    return Result.isOk(files) ? files.value : null;
 }
 
-export async function isSteamDepotComplete(depotPath: string, files: SteamManifestFile[]) {
+export async function isSteamDepotComplete(
+   depotPath: string,
+   files: SteamManifestFile[],
+   signal: AbortSignal,
+   onProgress: (progress: OperationProgress) => void
+) {
    for (const file of files) {
       const info = await Result.tryPromise(() => lstat(join(depotPath, ...file.segments)));
       if (Result.isError(info) || !info.value.isFile() || info.value.size < file.size) return false;
    }
 
+   const total = files.reduce((bytes, file) => bytes + file.size, 0);
+   const report = throttleReports(onProgress);
+   let verified = 0;
    for (const file of files) {
       if (file.size === 0) continue;
+      if (signal.aborted) return false;
+
       const digest = await hashFile(join(depotPath, ...file.segments), 'sha1', file.size - 1);
       if (Result.isError(digest) || digest.value !== file.sha1) return false;
+
+      verified += file.size;
+      report(bytesProgress('verifying', verified, total));
    }
 
    return true;

@@ -12,7 +12,7 @@ import { createAppLogWriter } from '@/modules/support/main/app-log';
 
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { mkdir, open, readdir, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, open, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
@@ -23,21 +23,31 @@ const gameFiles = {
 };
 const steamFiles = { ...gameFiles, 'UnityPlayer.dll': 'engine' };
 
-test('copies a settled Steam depot without trailing bytes and leaves existing depot content in place', async () => {
+test('installs only the build from a Steam depot holding leftovers and empties the depot', async () => {
    const staleSuffix = ' from an older build';
    const binary = steamFiles['Beat Saber.exe'];
    const { downloads, operations, registry, installRoot, depotPath } = await createHarness();
    await mkdir(join(depotPath, 'Beat Saber_Data'), { recursive: true });
    await writeFile(join(depotPath, 'Beat Saber.exe'), 'x'.repeat(binary.length) + staleSuffix, 'utf8');
    await writeFile(join(depotPath, 'leftover.bin'), 'stale', 'utf8');
+   await writeFile(join(depotPath, '..', 'state_620980_620981.patch'), 'stale', 'utf8');
 
    const installPath = join(installRoot, 'Beat Saber 1.37.0');
    expect(await download(downloads, operations, 'steam')).toMatchObject({ status: 'completed', result: { store: 'steam', path: installPath } });
-   expect((await readdir(depotPath)).sort()).toEqual(['Beat Saber.exe', 'Beat Saber_Data', 'leftover.bin']);
-   expect(await readdir(installPath)).toEqual(expect.arrayContaining(['Beat Saber.exe', 'leftover.bin']));
+   expect(await readdir(join(depotPath, '..'))).toEqual(['depot_620981']);
+   expect(await readdir(depotPath)).toEqual([]);
+   expect((await readdir(installPath)).sort()).toEqual(['Beat Saber.exe', 'Beat Saber_Data', 'UnityPlayer.dll']);
    expect(await readFile(join(installPath, 'Beat Saber.exe'), 'utf8')).toBe(binary);
-   expect(await readFile(join(depotPath, 'Beat Saber.exe'), 'utf8')).toBe(binary + staleSuffix);
    expect((await registry.list()).installs).toMatchObject([{ status: 'ready', store: 'steam', path: installPath }]);
+});
+
+test('downloads again when Steam reports a depot complete without fetching it', async () => {
+   const { downloads, operations, installRoot, skipSteamDownloadOnce } = await createHarness();
+   skipSteamDownloadOnce();
+
+   const installPath = join(installRoot, 'Beat Saber 1.37.0');
+   expect(await download(downloads, operations, 'steam')).toMatchObject({ status: 'completed', result: { store: 'steam', path: installPath } });
+   expect(await readFile(join(installPath, 'UnityPlayer.dll'), 'utf8')).toBe(steamFiles['UnityPlayer.dll']);
 });
 
 test('keeps waiting on a Steam depot that stalls before its manifest is complete', async () => {
@@ -87,6 +97,7 @@ async function createHarness() {
    const manifests = { corrupt: createManifest(segments, true), valid: createManifest(segments, false) };
    let manifest = manifests.valid;
    let steamManifest = createSteamManifest(steamFiles);
+   let steamSkipsDownload = false;
 
    const downloads = createDownloadService({
       settingsStore,
@@ -118,7 +129,11 @@ async function createHarness() {
          launch: async ({ manifestId }) => {
             await mkdir(join(steamRoot, 'depotcache'), { recursive: true });
             await writeFile(join(steamRoot, 'depotcache', `620981_${manifestId}.manifest`), steamManifest);
-            await writeFiles(depotPath, steamFiles);
+            if (steamSkipsDownload) {
+               steamSkipsDownload = false;
+               await mkdir(join(steamRoot, 'logs'), { recursive: true });
+               await appendFile(join(steamRoot, 'logs', 'console_log.txt'), `Depot download complete : "${depotPath}" (manifest ${manifestId})\n`);
+            } else await writeFiles(depotPath, steamFiles);
             return Result.ok<void, string>(undefined);
          },
          pollIntervalMs: 10,
@@ -153,6 +168,9 @@ async function createHarness() {
       depotPath,
       useManifest: (kind: keyof typeof manifests) => {
          manifest = manifests[kind];
+      },
+      skipSteamDownloadOnce: () => {
+         steamSkipsDownload = true;
       },
       stallSteam: () => {
          steamManifest = createSteamManifest({ ...steamFiles, 'Beat Saber_Data/level0': 'level data steam never delivers' });

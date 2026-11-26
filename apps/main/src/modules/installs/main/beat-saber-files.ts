@@ -10,14 +10,14 @@ import { isAbsolute, join } from 'node:path';
 export const beatSaberExecutableName = 'Beat Saber.exe';
 export const beatSaberDataDirectoryName = 'Beat Saber_Data';
 
-const bsArm64MarkerDirectory = '.bs-arm64';
-const peHeaderScanBytes = 4096;
+const headerScanBytes = 4096;
 const peMachineArm64 = 0xaa64;
 const peMachineArm64Ec = 0xa641;
 const versionAnchor = 'public.app-category.games';
 const versionWindowBytes = 256;
 const maxScanBytes = 512 * 1024;
 const versionPattern = /\d+\.\d+\.\d+/;
+const unityVersionPattern = /\d{4}\.\d+\.\d+[abfp]\d+/;
 
 type InstallFolderInspection =
    | { status: 'invalid'; path: string; issue: InstallFolderIssue; detail?: string }
@@ -27,11 +27,8 @@ export function beatSaberExecutablePath(installPath: string) {
    return join(installPath, beatSaberExecutableName);
 }
 
-export async function isArm64BeatSaberInstall(installPath: string) {
-   const marker = await pathExists(join(installPath, bsArm64MarkerDirectory));
-   if (Result.isOk(marker) && marker.value) return true;
-
-   const read = await readFileHead(beatSaberExecutablePath(installPath), peHeaderScanBytes);
+export async function isArm64Image(filePath: string) {
+   const read = await readFileHead(filePath, headerScanBytes);
    if (Result.isError(read)) return false;
 
    const header = read.value;
@@ -53,6 +50,11 @@ export async function readBeatSaberVersion(installPath: string) {
 
    const start = anchorIndex + versionAnchor.length;
    return versionPattern.exec(contents.slice(start, start + versionWindowBytes))?.[0] ?? null;
+}
+
+export async function readUnityVersion(installPath: string) {
+   const read = await readFileHead(join(installPath, beatSaberDataDirectoryName, 'globalgamemanagers'), headerScanBytes);
+   return Result.isOk(read) ? (unityVersionPattern.exec(read.value.toString('latin1'))?.[0] ?? null) : null;
 }
 
 function readFileHead(filePath: string, maxBytes: number) {

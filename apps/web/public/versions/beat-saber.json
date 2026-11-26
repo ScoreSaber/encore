@@ -1023,7 +1023,8 @@
     "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/703272148131643814",
     "releaseDate": "2026-06-25T13:04:13Z",
     "year": "2026",
-    "recommended": false
+    "recommended": false,
+    "recommendedOnFrame": true
   },
   {
     "version": "1.44.2",
@@ -1040,6 +1041,51 @@
     "oculusBinaryId": "26906970178976073",
     "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/699897618302501594",
     "releaseDate": "2026-07-30T13:01:54Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.45.0",
+    "manifestId": "298934260026472861",
+    "oculusBinaryId": "27326198290386591",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/698774255287927030",
+    "releaseDate": "2026-08-27T12:54:50Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.45.1",
+    "manifestId": "2952738549801144608",
+    "oculusBinaryId": "27458630327143386",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/707782722857206763",
+    "releaseDate": "2026-09-14T10:07:09Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.45.2",
+    "manifestId": "9133939704585506176",
+    "oculusBinaryId": "27638994925773591",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/706658093186943193",
+    "releaseDate": "2026-09-29T13:11:51Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.45.3",
+    "manifestId": "4963849290046365975",
+    "oculusBinaryId": "27842594032080345",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/702156483742138627",
+    "releaseDate": "2026-10-15T13:01:38Z",
+    "year": "2026",
+    "recommended": false
+  },
+  {
+    "version": "1.46.0",
+    "manifestId": "2764976676560597127",
+    "oculusBinaryId": "28292496150423462",
+    "releaseUrl": "https://steamcommunity.com/games/620980/announcements/detail/747195021920305200",
+    "releaseDate": "2026-11-12T14:02:51Z",
     "year": "2026",
     "recommended": false
   }

@@ -50,6 +50,7 @@ export type ModIndexEntry = {
    claimedIdentity: string | null;
    dependencies: string[];
    downloadUrl: string;
+   mirrorUrl?: string;
    downloadHost: string;
    archiveHash: ContentHash | null;
    files: ModIndexFile[];
@@ -203,6 +204,7 @@ export function toModIndexEntries(entries: BeatModsEntry[]): ModIndexEntry[] {
          claimedIdentity: null,
          dependencies: version.dependencies.map(({ pId }) => modIndexKey(officialModSourceId, String(pId))),
          downloadUrl: version.downloadUrl,
+         mirrorUrl: new URL(`/cdn/mod/${version.zipHash}.zip`, beatModsOrigin).href,
          downloadHost: beatModsHost,
          archiveHash: { algorithm: 'md5', value: version.zipHash },
          files: version.contentHashes.map((content) => ({ path: content.path, hash: { algorithm: 'md5', value: content.hash } }))

@@ -1,6 +1,6 @@
 {
    "name": "encore",
-   "version": "0.2.4",
+   "version": "0.2.7",
    "private": true,
    "description": "A lightweight desktop companion for managing Beat Saber installs, mods and other user generated content",
    "homepage": "https://encore.scoresaber.com",
@@ -212,5 +212,5 @@
          ]
       }
    },
-   "desktopName": "com.scoresaber.encore"
+   "desktopName": "com.scoresaber.encore.desktop"
 }

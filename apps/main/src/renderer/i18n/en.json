@@ -940,6 +940,7 @@
       "authenticating": "Waiting for the Meta sign-in window",
       "downloading": "Downloaded {size} so far",
       "copying": "Copied {size}",
+      "verifying": "Checked {size}",
       "speed": "{speed}/s",
       "chooseAnother": "Choose another version",
       "stores": {
@@ -963,7 +964,7 @@
          "store": "Store",
          "destination": "Folder",
          "warnings": {
-            "depot-not-empty": "The Steam depot folder already has leftover files that will be copied with this download",
+            "depot-not-empty": "The Steam depot folder has leftover files. Encore leaves them out of this install and removes them once it's done",
             "meta-sign-in-opens": "A Meta sign-in window opens to start this download",
             "name-conflict": "A folder with that version name already exists, so Encore chose a unique folder",
             "steam-console-opens": "Steam opens with its console while downloading this version"
@@ -1032,6 +1033,14 @@
          "proton-logs": {
             "label": "Proton logs",
             "description": "Writes Proton and wine logs into the install Logs folder"
+         },
+         "foveated-rendering": {
+            "label": "Foveated rendering",
+            "description": "Renders the edges of your view at lower detail. Only applies to the native ARM64 build"
+         },
+         "emulate-x64": {
+            "label": "Run the x64 build",
+            "description": "Starts the original PC build through FEX emulation instead of the native ARM64 build"
          },
          "run-as-admin": {
             "label": "Run as admin",
@@ -1105,7 +1114,9 @@
       "operation": "Launch {name}",
       "progress": {
          "startingSteam": "Starting Steam",
-         "startingOculus": "Starting the Oculus client"
+         "startingOculus": "Starting the Oculus client",
+         "arm64-download": "Downloading the ARM64 build {percent}%",
+         "arm64-runtime": "Setting up the ARM64 build"
       }
    },
    "shortcuts": {
@@ -2315,6 +2326,7 @@
             "manifest-unavailable": "Steam didn't start this download. This build may no longer be available to this Steam account",
             "timed-out": "Steam didn't finish this download in time",
             "unverified": "Steam's manifest for this build couldn't be found, so Encore can't check the download is complete",
+            "incomplete": "Steam finished this download but files are missing or damaged",
             "cancelled": "Encore stopped waiting for this download. Steam keeps downloading it in the background"
          },
          "oculus": {
@@ -2538,7 +2550,7 @@
          "invalid-config": "The daemon address or port is invalid"
       },
       "launch": {
-         "arm64-unsupported": "Encore doesn't support unofficial ARM64 Beat Saber builds. Use a standard PC copy or restore the x64 files first",
+         "arm64-unsupported": "This copy runs natively on ARM64 and only starts on an ARM64 Linux device such as the Steam Frame",
          "executable-missing": "The Beat Saber executable isn't in this install folder",
          "inspect-failed": "This install folder couldn't be read",
          "invalid-options": "These launch options aren't something Encore can pass to Beat Saber",
@@ -2720,6 +2732,12 @@
          "import": {
             "preview-failed": "The file couldn't be read"
          }
+      },
+      "arm64": {
+         "download-failed": "Encore couldn't download the native ARM64 runtime",
+         "verify-failed": "A downloaded ARM64 runtime file didn't pass its integrity check",
+         "install-failed": "Encore couldn't write the native ARM64 runtime into this install",
+         "restore-failed": "Encore couldn't put the x64 files back"
       },
       "bsmanager": {
          "inspect-failed": "The BSManager folder couldn't be read",
