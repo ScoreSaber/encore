@@ -1,0 +1,99 @@
+---
+title: Nix
+description: Install Encore using Nix
+---
+
+Encore can be built from source with its shipped flake for `x86_64-linux`, `aarch64-linux` and `aarch64-darwin`.
+
+## Try it out
+
+```sh
+nix run github:ScoreSaber/encore
+```
+
+## Installation
+
+Add Encore as an input
+
+```nix tab="flake" tab-group="nix-install" title="flake.nix"
+{
+  inputs = {
+    # ...
+    encore.url = "github:ScoreSaber/encore";
+    encore.inputs.nixpkgs.follows = "nixpkgs";
+  };
+
+  outputs = { nixpkgs, ... } @ inputs: {
+    nixosConfigurations.HOSTNAME = nixpkgs.lib.nixosSystem {
+      specialArgs = { inherit inputs; }; # pass inputs to specialArgs
+      modules = [
+        ./configuration.nix
+      ];
+    };
+  };
+}
+```
+
+```nix tab="flake-compat" tab-group="nix-install" title="configuration.nix"
+{ pkgs, ... }:
+let
+  encore = (import (fetchTarball "https://github.com/edolstra/flake-compat/archive/master.tar.gz") {
+    src = fetchTarball "https://github.com/ScoreSaber/encore/archive/main.tar.gz";
+  }).defaultNix;
+in
+  # see the modules below
+```
+
+Then add the package to your system
+
+```nix tab="flake" tab-group="nix-install" title="configuration.nix"
+{ inputs, pkgs, ... }:
+{
+  environment.systemPackages = [
+    inputs.encore.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+}
+```
+
+```nix tab="flake-compat" tab-group="nix-install" title="configuration.nix"
+{ pkgs, ... }:
+let
+  # see the module above
+in {
+  environment.systemPackages = [
+    encore.packages.${pkgs.stdenv.hostPlatform.system}.default
+  ];
+}
+```
+
+### Overlay
+
+Or use the overlay
+
+```nix tab="flake" tab-group="nix-install" title="configuration.nix"
+{ inputs, pkgs, ... }:
+{
+  nixpkgs.overlays = [ inputs.encore.overlays.default ];
+
+  environment.systemPackages = [ pkgs.encore ];
+}
+```
+
+```nix tab="flake-compat" tab-group="nix-install" title="configuration.nix"
+{ pkgs, ... }:
+let
+  # see the module above
+in {
+  nixpkgs.overlays = [ encore.overlays.default ];
+
+  environment.systemPackages = [ pkgs.encore ];
+}
+```
+
+## Development
+
+The flake also includes a dev shell with Node and pnpm
+
+```sh
+nix develop
+```
