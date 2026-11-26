@@ -1,4 +1,4 @@
-import { Bug, ChevronRight, Loader2, MemoryStick, Monitor, Play, ScrollText, ShieldCheck, SkipForward, SquarePen } from 'lucide-react';
+import { Bug, ChevronRight, Cpu, Loader2, MemoryStick, Monitor, Play, ScrollText, ShieldCheck, SkipForward, SquarePen } from 'lucide-react';
 import { useTranslations } from 'use-intl';
 
 import { RiftIcon } from '@/components/headset-icons';
@@ -22,6 +22,7 @@ const optionIcons = {
    'skip-steam': SkipForward,
    editor: SquarePen,
    'proton-logs': ScrollText,
+   'emulate-x64': Cpu,
    'run-as-admin': ShieldCheck,
    'close-encore': MemoryStick
 };
@@ -34,7 +35,8 @@ const launchOptionOrder: (keyof typeof optionIcons)[] = [
    'run-as-admin',
    'close-encore',
    'debug',
-   'proton-logs'
+   'proton-logs',
+   'emulate-x64'
 ];
 
 export function LaunchAction({ launch }: { launch: InstallLaunch }) {
@@ -71,14 +73,21 @@ export function LaunchAction({ launch }: { launch: InstallLaunch }) {
 }
 
 export function LaunchProgress({ launch }: { launch: InstallLaunch }) {
+   const t = useTranslations('launch.progress');
    if (!launch.launching) return null;
 
-   const percent = Math.min(Math.max(launch.operation?.progress?.percent ?? 0, 0), 100);
+   const progress = launch.operation?.progress;
+   const percent = Math.min(Math.max(progress?.percent ?? 0, 0), 100);
+   const status =
+      progress?.phase === 'arm64-download' ? t('arm64-download', { percent }) : progress?.phase === 'arm64-runtime' ? t('arm64-runtime') : null;
 
    return (
-      <span aria-hidden className="bg-primary/20 absolute inset-x-0 bottom-0 h-0.5">
-         <span className="bg-primary block h-full transition-[width] duration-300" style={{ width: `${percent}%` }} />
-      </span>
+      <>
+         {status ? <p className="text-muted-foreground text-center text-xs">{status}</p> : null}
+         <span aria-hidden className="bg-primary/20 absolute inset-x-0 bottom-0 h-0.5">
+            <span className="bg-primary block h-full transition-[width] duration-300" style={{ width: `${percent}%` }} />
+         </span>
+      </>
    );
 }
 

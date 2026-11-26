@@ -58,16 +58,16 @@ export type ProtonFolderChoice = { status: 'cancelled' } | { status: 'selected';
 
 export const launchPlatformSchema = z.enum(['windows', 'linux', 'quest', 'other']);
 
-export const launchFlagSchema = z.enum(['oculus-mode', 'fpfc', 'debug', 'skip-steam', 'editor', 'proton-logs']);
+export const launchFlagSchema = z.enum(['oculus-mode', 'fpfc', 'debug', 'skip-steam', 'editor', 'proton-logs', 'emulate-x64']);
 export const launchFlags = launchFlagSchema.options;
 
 const platformLaunchFlags = {
-   windows: launchFlags.filter((flag) => flag !== 'proton-logs'),
-   linux: launchFlags.filter((flag) => flag !== 'skip-steam'),
+   windows: launchFlags.filter((flag) => flag !== 'proton-logs' && flag !== 'emulate-x64'),
+   linux: launchFlags.filter((flag) => flag !== 'skip-steam' && flag !== 'emulate-x64'),
    quest: [],
    other: launchFlags
 };
-const steamFrameLaunchFlags: LaunchFlag[] = ['debug', 'proton-logs'];
+const steamFrameLaunchFlags: LaunchFlag[] = ['debug', 'proton-logs', 'emulate-x64'];
 
 const launchArgSchema = z
    // arguments cross process boundaries; do not hand control characters to a launcher

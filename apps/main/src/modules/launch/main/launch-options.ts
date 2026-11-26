@@ -8,7 +8,8 @@ const flagArguments = {
    debug: ['--verbose'],
    editor: ['editor'],
    'skip-steam': [],
-   'proton-logs': []
+   'proton-logs': [],
+   'emulate-x64': []
 };
 
 const managedCopyArgument = '--no-yeet';
@@ -52,6 +53,7 @@ export function buildLaunchEnv(input: {
    store: StoreKind | null;
    installPath: string;
    proton: ProtonLaunchPlan | null;
+   native: boolean;
    environment: LaunchEnvironment;
 }) {
    const environment = { ...input.environment };
@@ -64,7 +66,7 @@ export function buildLaunchEnv(input: {
    if (!input.proton) return environment;
 
    environment.SteamEnv = '1';
-   if (input.proton.steamFrame) {
+   if (input.proton.steamFrame && !input.native) {
       environment.DISABLE_VULKAN_FDM_INJECTION_LAYER ??= '1';
       environment.FEX_MONOHACKS ??= '0';
    }

@@ -5,8 +5,9 @@ import { createProblem, type Problem } from '@/lib/errors';
 import { pathExists } from '@/lib/filesystem/path';
 import { translate } from '@/lib/messages';
 import { createLatestGuard } from '@/lib/state/machine';
+import type { PrepareArm64 } from '@/modules/arm64/main/arm64-launch';
 import type { InstallDetail } from '@/modules/installs/contract';
-import { beatSaberExecutablePath, isArm64BeatSaberInstall } from '@/modules/installs/main/beat-saber-files';
+import { beatSaberExecutablePath, isArm64Image } from '@/modules/installs/main/beat-saber-files';
 import type { InstallRegistry } from '@/modules/installs/main/install-registry';
 import {
    createDefaultLaunchOptions,
@@ -15,6 +16,7 @@ import {
    launchFlagsFor,
    launchPlatformFor,
    unavailableLaunchPreview,
+   type LaunchEnvironment,
    type LaunchIssue,
    type LaunchOptions,
    type LaunchOptionsRequest,
@@ -41,6 +43,7 @@ type LaunchServiceOptions = {
    registry: InstallRegistry;
    operations: OperationRegistry;
    runtime: LaunchRuntime;
+   prepareArm64?: PrepareArm64;
    storeClientDelayMs?: number;
 };
 
@@ -105,7 +108,7 @@ export function createLaunchService(options: LaunchServiceOptions) {
       const exists = await pathExists(executablePath);
       if (Result.isError(exists)) return unavailableLaunchPreview(request, 'inspect-failed', exists.error.detail);
       if (!exists.value) return unavailableLaunchPreview(request, 'executable-missing', executablePath);
-      if (await isArm64BeatSaberInstall(install.path)) return unavailableLaunchPreview(request, 'arm64-unsupported');
+      if (!options.prepareArm64 && (await isArm64Image(executablePath))) return unavailableLaunchPreview(request, 'arm64-unsupported');
 
       const warnings: LaunchWarning[] = [];
       let proton: ProtonLaunchPlan | null = null;
@@ -271,16 +274,37 @@ export function createLaunchService(options: LaunchServiceOptions) {
          if (Result.isError(prepared)) return options.operations.fail(operationId, prepared.error);
       }
 
+      let native: LaunchEnvironment | null = null;
+      if (previewed.proton && options.prepareArm64) {
+         options.operations.update(operationId, { message: previewed.workingDirectory, progress: { phase: 'arm64-runtime', percent: 60 } });
+
+         const install = await options.registry.get(previewed.installId);
+         const prepared = await options.prepareArm64({
+            installPath: previewed.workingDirectory,
+            protonBinaryPath: previewed.proton.protonBinaryPath,
+            preferNative: install?.source !== 'store' && !previewed.options.flags.includes('emulate-x64'),
+            signal,
+            onProgress: (progress) => options.operations.update(operationId, { progress })
+         });
+         if (signal.aborted) return;
+         if (Result.isError(prepared)) return options.operations.fail(operationId, prepared.error);
+         native = prepared.value;
+      }
+
       if (signal.aborted) return;
 
       options.operations.update(operationId, { message: previewed.executablePath, progress: { phase: 'launching', percent: 75 } });
 
-      const env = buildLaunchEnv({
-         store: previewed.store,
-         installPath: previewed.workingDirectory,
-         proton: previewed.proton,
-         environment: previewed.options.environment
-      });
+      const env = {
+         ...buildLaunchEnv({
+            store: previewed.store,
+            installPath: previewed.workingDirectory,
+            proton: previewed.proton,
+            native: native !== null,
+            environment: previewed.options.environment
+         }),
+         ...native
+      };
       const command = previewed.proton
          ? buildProtonCommand({
               proton: previewed.proton,

@@ -280,6 +280,7 @@ export function createModService(options: ModServiceOptions) {
    async function writeInstall(operationId: string, install: InstallDetail, planned: PlannedMod[], signal: AbortSignal) {
       let files = 0;
       let bytes = 0;
+      const failed: { name: string; detail: string }[] = [];
 
       for (const [index, { entry }] of planned.entries()) {
          options.operations.update(operationId, { progress: progressFor(index, planned.length, entry.name, 0) });
@@ -299,7 +300,13 @@ export function createModService(options: ModServiceOptions) {
             }
          });
          if (Result.isError(installed)) {
-            return Result.err<InstallOutcome, Problem>(createProblem('mods.install-failed', { name: entry.name, detail: installed.error.message }));
+            if (entry.isBsipa || signal.aborted) {
+               return Result.err<InstallOutcome, Problem>(
+                  createProblem('mods.install-failed', { name: entry.name, detail: installed.error.message })
+               );
+            }
+            failed.push({ name: entry.name, detail: installed.error.message });
+            continue;
          }
 
          files += installed.value.files;
@@ -309,6 +316,13 @@ export function createModService(options: ModServiceOptions) {
 
          const patched = await patcher.patch(install.path);
          if (Result.isError(patched)) return Result.err<InstallOutcome, Problem>(patched.error);
+      }
+
+      const [firstFailure] = failed;
+      if (firstFailure) {
+         return Result.err<InstallOutcome, Problem>(
+            createProblem('mods.install-failed', { name: failed.map(({ name }) => name).join(', '), detail: firstFailure.detail })
+         );
       }
 
       return Result.ok<InstallOutcome, Problem>({ installId: install.id, mods: planned.length, files, bytes });

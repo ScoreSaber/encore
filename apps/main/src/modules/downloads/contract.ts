@@ -14,7 +14,8 @@ export const downloadVersionSchema = z.object({
    releaseUrl: z.string().nullable(),
    releaseDate: z.string().nullable(),
    year: z.string().nullable(),
-   recommended: z.boolean()
+   recommended: z.boolean(),
+   recommendedOnFrame: z.boolean().default(false)
 });
 
 const downloadCatalogSourceSchema = z.enum(['cache', 'remote']);
