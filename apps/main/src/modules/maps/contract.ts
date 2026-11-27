@@ -263,6 +263,7 @@ export type MapLinkProtocolState = {
    schemes: MapLinkScheme[];
    registered: boolean;
    canUnregister: boolean;
+   unavailableReason?: string;
 };
 
 export type MapLinkProtocolResult = IpcResult<MapLinkProtocolState>;

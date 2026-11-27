@@ -42,7 +42,8 @@ const shortcutWarningSchema = z.enum(['replaces-existing', 'steam-must-be-closed
 const shortcutProtocolStateSchema = z.object({
    scheme: z.literal(encoreProtocol),
    registered: z.boolean(),
-   canUnregister: z.boolean()
+   canUnregister: z.boolean(),
+   unavailableReason: z.string().optional()
 });
 
 const shortcutStateSchema = z.object({

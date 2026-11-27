@@ -11,7 +11,7 @@ export type OpenFolderResult = { status: 'opened' | 'unsupported' | 'failed' };
 export type FileImportChoice = { status: 'selected'; paths: string[] } | { status: 'cancelled' } | { status: 'unsupported' };
 export type FileExportChoice = { status: 'selected'; path: string } | { status: 'cancelled' } | { status: 'unsupported' };
 export const linkRegistrationSchema = z.object({ registered: z.boolean() });
-export type LinkProtocolState = { scheme: string; registered: boolean; canUnregister: boolean };
+export type LinkProtocolState = { scheme: string; registered: boolean; canUnregister: boolean; unavailableReason?: string };
 export type LinkProtocolResult = IpcResult<LinkProtocolState>;
 
 export class IpcInvokeError extends TaggedError('IpcInvokeError')<{ code: string; message: string }>() {}

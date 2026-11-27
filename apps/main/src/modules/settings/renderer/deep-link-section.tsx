@@ -23,9 +23,9 @@ import { useContentLinkDestinations } from '@/modules/shared-content/renderer/us
 import { shortcutStateQueryOptions } from '@/modules/shortcuts/renderer/use-install-shortcuts';
 import { useTargets } from '@/modules/targets/renderer/use-targets';
 import { unwrapIpc } from '@/renderer/ipc-result';
-import { type apiKey, useSnapshotMutation } from '@/renderer/query/api-query';
+import type { apiKey } from '@/renderer/query/api-query';
 
-type ProtocolState = { registered: boolean; canUnregister: boolean };
+type ProtocolState = { registered: boolean; canUnregister: boolean; unavailableReason?: string };
 
 export function DeepLinkSection({ disabled }: { disabled: boolean }) {
    const t = useTranslations('settings.deepLinks');
@@ -59,6 +59,7 @@ function AppLinkRow({ disabled }: { disabled: boolean }) {
    const state = shortcuts.data ?? null;
    const setRegistered = useMutation({
       mutationFn: async (registered: boolean) => unwrapIpc(await window.encore.shortcuts.setProtocolRegistered({ registered })),
+      onMutate: () => queryClient.cancelQueries({ queryKey: shortcutStateQueryOptions.queryKey }),
       onSettled: () => queryClient.invalidateQueries({ queryKey: shortcutStateQueryOptions.queryKey })
    });
 
@@ -68,7 +69,7 @@ function AppLinkRow({ disabled }: { disabled: boolean }) {
          label={t('scheme')}
          state={state?.protocol ?? null}
          schemes={state ? [state.protocol.scheme] : []}
-         failed={shortcuts.isError || setRegistered.isError}
+         failure={setRegistered.error?.message ?? (shortcuts.isError ? t('unavailable') : null)}
          busy={setRegistered.isPending}
          disabled={disabled}
          onChange={(registered) => setRegistered.mutate(registered)}
@@ -227,12 +228,21 @@ function useLinkProtocol<State extends ProtocolState>(
    options: UndefinedInitialDataOptions<State, Error, State, ReturnType<typeof apiKey>> & { queryKey: DataTag<QueryKey, State, Error> },
    register: (registered: boolean) => Promise<IpcResult<State>>
 ) {
+   const t = useTranslations('settings.deepLinks');
+   const queryClient = useQueryClient();
    const query = useQuery(options);
-   const setRegistered = useSnapshotMutation(options.queryKey, async (registered: boolean) => unwrapIpc(await register(registered)));
+   const setRegistered = useMutation({
+      mutationFn: async (registered: boolean) => unwrapIpc(await register(registered)),
+      onMutate: () => queryClient.cancelQueries({ queryKey: options.queryKey }),
+      onSuccess: (state) => queryClient.setQueryData(options.queryKey, state),
+      // Removal can partially succeed before reporting an error. Read back the actual handlers,
+      // and keep the switch pending until that state has been refreshed.
+      onSettled: () => queryClient.invalidateQueries({ queryKey: options.queryKey })
+   });
 
    return {
       state: query.data ?? null,
-      failed: query.isError || setRegistered.isError,
+      failure: setRegistered.error?.message ?? (query.isError ? t('unavailable') : null),
       busy: setRegistered.isPending,
       onChange: (registered: boolean) => setRegistered.mutate(registered)
    };
@@ -243,7 +253,7 @@ function ProtocolRow({
    label,
    schemes,
    state,
-   failed,
+   failure,
    busy,
    disabled,
    onChange
@@ -252,7 +262,7 @@ function ProtocolRow({
    label: string;
    schemes: string[];
    state: ProtocolState | null;
-   failed: boolean;
+   failure: string | null;
    busy: boolean;
    disabled: boolean;
    onChange: (registered: boolean) => void;
@@ -271,9 +281,14 @@ function ProtocolRow({
                : label
          }
          htmlFor={id}
-         description={failed ? t('unavailable') : permanent ? t('registeredPermanent') : undefined}
+         description={failure ?? state?.unavailableReason ?? (permanent ? t('registeredPermanent') : undefined)}
          control={
-            <Switch id={id} checked={state?.registered ?? false} disabled={disabled || !state || busy || permanent} onCheckedChange={onChange} />
+            <Switch
+               id={id}
+               checked={state?.registered ?? false}
+               disabled={disabled || !state || busy || permanent || Boolean(state.unavailableReason)}
+               onCheckedChange={onChange}
+            />
          }
       />
    );

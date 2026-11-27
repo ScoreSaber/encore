@@ -82,7 +82,7 @@ import { createSharedContentIpcModule } from '@/modules/shared-content/main/regi
 import { createSharedContentService } from '@/modules/shared-content/main/shared-content-service';
 import { defaultSharedContentRootPath } from '@/modules/shared-content/main/shared-paths';
 import { encoreProtocol } from '@/modules/shortcuts/contract';
-import { registerDeepLinkIntake, setProtocolRegistered } from '@/modules/shortcuts/main/deep-link';
+import { registerDeepLinkIntake, registerDefaultEncoreProtocol } from '@/modules/shortcuts/main/deep-link';
 import { createShortcutsIpcModule } from '@/modules/shortcuts/main/register-ipc';
 import { openSteamLink, readSteamClientState } from '@/modules/stores/main/steam-client';
 import { supportApi } from '@/modules/support/api';
@@ -518,7 +518,7 @@ function composeEncore(log: AppLogWriter) {
 
 function startEncore() {
    electronApp.setAppUserModelId('com.scoresaber.encore');
-   setProtocolRegistered(encoreProtocol, true);
+   registerDefaultEncoreProtocol();
    const log = createAppLogWriter({ logsPath: app.getPath('logs'), homePath: app.getPath('home') });
    composeEncore(log);
    void log.info(`app started ${app.getVersion()} on ${process.platform} ${process.arch} (electron ${process.versions.electron})`);

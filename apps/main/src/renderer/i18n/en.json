@@ -1455,6 +1455,7 @@
          "inputLabel": "Accent colour hex value"
       },
       "deepLinks": {
+         "flatpakUnavailable": "Change link handlers in your desktop’s default application settings outside Flatpak",
          "linkLabel": "{name} ({schemes})",
          "scheme": "Encore links",
          "mapScheme": "Map links",
@@ -2598,6 +2599,7 @@
          }
       },
       "shortcuts": {
+         "protocol-change-failed": "Encore couldn’t change the system link handler",
          "invalid-options": "These launch options aren't something Encore can put in a shortcut",
          "steam-client-missing": "The Steam client isn't installed on this machine",
          "steam-file-unreadable": "The Steam shortcuts file couldn't be read, so Encore left it alone",
