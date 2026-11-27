@@ -15,7 +15,7 @@ const mod = (id: string, version: string, dependencies: { id: string; version: s
 });
 
 describe('Quest mod catalog', () => {
-   test('picks the global library builds that this version of the game asks for and files core dependencies under core', async () => {
+   test('picks only the global builds this version of the game depends on and files core dependencies under core', async () => {
       const catalog = createQuestModCatalog({
          repositories: {
             isQuestModsEnabled: async () => true,
@@ -29,10 +29,11 @@ describe('Quest mod catalog', () => {
                     ? { bsml: { '0.4.55': mod('bsml', '0.4.55', [{ id: 'beatsaber-hook', version: '^6.4.1' }]) } }
                     : {
                          'beatsaber-hook': {
-                            '6.4.2': mod('beatsaber-hook', '6.4.2'),
+                            '6.4.2': mod('beatsaber-hook', '6.4.2', [{ id: 'flamingo', version: '^1.1.0' }]),
                             '8.2.1': mod('beatsaber-hook', '8.2.1', [{ id: 'flamingo', version: '^1.2.1' }])
                          },
-                         flamingo: { '1.1.2': mod('flamingo', '1.1.2'), '1.2.1': mod('flamingo', '1.2.1') }
+                         flamingo: { '1.1.2': mod('flamingo', '1.1.2'), '1.2.1': mod('flamingo', '1.2.1') },
+                         qinst: { '1.0.6': mod('qinst', '1.0.6') }
                       }
             )
       });

@@ -219,7 +219,9 @@ function toQuestIndexEntries(
 
       let changed = false;
       for (const listing of floating) {
-         const mod = pick(listing, ranges.get(listing.id) ?? []);
+         const wanted = ranges.get(listing.id);
+         if (!wanted) continue;
+         const mod = pick(listing, wanted);
          if (!mod || mod.version === picked.get(listing.id)?.version) continue;
          picked.set(listing.id, mod);
          changed = true;
