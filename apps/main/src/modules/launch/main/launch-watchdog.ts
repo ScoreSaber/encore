@@ -14,7 +14,7 @@ const watchdogName = 'encore-watchdog';
 export function createLaunchWatchdog(dataPath: string): PrepareLaunchWatchdog {
    return async () => {
       const fileName = process.platform === 'win32' ? `${watchdogName}.exe` : watchdogName;
-      const sourcePath = app.isPackaged ? join(process.resourcesPath, fileName) : join(app.getAppPath(), 'build', 'watchdog', fileName);
+      const sourcePath = app.isPackaged ? join(dirname(app.getAppPath()), fileName) : join(app.getAppPath(), 'build', 'watchdog', fileName);
       const flatpakId = process.env.FLATPAK_ID;
       const available = await Result.tryPromise({
          try: () => access(sourcePath, constants.X_OK),
@@ -42,7 +42,8 @@ export function createLaunchWatchdog(dataPath: string): PrepareLaunchWatchdog {
          });
       }
 
-      const relaunchPath = process.platform === 'linux' ? (process.env.APPIMAGE ?? app.getPath('exe')) : app.getPath('exe');
+      const relaunchPath =
+         process.platform === 'linux' ? (process.env.APPIMAGE ?? process.env.ENCORE_EXECUTABLE ?? app.getPath('exe')) : app.getPath('exe');
       return Result.ok({
          executablePath: sourcePath,
          args: ['--parent', String(process.pid), beatSaberExecutableName, relaunchPath],

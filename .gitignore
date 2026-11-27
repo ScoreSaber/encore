@@ -6,6 +6,7 @@ dist/
 out/
 release/
 build/
+result
 .source/
 .react-router/
 .react-router-build/
@@ -28,3 +29,4 @@ electron.vite.*.mjs
 # os/editor noise
 .DS_Store
 Thumbs.db
+.direnv
