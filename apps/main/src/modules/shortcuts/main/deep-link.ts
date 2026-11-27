@@ -1,7 +1,11 @@
+import { Result } from 'better-result';
 import { app, BrowserWindow } from 'electron';
 
-import type { IpcResult, LinkProtocolResult, LinkProtocolState } from '@/ipc/core';
+import type { LinkProtocolState } from '@/ipc/core';
+import { createProblem, type Problem } from '@/lib/errors';
+import { translate } from '@/lib/messages';
 import { encoreProtocol } from '@/modules/shortcuts/contract';
+import { isLinuxProtocolRegistered, registerLinuxProtocols, unregisterLinuxProtocols } from '@/modules/shortcuts/main/linux-protocol';
 
 import { extname, resolve } from 'node:path';
 
@@ -31,51 +35,71 @@ function withProtocolClient(scheme: string, action: ProtocolAction) {
    return entry ? action(scheme, process.execPath, [resolve(entry)]) : action(scheme);
 }
 
-export function isProtocolRegistered(scheme: string) {
+function isNativeProtocolRegistered(scheme: string) {
    return withProtocolClient(scheme, (protocol, path, args) => app.isDefaultProtocolClient(protocol, path, args));
 }
 
-export function canUnregisterProtocol() {
-   return process.platform !== 'linux';
+export async function isProtocolRegistered(scheme: string) {
+   if (process.platform !== 'linux') return isNativeProtocolRegistered(scheme);
+   return isLinuxProtocolRegistered(scheme, app.isPackaged);
 }
 
-export function setProtocolRegistered(scheme: string, registered: boolean) {
-   if (registered) withProtocolClient(scheme, (protocol, path, args) => app.setAsDefaultProtocolClient(protocol, path, args));
-   else if (canUnregisterProtocol()) withProtocolClient(scheme, (protocol, path, args) => app.removeAsDefaultProtocolClient(protocol, path, args));
-
-   return isProtocolRegistered(scheme);
+export function registerDefaultEncoreProtocol() {
+   if (process.platform === 'linux') return;
+   withProtocolClient(encoreProtocol, (protocol, path, args) => app.setAsDefaultProtocolClient(protocol, path, args));
 }
 
-export function readProtocolLinkState(scheme: string): LinkProtocolState {
-   return {
-      scheme,
-      registered: isProtocolRegistered(scheme),
-      canUnregister: canUnregisterProtocol()
-   };
-}
-
-export function setProtocolLinkRegistered(scheme: string, registered: boolean): LinkProtocolResult {
-   setProtocolRegistered(scheme, registered);
-   return { ok: true, value: readProtocolLinkState(scheme) };
-}
-
-export function readProtocolsLinkState<Scheme extends string>(schemes: readonly Scheme[]) {
-   return {
-      schemes: [...schemes],
-      registered: schemes.every((scheme) => isProtocolRegistered(scheme)),
-      canUnregister: canUnregisterProtocol()
-   };
-}
-
-export function setProtocolsLinkRegistered<Scheme extends string>(
-   schemes: readonly Scheme[],
-   registered: boolean
-): IpcResult<{ schemes: Scheme[]; registered: boolean; canUnregister: boolean }> {
-   for (const scheme of schemes) {
-      setProtocolRegistered(scheme, registered);
+async function setProtocolsRegistered(schemes: readonly string[], registered: boolean): Promise<Result<void, Problem>> {
+   if (process.platform === 'linux') {
+      if (registered) {
+         const entry = process.defaultApp ? process.argv[1] : undefined;
+         const command = [process.env.APPIMAGE ?? process.execPath, ...(entry ? [resolve(entry)] : [])];
+         return registerLinuxProtocols(schemes, command);
+      }
+      return unregisterLinuxProtocols(schemes, (scheme) => app.isPackaged && isNativeProtocolRegistered(scheme));
    }
 
-   return { ok: true, value: readProtocolsLinkState(schemes) };
+   return Result.try({
+      try: () => {
+         for (const scheme of schemes) {
+            if (registered === isNativeProtocolRegistered(scheme)) continue;
+            withProtocolClient(scheme, (protocol, path, args) =>
+               registered ? app.setAsDefaultProtocolClient(protocol, path, args) : app.removeAsDefaultProtocolClient(protocol, path, args)
+            );
+         }
+         return schemes.every((scheme) => isNativeProtocolRegistered(scheme) === registered);
+      },
+      catch: (cause) => createProblem('shortcuts.protocol-change-failed', { cause })
+   }).andThen((changed) => (changed ? Result.ok() : Result.err(createProblem('shortcuts.protocol-change-failed'))));
+}
+
+export async function readProtocolLinkState<Scheme extends string>(scheme: Scheme): Promise<LinkProtocolState & { scheme: Scheme }> {
+   if (process.platform === 'linux' && process.env.FLATPAK_ID) {
+      return { scheme, registered: false, canUnregister: false, unavailableReason: translate('settings.deepLinks.flatpakUnavailable') };
+   }
+   return { scheme, registered: await isProtocolRegistered(scheme), canUnregister: true };
+}
+
+export async function setProtocolLinkRegistered<Scheme extends string>(scheme: Scheme, registered: boolean) {
+   const changed = await setProtocolsRegistered([scheme], registered);
+   if (Result.isError(changed)) return Result.err(changed.error);
+   return Result.ok(await readProtocolLinkState(scheme));
+}
+
+export async function readProtocolsLinkState<Scheme extends string>(schemes: readonly Scheme[]) {
+   const states = await Promise.all(schemes.map(readProtocolLinkState));
+   return {
+      schemes: [...schemes],
+      registered: states.every((state) => state.registered),
+      canUnregister: states.every((state) => state.canUnregister),
+      unavailableReason: states.find((state) => state.unavailableReason)?.unavailableReason
+   };
+}
+
+export async function setProtocolsLinkRegistered<Scheme extends string>(schemes: readonly Scheme[], registered: boolean) {
+   const changed = await setProtocolsRegistered(schemes, registered);
+   if (Result.isError(changed)) return Result.err(changed.error);
+   return Result.ok(await readProtocolsLinkState(schemes));
 }
 
 export function registerDeepLinkIntake(schemes: readonly string[], fileExtensions: readonly string[]) {

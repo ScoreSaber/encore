@@ -17,6 +17,7 @@ import {
    type ShortcutWarning,
    type UnavailableShortcutPreview
 } from '@/modules/shortcuts/contract';
+import { desktopExecArg } from '@/modules/shortcuts/main/desktop-entry';
 import type { ShortcutRuntime } from '@/modules/shortcuts/main/shortcut-runtime';
 import {
    findSteamShortcutKey,
@@ -39,8 +40,8 @@ export function createShortcutService(options: {
    const platform = launchPlatformFor(options.runtime.platform);
    const kinds: ShortcutKind[] = platform === 'other' ? [] : [...shortcutKinds];
 
-   function getState(): ShortcutState {
-      return { platform, kinds, protocol: options.runtime.getProtocolState() };
+   async function getState(): Promise<ShortcutState> {
+      return { platform, kinds, protocol: await options.runtime.getProtocolState() };
    }
 
    async function preview(request: ShortcutRequest): Promise<ShortcutPreview> {
@@ -165,7 +166,7 @@ export function createShortcutService(options: {
       getState,
       preview,
       create,
-      setProtocolRegistered: (registered: boolean) => Result.ok(options.runtime.setProtocolRegistered(registered))
+      setProtocolRegistered: options.runtime.setProtocolRegistered
    };
 }
 
@@ -191,10 +192,6 @@ function shortcutFileName(name: string) {
       .trim();
 
    return cleaned.slice(0, 80) || 'Beat Saber';
-}
-
-function desktopExecArg(value: string) {
-   return `"${value.replaceAll(/["`$\\]/g, '\\$&')}"`.replaceAll('\\', '\\\\').replaceAll('%', '%%');
 }
 
 function singleLine(value: string) {
