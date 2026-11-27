@@ -57,6 +57,9 @@ export function createSharedContentTransfers(operations: OperationRegistry) {
    ) {
       const offset = frame?.offset ?? 0;
       const total = frame?.total ?? previewed.installBytes;
+      const parent = await ensureDirectory(dirname(context.folderPath));
+      if (Result.isError(parent)) return Result.err(parent.error);
+
       const prepared = await ensureDirectory(context.sharedFolderPath);
       if (Result.isError(prepared)) return Result.err(prepared.error);
 

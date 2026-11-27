@@ -232,13 +232,13 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       rootPath?: string
    ): Promise<
       | { status: 'ok'; preview: ReadySharedContentPreview; context: FolderContext }
-      | { status: 'invalid'; preview: Exclude<SharedContentPreview, ReadySharedContentPreview> }
+      | { status: 'invalid'; preview: Exclude<SharedContentPreview, ReadySharedContentPreview>; context?: FolderContext }
    > {
       const resolved = await resolveFolder(request, rootPath);
       if (resolved.status === 'invalid') return { status: 'invalid', preview: invalidSharedContentAction(request, resolved.issue, resolved.detail) };
 
       const issue = actionIssue(request.action, resolved);
-      if (issue) return { status: 'invalid', preview: invalidSharedContentAction(request, issue) };
+      if (issue) return { status: 'invalid', preview: invalidSharedContentAction(request, issue), context: resolved };
 
       const contents = readContentsMode(request);
       const warnings: SharedContentWarning[] = [];
@@ -477,6 +477,7 @@ export function createSharedContentService(options: SharedContentServiceOptions)
       // per-folder transfers report against the whole run, not their own size
       const total = previewed.folders.reduce((sum, folder) => sum + folder.bytes, 0);
       let carried = 0;
+      let alreadySatisfied = false;
 
       try {
          for (const plan of previewed.folders) {
@@ -496,8 +497,23 @@ export function createSharedContentService(options: SharedContentServiceOptions)
             };
 
             const evaluated = await previewResolved(request, previewed.rootPath);
-            // a folder that changed on disk since the preview is skipped, not fatal
-            if (evaluated.status === 'invalid') continue;
+            if (evaluated.status === 'invalid') {
+               const { issue, detail } = evaluated.preview;
+               const context = evaluated.context;
+               const satisfied =
+                  (issue === 'already-linked' || issue === 'not-linked') &&
+                  context &&
+                  (action === 'unlink'
+                     ? context.state === 'absent' || context.state === 'unlinked'
+                     : context.state === 'linked' && context.linkedRootPath !== null && isSamePath(context.linkedRootPath, previewed.rootPath));
+               if (satisfied) {
+                  alreadySatisfied = true;
+                  continue;
+               }
+
+               await rescan(previewed);
+               return options.operations.fail(operationId, createProblem(`shared-content.${issue}`, { detail: detail ?? plan.relativePath }));
+            }
 
             const frame = { offset: carried, total };
             const stepOutcome = await (action === 'link'
@@ -521,6 +537,9 @@ export function createSharedContentService(options: SharedContentServiceOptions)
          await rescan(previewed);
          if (signal.aborted) return options.operations.fail(operationId, createProblem('filesystem.operation.cancelled'));
 
+         if (outcome.folders === 0 && !alreadySatisfied) {
+            return options.operations.fail(operationId, createProblem('shared-content.nothing-to-connect'));
+         }
          options.operations.complete(operationId, outcome);
       } finally {
          activeInstalls.delete(previewed.installId);
