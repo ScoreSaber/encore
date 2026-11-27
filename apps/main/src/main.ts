@@ -140,10 +140,29 @@ function composeEncore(log: AppLogWriter) {
       operations: operationRegistry,
       settingsStore
    });
+   const bsmanagerLocations = {
+      platform: process.platform,
+      homePath,
+      documentsPath: app.getPath('documents'),
+      appDataPath: app.getPath('appData')
+   };
+   const bsmanagerAdoption = createBSManagerAdoptionService({
+      isPrefixInUse: (): boolean => launchService.isLaunchActive() || modService.hasActiveOperations(),
+      operations: operationRegistry,
+      registry: installRegistry,
+      settingsStore,
+      converter: createBSManagerSharedContentConverter({
+         operations: operationRegistry,
+         locations: bsmanagerLocations
+      }),
+      locations: bsmanagerLocations
+   });
+   void bsmanagerAdoption.migrateAdoptedSetup();
    const launchService = createLaunchService({
       settingsStore,
       registry: installRegistry,
       operations: operationRegistry,
+      waitForPrefixCopy: bsmanagerAdoption.waitForPrefixCopy,
       runtime: createLaunchRuntime({ prepareWatchdog: createLaunchWatchdog(dataPath) }),
       prepareArm64: process.platform === 'linux' && process.arch === 'arm64' ? createArm64Launch({ cacheRoot: join(dataPath, 'arm64') }) : undefined
    });
@@ -288,22 +307,6 @@ function composeEncore(log: AppLogWriter) {
       implementApi(updatesApi, updater, { subscribe: updater.subscribe })
    ];
    const remoteReceiver = disposeOnQuit(createRemoteReceiverClient({ store: createRemoteTargetStore({ settingsStore, secretStore }) }));
-   const bsmanagerLocations = {
-      platform: process.platform,
-      homePath,
-      documentsPath: app.getPath('documents'),
-      appDataPath: app.getPath('appData')
-   };
-   const bsmanagerAdoption = createBSManagerAdoptionService({
-      registry: installRegistry,
-      settingsStore,
-      converter: createBSManagerSharedContentConverter({
-         operations: operationRegistry,
-         locations: bsmanagerLocations
-      }),
-      locations: bsmanagerLocations
-   });
-   void bsmanagerAdoption.migrateAdoptedSetup();
    const questHeadsets = disposeOnQuit(
       createQuestHeadsets({
          dataPath,

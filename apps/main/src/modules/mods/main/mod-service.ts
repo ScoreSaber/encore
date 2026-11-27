@@ -375,6 +375,7 @@ export function createModService(options: ModServiceOptions) {
    }
 
    return {
+      hasActiveOperations: () => activeInstalls.size > 0,
       getMods,
       refreshMods,
       previewInstall,

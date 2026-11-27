@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DataTable } from '@/components/ui/data-table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { cn } from '@/components/utils';
 
 import type { BSManagerVersion, ReadyBSManagerPlan } from '@/modules/bsmanager/contract';
 import type { BSManagerAdopter } from '@/modules/bsmanager/renderer/use-bsmanager-adoption';
@@ -48,6 +49,7 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
                   <>
                      <p>{t('result.failed')}</p>
                      <p className="text-muted-foreground text-xs break-all">{state.error.message}</p>
+                     {state.error.detail ? <p className="text-muted-foreground text-xs break-all">{state.error.detail}</p> : null}
                   </>
                ) : null}
 
@@ -56,15 +58,17 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
                      plan={state.plan}
                      selected={selected}
                      shareContent={adopter.shareContent}
+                     copyPrefix={state.copyPrefix}
                      editable={state.status === 'ready'}
                      onToggle={adopter.toggleVersion}
-                     onShareContentChange={adopter.setShareContent}
+                     onOptionChange={adopter.setOption}
                   />
                ) : null}
 
                {state.status === 'adopted' ? (
                   <>
-                     <p>{t('result.adopted', { count: state.outcome.adopted })}</p>
+                     {state.outcome.adopted > 0 ? <p>{t('result.adopted', { count: state.outcome.adopted })}</p> : null}
+                     {state.copyPrefix ? <p>{t('prefixCopied')}</p> : null}
                      <PreviewRow label={t('sharedRoot')} value={state.outcome.sharedRootPath} />
                   </>
                ) : null}
@@ -76,8 +80,14 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
                      <Button type="button" variant="outline" size="sm" disabled={busy} onClick={adopter.dismiss}>
                         {common('cancel')}
                      </Button>
-                     <Button type="button" size="sm" disabled={busy || selected.length === 0} onClick={() => void adopter.confirm()}>
-                        {busy ? t('adding') : t('add', { count: selected.length })}
+                     <Button
+                        type="button"
+                        size="sm"
+                        variant={state.copyPrefix && state.plan.existingPrefix ? 'destructive' : 'default'}
+                        disabled={busy || (selected.length === 0 && !state.copyPrefix)}
+                        onClick={() => void adopter.confirm()}
+                     >
+                        {busy ? t(state.copyPrefix ? 'copyingPrefix' : 'adding') : t(adopter.action, { count: selected.length })}
                      </Button>
                   </>
                ) : null}
@@ -102,20 +112,22 @@ export function BSManagerDialog({ adopter }: { adopter: BSManagerAdopter }) {
    );
 }
 
-function BSManagerPlanBody({
+export function BSManagerPlanBody({
    plan,
    selected,
    shareContent,
+   copyPrefix,
    editable,
    onToggle,
-   onShareContentChange
+   onOptionChange
 }: {
    plan: ReadyBSManagerPlan;
    selected: string[];
    shareContent: boolean;
+   copyPrefix: boolean;
    editable: boolean;
    onToggle: BSManagerAdopter['toggleVersion'];
-   onShareContentChange: (next: boolean) => void;
+   onOptionChange: BSManagerAdopter['setOption'];
 }) {
    const t = useTranslations('bsmanager');
 
@@ -190,15 +202,30 @@ function BSManagerPlanBody({
          <div className="flex items-start gap-2">
             <Checkbox
                id="bsmanager-share-content"
-               checked={shareContent}
-               disabled={!editable}
-               onCheckedChange={(next) => onShareContentChange(next === true)}
+               checked={selected.length > 0 && shareContent}
+               disabled={!editable || selected.length === 0}
+               onCheckedChange={(next) => onOptionChange('shareContent', next === true)}
             />
             <label htmlFor="bsmanager-share-content" className="flex flex-col gap-0.5">
                <span>{t('shareContent')}</span>
                <span className="text-muted-foreground text-xs">{t('shareContentHint', { path: plan.sharedContentPath })}</span>
             </label>
          </div>
+         {plan.prefixPath ? (
+            <div className={cn('flex items-start gap-2', plan.existingPrefix && 'border-destructive bg-destructive/10 rounded-lg border p-3')}>
+               <Checkbox
+                  id="bsmanager-copy-prefix"
+                  checked={copyPrefix}
+                  disabled={!editable}
+                  onCheckedChange={(next) => onOptionChange('copyPrefix', next === true)}
+               />
+               <label htmlFor="bsmanager-copy-prefix" className="flex flex-col gap-0.5">
+                  <span className="font-medium">{t(plan.existingPrefix ? 'replacePrefix' : 'copyPrefix')}</span>
+                  {plan.existingPrefix ? <span className="text-destructive text-sm font-semibold">{t('replacePrefixWarning')}</span> : null}
+                  <span className="text-muted-foreground text-xs break-all">{t('copyPrefixHint', { path: plan.prefixPath })}</span>
+               </label>
+            </div>
+         ) : null}
       </>
    );
 }
