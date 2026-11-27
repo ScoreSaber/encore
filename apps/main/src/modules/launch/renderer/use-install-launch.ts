@@ -1,11 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import { createProblem } from '@/lib/errors';
+import { bsmanagerPrefixCopyPhase } from '@/modules/bsmanager/contract';
 import type { InstallActionRequest } from '@/modules/installs/contract';
 import type { LaunchPreview, ReadyLaunchPreview } from '@/modules/launch/contract';
 import { launchPreviewQueryOptions, launchStateQueryOptions } from '@/modules/launch/renderer/launch-queries';
 import { useLaunchOptions } from '@/modules/launch/renderer/use-launch-options';
 import { useOperationFlow } from '@/modules/operations/renderer/use-operation-flow';
+import { useOperations } from '@/modules/operations/renderer/use-operations';
 import { localTargetId } from '@/modules/targets/contract';
 import { unwrapIpc, unwrapTarget } from '@/renderer/ipc-result';
 
@@ -18,6 +20,10 @@ export function useInstallLaunch(request: InstallActionRequest) {
    const { options } = launchOptions;
    const preview = useQuery({ ...launchPreviewQueryOptions(request, options), enabled: launchOptions.ready });
    const flow = useOperationFlow<{ kind: 'launch'; preview: ReadyLaunchPreview }>(request.targetId);
+   const { operations } = useOperations(request.targetId);
+   const prefixCopying =
+      request.targetId === localTargetId &&
+      operations.some((operation) => operation.status === 'running' && operation.progress?.phase === bsmanagerPrefixCopyPhase);
    const { refetch } = launchState;
    const stop = useMutation({
       mutationFn: async () => {
@@ -44,7 +50,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
       previewFailure: preview.error?.message ?? null,
       launching: flow.busy,
       starting: flow.state.status === 'starting',
-      canLaunch: ready !== null && !flow.busy && !gameRunning,
+      canLaunch: ready !== null && !flow.busy && !gameRunning && !prefixCopying,
       operation: flow.operation,
       platform: launchState.data?.platform ?? 'other',
       steamFrame: launchState.data?.steamFrame ?? false,
@@ -56,7 +62,7 @@ export function useInstallLaunch(request: InstallActionRequest) {
       failure: stop.error?.message ?? launchFailure,
       recheck: () => void preview.refetch(),
       launch: () => {
-         if (ready && !gameRunning) {
+         if (ready && !gameRunning && !prefixCopying) {
             stop.reset();
             void flow.start(
                { kind: 'launch', preview: ready },

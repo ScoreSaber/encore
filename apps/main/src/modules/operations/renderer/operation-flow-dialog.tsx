@@ -76,6 +76,7 @@ export function OperationFlowDialog<Ready extends { kind: string }, Problem exte
                   <>
                      <p>{labels.failed}</p>
                      <p className="text-muted-foreground text-xs break-all">{state.error.message}</p>
+                     {state.error.detail ? <p className="text-muted-foreground text-xs break-all">{state.error.detail}</p> : null}
                   </>
                ) : null}
 

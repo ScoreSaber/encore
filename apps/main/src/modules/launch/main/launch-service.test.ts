@@ -2,13 +2,13 @@ import { Result } from 'better-result';
 import { expect, test } from 'vite-plus/test';
 
 import { createInstallTestbed, writeInstallFolder } from '@/modules/installs/main/install-registry.fixture';
-import type { LaunchOptions } from '@/modules/launch/contract';
+import { createDefaultLaunchOptions, type LaunchOptions } from '@/modules/launch/contract';
 import { elevatedLaunchCommand, type LaunchCommand, type LaunchRuntime } from '@/modules/launch/main/launch-runtime';
 import { createLaunchService } from '@/modules/launch/main/launch-service';
 import { ensureProtonCompatData, validateProtonFolder } from '@/modules/launch/main/proton';
 import { waitForOperation } from '@/modules/operations/main/operation-waiting.fixture';
 
-import { chmod, mkdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 test('passes launch options as argv entries and rejects ones that could carry a command', async () => {
@@ -63,6 +63,52 @@ test('runs the Windows build through Proton on Linux', async () => {
    ]);
 });
 
+test('blocks launch during a prefix copy without creating compatibility data', async () => {
+   const copy = Promise.withResolvers<void>();
+   let copying = true;
+   const harness = await createHarness('linux', () => (copying ? copy.promise : undefined));
+   const protonPath = join(harness.dataPath, 'Proton');
+   await mkdir(protonPath);
+   await writeFile(join(protonPath, 'proton'), 'stub', { mode: 0o755 });
+   await harness.settingsStore.updateLibrarySettings({ protonPath });
+
+   expect(await harness.launch.start({ installId: harness.install.id, options: createDefaultLaunchOptions() })).toMatchObject({
+      status: 'error',
+      error: { code: 'launch.prefix-copy-in-progress' }
+   });
+   expect(harness.operations.list()).toEqual([]);
+   const compatDataPath = join(harness.dataPath, 'compatdata');
+   await expect(stat(compatDataPath)).rejects.toMatchObject({ code: 'ENOENT' });
+   expect(harness.spawned).toEqual([]);
+
+   await mkdir(join(compatDataPath, 'pfx'), { recursive: true });
+   copying = false;
+   copy.resolve();
+   await harness.start({ flags: [], args: [], wrapper: [], environment: {}, runAsAdmin: false, closeEncore: false });
+   expect(harness.spawned).toHaveLength(1);
+});
+
+test('prefix preparation holds the migration activity guard until preparation finishes', async () => {
+   const preparing = Promise.withResolvers<void>();
+   const entered = Promise.withResolvers<void>();
+   const harness = await createHarness('linux');
+   const protonPath = join(harness.dataPath, 'Proton');
+   await mkdir(protonPath);
+   await writeFile(join(protonPath, 'proton'), 'stub', { mode: 0o755 });
+   await harness.settingsStore.updateLibrarySettings({ protonPath });
+   harness.runtime.prepareProtonCompatData = async () => {
+      entered.resolve();
+      await preparing.promise;
+      return Result.err({ code: 'test.failed', message: 'failed' });
+   };
+   const result = harness.launch.protonFor();
+   await entered.promise;
+   expect(harness.launch.isLaunchActive()).toBe(true);
+   preparing.resolve();
+   expect(await result).toMatchObject({ status: 'error' });
+   expect(harness.launch.isLaunchActive()).toBe(false);
+});
+
 test('hands elevated launch values to powershell as data rather than script', () => {
    const payload = '’ ; Start-Process calc; #';
    const elevated = elevatedLaunchCommand({
@@ -100,7 +146,7 @@ test('stops the close-encore watchdog once an uncancelable operation starts', as
    await harness.watchdogExited;
 });
 
-async function createHarness(platform: NodeJS.Platform) {
+async function createHarness(platform: NodeJS.Platform, waitForPrefixCopy?: () => Promise<void> | undefined) {
    const { dataPath, installRoot, settingsStore, registry, operations, register } = await createInstallTestbed();
    const install = await register(await writeInstallFolder(join(installRoot, 'Beat Saber')));
    const spawned: LaunchCommand[] = [];
@@ -124,10 +170,11 @@ async function createHarness(platform: NodeJS.Platform) {
       prepareWatchdog: () => Promise.resolve(Result.ok({ executablePath: 'watchdog', args: [], workingDirectory: dataPath })),
       spawnWatchdog: () => Promise.resolve(Result.ok({ pid: 4, exited: watchdogExit.promise, stop: () => watchdogExit.resolve() }))
    };
-   const launch = createLaunchService({ settingsStore, registry, operations, runtime, storeClientDelayMs: 0 });
+   const launch = createLaunchService({ settingsStore, registry, operations, runtime, storeClientDelayMs: 0, waitForPrefixCopy });
 
    return {
       dataPath,
+      runtime,
       settingsStore,
       install,
       launch,

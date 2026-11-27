@@ -40,10 +40,13 @@ test('refuses tampered archives and uninstalls only the files a mod owns', async
       patcher: createModPatcher({ platform: 'win32', run: () => Promise.resolve(Result.ok(undefined)) })
    });
    const request = { targetId: 'local', installId: install.id };
-   const run = (started: Awaited<ReturnType<typeof mods.installMods>>) => {
+   const run = async (started: Awaited<ReturnType<typeof mods.installMods>>) => {
       if (Result.isError(started)) throw new Error('the mod operation did not start');
 
-      return waitForOperation(operations, started.value.id);
+      expect(mods.hasActiveOperations()).toBe(true);
+      const completed = await waitForOperation(operations, started.value.id);
+      expect(mods.hasActiveOperations()).toBe(false);
+      return completed;
    };
 
    const snapshot = await mods.getMods(request);

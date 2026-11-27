@@ -78,12 +78,15 @@ export function Onboarding({ importer, downloader }: { importer: InstallImporter
 
    const primary = () => {
       if (step === 'done' && choice) return { label: t('finish'), disabled: settings.saving, run: () => void finish(choice) };
-      if (step === 'bsmanager' && adopting) return { label: bsmanager('adding'), disabled: true, run: next };
+      if (step === 'bsmanager' && adopter.state.status === 'adopting') {
+         return { label: bsmanager(adopter.state.copyPrefix ? 'copyingPrefix' : 'adding'), disabled: true, run: next };
+      }
       if (step === 'bsmanager' && (adopter.state.status === 'idle' || adopter.state.status === 'loading')) {
          return { label: t('continue'), disabled: true, run: next };
       }
-      if (step === 'bsmanager' && adopter.state.status === 'ready' && adopter.selected.length > 0) {
-         return { label: bsmanager('add', { count: adopter.selected.length }), disabled: false, run: () => void adopter.confirm() };
+      if (step === 'bsmanager' && adopter.state.status === 'ready' && (adopter.selected.length > 0 || adopter.state.copyPrefix)) {
+         const label = bsmanager(adopter.action, { count: adopter.selected.length });
+         return { label, disabled: false, run: () => void adopter.confirm() };
       }
 
       return { label: t('continue'), disabled: !choice, run: next };
@@ -257,6 +260,7 @@ function BSManagerStep({ adopter }: { adopter: BSManagerAdopter }) {
             <div className="flex flex-col items-start gap-3 text-sm">
                <p>{t('result.failed')}</p>
                <p className="text-muted-foreground text-xs break-all">{state.error.message}</p>
+               {state.error.detail ? <p className="text-muted-foreground text-xs break-all">{state.error.detail}</p> : null}
                <Button type="button" variant="outline" size="sm" onClick={() => void open()}>
                   {common('retry')}
                </Button>
@@ -282,7 +286,7 @@ function BSManagerStep({ adopter }: { adopter: BSManagerAdopter }) {
                {state.status === 'adopted' ? (
                   <p className={cn(rowEnter, 'flex items-center gap-2 text-sm font-medium')} style={stagger(selected.length)}>
                      <CircleCheck className="text-primary size-4" />
-                     {t('result.adopted', { count: state.outcome.adopted })}
+                     {state.outcome.adopted > 0 ? t('result.adopted', { count: state.outcome.adopted }) : t('prefixCopied')}
                   </p>
                ) : (
                   <label
@@ -295,9 +299,37 @@ function BSManagerStep({ adopter }: { adopter: BSManagerAdopter }) {
                            {t('shareContentHint', { path: state.plan.sharedContentPath })}
                         </span>
                      </span>
-                     <Switch checked={adopter.shareContent} disabled={state.status !== 'ready'} onCheckedChange={adopter.setShareContent} />
+                     <Switch
+                        checked={selected.length > 0 && adopter.shareContent}
+                        disabled={state.status !== 'ready' || selected.length === 0}
+                        onCheckedChange={(checked) => adopter.setOption('shareContent', checked)}
+                     />
                   </label>
                )}
+               {state.status === 'adopted' && state.copyPrefix && state.outcome.adopted > 0 ? <p className="text-sm">{t('prefixCopied')}</p> : null}
+               {state.status !== 'adopted' && state.plan.prefixPath ? (
+                  <label
+                     className={cn(
+                        rowEnter,
+                        'flex items-start justify-between gap-4 rounded-xl border p-4',
+                        state.plan.existingPrefix && 'border-destructive bg-destructive/10'
+                     )}
+                     style={stagger(state.plan.versions.length + 1)}
+                  >
+                     <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-sm font-medium">{t(state.plan.existingPrefix ? 'replacePrefix' : 'copyPrefix')}</span>
+                        {state.plan.existingPrefix ? (
+                           <span className="text-destructive text-sm font-semibold">{t('replacePrefixWarning')}</span>
+                        ) : null}
+                        <span className="text-muted-foreground text-xs wrap-anywhere">{t('copyPrefixHint', { path: state.plan.prefixPath })}</span>
+                     </span>
+                     <Switch
+                        checked={state.copyPrefix}
+                        disabled={state.status !== 'ready'}
+                        onCheckedChange={(checked) => adopter.setOption('copyPrefix', checked)}
+                     />
+                  </label>
+               ) : null}
             </>
          ) : null}
       </>
